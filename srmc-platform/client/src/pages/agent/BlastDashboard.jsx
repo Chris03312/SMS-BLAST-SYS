@@ -14,6 +14,8 @@ const FLAG_LABELS = {
 };
 
 const DELAY_OPTIONS = [
+  { label: '1s', value: 1000 },
+  { label: '2s', value: 2000 },
   { label: '3s', value: 3000 },
   { label: '4s', value: 4000 },
   { label: '6s', value: 6000 },
@@ -145,6 +147,8 @@ export default function BlastDashboard() {
   const charCount = message.length;
   const segments = Math.ceil(charCount / 160) || 1;
   const costEst = (recipientList.length * 0.18).toFixed(2);
+  const isLowDelay = delayMs <= 2000;
+  const isLargeBatch = recipientList.length > 200;
 
   async function handleVerifyGateways() {
     if (selectedGateways.length === 0) return;
@@ -385,16 +389,20 @@ export default function BlastDashboard() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {gateways.map(g => {
                       const checked = selectedGateways.includes(g.id);
+                      const isInUse = g.in_use;
                       const statusColor = g.status === 'online' ? 'var(--ok)' : g.status === 'slow' ? 'var(--warn)' : 'var(--ink-4)';
                       return (
                         <div
                           key={g.id}
-                          onClick={() => toggleGateway(g.id)}
+                          onClick={() => !isInUse && toggleGateway(g.id)}
+                          title={isInUse ? 'Currently in use by an active broadcast' : g.name}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
-                            border: `1.5px solid ${checked ? 'var(--ink-1)' : 'var(--line)'}`,
-                            background: checked ? 'var(--ink-1)' : '#fff',
+                            padding: '9px 12px', borderRadius: 8,
+                            cursor: isInUse ? 'not-allowed' : 'pointer',
+                            opacity: isInUse ? 0.55 : 1,
+                            border: `1.5px solid ${checked ? 'var(--ink-1)' : isInUse ? 'var(--line-soft)' : 'var(--line)'}`,
+                            background: checked ? 'var(--ink-1)' : isInUse ? 'var(--bg-soft)' : '#fff',
                             transition: 'all 0.12s',
                           }}
                         >
@@ -402,7 +410,7 @@ export default function BlastDashboard() {
                           <div style={{
                             width: 16, height: 16, borderRadius: 4, flexShrink: 0,
                             border: `2px solid ${checked ? '#fff' : 'var(--line)'}`,
-                            background: checked ? '#fff' : 'transparent',
+                            background: checked ? '#fff' : isInUse ? 'var(--bg)' : 'transparent',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>
                             {checked && (
@@ -412,11 +420,22 @@ export default function BlastDashboard() {
                             )}
                           </div>
                           {/* Name */}
-                          <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: checked ? '#fff' : 'var(--ink-1)' }}>
+                          <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: checked ? '#fff' : isInUse ? 'var(--ink-3)' : 'var(--ink-1)' }}>
                             {g.name}
                           </span>
+                          {/* In Use tag */}
+                          {isInUse && (
+                            <span style={{
+                              fontSize: 9, fontWeight: 600, textTransform: 'uppercase',
+                              letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 4,
+                              color: 'var(--info)', background: 'var(--info-bg)',
+                              border: '1px solid var(--info-line)',
+                            }}>
+                              Busy
+                            </span>
+                          )}
                           {/* SIM carrier */}
-                          {g.sim_carrier && (
+                          {!isInUse && g.sim_carrier && (
                             <span style={{ fontSize: 11, color: checked ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)' }}>
                               {g.sim_carrier}
                             </span>
@@ -424,7 +443,7 @@ export default function BlastDashboard() {
                           {/* Status dot */}
                           <span style={{
                             width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                            background: checked ? 'rgba(255,255,255,0.7)' : statusColor,
+                            background: checked ? 'rgba(255,255,255,0.7)' : isInUse ? 'var(--ink-4)' : statusColor,
                             boxShadow: g.status === 'online' && !checked ? '0 0 0 2px rgba(5,150,105,0.2)' : 'none',
                           }} />
                         </div>
@@ -508,7 +527,35 @@ export default function BlastDashboard() {
                     </button>
                   ))}
                 </div>
+                {isLowDelay && (
+                  <div style={{
+                    marginTop: 6, padding: '6px 10px',
+                    background: 'var(--warn-bg)', border: '1px solid var(--warn-line)',
+                    borderRadius: 6, fontSize: 11, color: 'var(--warn)',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <span><strong>Fast delay ({delayMs / 1000}s)</strong> — may cause carrier throttling or SIM bans. Use 3s+ for reliable delivery.</span>
+                  </div>
+                )}
               </div>
+
+              {/* Large batch warning */}
+              {isLargeBatch && (
+                <div style={{
+                  marginBottom: 8, padding: '7px 12px',
+                  background: 'var(--warn-bg)', border: '1px solid var(--warn-line)',
+                  borderRadius: 7, fontSize: 11, color: 'var(--warn)',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  <span><strong>{recipientList.length} recipients</strong> — large batch. Estimated time may be significant. Consider splitting into smaller groups.</span>
+                </div>
+              )}
 
               {/* Summary row */}
               <div style={{ padding: '10px 14px', background: 'var(--bg-soft)', borderRadius: 8, marginBottom: 6, display: 'flex', gap: 20, fontSize: 12, color: 'var(--ink-2)' }}>

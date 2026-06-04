@@ -6,7 +6,7 @@ import { normalizePhone } from './phone.js';
 import { logSend, resolveSender } from './send-logger.js';
 import { trackGatewayResult } from './services/gateway-service.js';
 
-// Map of broadcastId -> { cancel: boolean }
+// Map of broadcastId -> { cancel: boolean, paused: boolean, _resume: () => void }
 const running = new Map();
 
 function sleep(ms) {
@@ -50,6 +50,19 @@ export async function startBroadcast(broadcastId) {
   const broadcastRecord = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(broadcastId);
   if (!broadcastRecord) {
     console.error('[broadcast-engine] Broadcast not found:', broadcastId);
+    return;
+  }
+
+  // ── Max concurrent broadcasts check ────────────────────────────────────
+  const maxSetting = db.prepare("SELECT value FROM settings WHERE key = 'max_concurrent_broadcasts'").get();
+  const maxConcurrent = parseInt(maxSetting?.value) || 0;
+  if (maxConcurrent > 0 && running.size >= maxConcurrent) {
+    db.prepare("UPDATE broadcasts SET status = 'failed', completed_at = datetime('now') WHERE id = ?")
+      .run(broadcastId);
+    logActivity(broadcastRecord.agent_id, 'broadcast:failed',
+      `Broadcast ${broadcastId} queued but not started — at max concurrent limit (${maxConcurrent}). Cancel another broadcast first or increase the limit in Settings.`,
+      'error', broadcastRecord.campaign_id);
+    broadcast({ type: 'broadcast:complete', broadcastId, status: 'failed', sent: 0, failed: 0, total: broadcastRecord.total });
     return;
   }
 
@@ -141,6 +154,18 @@ export async function startBroadcast(broadcastId) {
       await sleep(60000);
     }
     if (state.cancel) continue;
+
+    // ── Pause check ────────────────────────────────────────────────────
+    if (state.paused) {
+      db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
+      broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
+      // Wait until resumed
+      await new Promise((resolve) => {
+        state._resume = resolve;
+      });
+      db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
+      broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+    }
 
     // ── Daily cap check ───────────────────────────────────────────────
     // Reset sent_today counters at the start of each new day so the daily
@@ -261,10 +286,53 @@ export function onMessageAcked(broadcastId) {
 
 export function cancelBroadcast(broadcastId) {
   const state = running.get(broadcastId);
-  if (state) { state.cancel = true; return true; }
+  if (state) { state.cancel = true; if (state._resume) state._resume(); return true; }
   return false;
+}
+
+export function pauseBroadcast(broadcastId) {
+  const state = running.get(broadcastId);
+  if (!state) return false;
+  state.paused = true;
+  db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
+  broadcast({ type: 'broadcast:paused', broadcastId });
+  logActivity(
+    db.prepare('SELECT agent_id, campaign_id FROM broadcasts WHERE id = ?').get(broadcastId)?.agent_id || null,
+    'broadcast:paused',
+    `Broadcast ${broadcastId} paused by user`,
+    'info'
+  );
+  return true;
+}
+
+export function resumeBroadcast(broadcastId) {
+  const state = running.get(broadcastId);
+  if (!state || !state.paused) return false;
+  state.paused = false;
+  if (state._resume) { state._resume(); state._resume = null; }
+  db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
+  broadcast({ type: 'broadcast:resumed', broadcastId });
+  logActivity(
+    db.prepare('SELECT agent_id, campaign_id FROM broadcasts WHERE id = ?').get(broadcastId)?.agent_id || null,
+    'broadcast:resumed',
+    `Broadcast ${broadcastId} resumed by user`,
+    'info'
+  );
+  return true;
 }
 
 export function isBroadcastRunning(broadcastId) {
   return running.has(broadcastId);
+}
+
+export function getRunningBroadcasts() {
+  const ids = [];
+  for (const [id, state] of running) {
+    ids.push({ id, paused: !!state.paused });
+  }
+  return ids;
+}
+
+export function getRunningCount() {
+  return running.size;
 }

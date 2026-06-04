@@ -14,6 +14,9 @@ import { registerNgrokWebhook, getInboundWebhookUrl } from './services/gateway-s
 
 let activeListener = null;
 let currentUrl     = null;
+let retryTimer     = null;
+
+const RETRY_INTERVAL_MS = 30_000; // check every 30s when offline
 
 /**
  * Resolve the ngrok authtoken for THIS device.
@@ -57,8 +60,37 @@ export function hasAuthtoken() {
  * @param {string} [authtoken] - Optional explicit authtoken (else resolved per-device)
  * @returns {Promise<{url:string, webhookUrl:string}>}
  */
+/**
+ * Start the auto-retry loop. When the tunnel fails (e.g. no internet),
+ * it will keep retrying every 30s until the tunnel comes up.
+ */
+export function startNgrokAutoRetry(port = 3001) {
+  stopNgrokAutoRetry();
+  async function attempt() {
+    if (activeListener) return; // already connected
+    try {
+      await startNgrok(port);
+      console.log('[ngrok] Auto-retry: tunnel established');
+      stopNgrokAutoRetry(); // success — stop retrying
+    } catch (err) {
+      console.log(`[ngrok] Auto-retry: no internet yet (${err.message}) — retrying in ${RETRY_INTERVAL_MS / 1000}s`);
+    }
+  }
+  attempt();
+  retryTimer = setInterval(attempt, RETRY_INTERVAL_MS);
+}
+
+/** Stop the auto-retry loop. */
+export function stopNgrokAutoRetry() {
+  if (retryTimer) {
+    clearInterval(retryTimer);
+    retryTimer = null;
+  }
+}
+
 export async function startNgrok(port = 3001, authtoken) {
   await stopNgrok();
+  stopNgrokAutoRetry();
 
   const token  = resolveAuthtoken(authtoken);
   const domain = resolveDomain();
@@ -97,6 +129,7 @@ export async function startNgrok(port = 3001, authtoken) {
  * Stop the active ngrok tunnel gracefully.
  */
 export async function stopNgrok() {
+  stopNgrokAutoRetry();
   if (activeListener) {
     try {
       await ngrok.disconnect();

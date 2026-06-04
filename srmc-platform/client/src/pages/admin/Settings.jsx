@@ -253,6 +253,18 @@ export default function Settings() {
                   </div>
                 </Field>
               </FieldRow>
+              <Field label="Max concurrent broadcasts" help="How many broadcasts can run at the same time. 0 = unlimited.">
+                <div style={{ display: 'flex' }}>
+                  <input className="input mono" type="number" min="0" value={form.max_concurrent_broadcasts || 0} onChange={e => set('max_concurrent_broadcasts', e.target.value)}
+                    style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 160 }} />
+                  <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                    broadcasts
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>
+                  Set to 2 = only 2 broadcasts can send simultaneously. Others queue as 'pending' until a slot frees up.
+                </div>
+              </Field>
             </SectionBlock>
 
             <SectionDivider />

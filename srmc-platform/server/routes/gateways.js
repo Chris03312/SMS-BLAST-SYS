@@ -25,6 +25,31 @@ router.get('/', (req, res) => {
     } else {
       gateways = db.prepare('SELECT * FROM gateways WHERE active = 1 ORDER BY created_at DESC').all();
     }
+
+    // Collect all gateway IDs that are referenced in active (sending/paused) broadcasts
+    const activeBroadcasts = db.prepare(
+      "SELECT gateway_ids, gateway_id FROM broadcasts WHERE status IN ('sending', 'paused')"
+    ).all();
+
+    const inUseIds = new Set();
+    for (const b of activeBroadcasts) {
+      // Parse the JSON array of gateway_ids
+      if (b.gateway_ids) {
+        try {
+          const ids = JSON.parse(b.gateway_ids);
+          for (const id of ids) inUseIds.add(id);
+        } catch (_) {}
+      }
+      // Legacy single gateway_id fallback
+      if (b.gateway_id) inUseIds.add(b.gateway_id);
+    }
+
+    // Tag each gateway with an in_use flag
+    gateways = gateways.map(g => ({
+      ...g,
+      in_use: inUseIds.has(g.id) ? 1 : 0,
+    }));
+
     return ok(res, { gateways });
   } catch (e) {
     console.error('[gateways] GET error:', e);

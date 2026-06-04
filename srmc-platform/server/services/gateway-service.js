@@ -30,7 +30,7 @@ export function gatewayLogin(userId) {
   // For simplicity, we do a direct hash comparison. The caller handles bcrypt.
   // This function just looks up the user and generates the token.
   const inboundToken = jwt.sign(
-    { gatewayId: user.id, type: 'gateway', role: user.role },
+    { gatewayId: userId, type: 'gateway', role: user.role },
     JWT_SECRET,
     { expiresIn: INBOUND_TOKEN_EXPIRY }
   );
@@ -38,7 +38,7 @@ export function gatewayLogin(userId) {
   // Store the token reference
   const tokenId = uuidv4();
   db.prepare('INSERT INTO gateway_tokens (id, gateway_id, token) VALUES (?, ?, ?)')
-    .run(tokenId, user.id, inboundToken);
+    .run(tokenId, userId, inboundToken);
 
   return {
     user: {
@@ -80,7 +80,7 @@ function ensureGateway(userId, deviceInfo) {
 
   // Self-register the phone as a PULL gateway. It has no reachable URL — it
   // polls the central server for outbound work — so this works across networks.
-  const user = db.prepare('SELECT username, display_name FROM users WHERE id = ?').get(userId);
+  const user = db.prepare('SELECT username, display_name FROM users WHERE username = ?').get(userId);
   const name = deviceInfo || (user && (user.display_name || user.username)) || 'Gateway';
   db.prepare(
     "INSERT INTO gateways (id, name, url, mode, status, active) VALUES (?, ?, '', 'pull', 'online', 1)"

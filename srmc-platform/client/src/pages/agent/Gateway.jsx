@@ -182,7 +182,17 @@ function GatewayCard({ gw, onEdit, onDelete, onTest }) {
             {gw.url}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {gw.in_use ? (
+            <span style={{
+              fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+              letterSpacing: '0.06em', padding: '2px 7px',
+              borderRadius: 5, color: '#fff', background: 'var(--info)',
+              whiteSpace: 'nowrap',
+            }}>
+              In Use
+            </span>
+          ) : null}
           <Pill status={gw.status} label={gw.status} />
         </div>
       </div>
@@ -395,17 +405,19 @@ export default function Gateway() {
         <div className="card" style={{ padding: 16, marginBottom: 20, border: '1px solid var(--brand-1)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-1)', marginBottom: 3 }}>
-                This PC&apos;s server address
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-1)', marginBottom: 2 }}>
+                Connect your Android gateway
               </div>
-              <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-                In your Android gateway app, set the <strong>Server IP / URL</strong> to this (same Wi-Fi/LAN — no ngrok needed).
+              <div style={{ fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.5, maxWidth: 420 }}>
+                On your Android phone (FlashSMSGateway app), set the Server URL to the address below.
+                Works over Wi-Fi/LAN — <strong>no internet needed</strong>.
+                The phone and this PC must be on the same network.
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <code className="num" style={{
-                fontSize: 15, fontWeight: 600, color: 'var(--brand-1)',
-                background: 'var(--bg-soft)', border: '1px solid var(--line)',
+                fontSize: 15, fontWeight: 700, color: 'var(--brand-1)',
+                background: 'var(--ok-bg)', border: '2px solid var(--ok-line)',
                 borderRadius: 8, padding: '8px 12px', userSelect: 'all',
               }}>
                 {serverInfo.primary_url}
@@ -415,19 +427,37 @@ export default function Gateway() {
               </button>
             </div>
           </div>
+
+          {/* Alternative addresses */}
           {serverInfo.addresses && serverInfo.addresses.length > 1 && (
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line-soft)', fontSize: 11, color: 'var(--ink-3)' }}>
-              On a different network adapter? Try:&nbsp;
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-soft)', fontSize: 11, color: 'var(--ink-3)' }}>
+              Other network adapters (if the main one doesn&apos;t work):&nbsp;
               {serverInfo.addresses
                 .filter(a => a.url !== serverInfo.primary_url)
                 .map(a => (
                   <code key={a.ip} className="num" title={`Copy ${a.url} (${a.iface})`} onClick={() => copyText(a.url)}
-                    style={{ marginRight: 10, cursor: 'pointer', color: 'var(--ink-2)', textDecoration: 'underline dotted' }}>
+                    style={{ marginRight: 8, cursor: 'pointer', color: 'var(--ink-2)', textDecoration: 'underline dotted' }}>
                     {a.url}
                   </code>
                 ))}
             </div>
           )}
+
+          {/* Connectivity hint */}
+          <div style={{
+            marginTop: 10, paddingTop: 10,
+            borderTop: '1px solid var(--line-soft)',
+            display: 'flex', gap: 6, alignItems: 'flex-start',
+            fontSize: 11, color: 'var(--ink-4)',
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+            <span>
+              Your phone needs to reach this PC. If they&apos;re on the same Wi-Fi, use the LAN URL above.
+              If not (e.g. the phone is at a different location), set up ngrok in Settings for a public URL.
+            </span>
+          </div>
         </div>
       )}
 

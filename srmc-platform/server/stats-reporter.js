@@ -149,11 +149,14 @@ async function sendReport() {
     if (response.ok) {
       console.log('[stats-reporter] ✅ Report sent to', centralUrl);
     } else {
-      console.warn('[stats-reporter] ⚠️  Report failed:', response.status, await response.text().catch(() => ''));
+      console.warn('[stats-reporter] ⚠️  Report failed:', response.status);
     }
   } catch (err) {
-    // Silently fail — network might be down, that's OK
-    console.warn('[stats-reporter] ⚠️  Could not send report:', err.message);
+    // Silently fail — network might be down, that's OK. Log only first failure.
+    if (!sendReport.lastFail || Date.now() - sendReport.lastFail > 300_000) {
+      console.warn('[stats-reporter] ⚠️  Could not send report (offline?):', err.message);
+      sendReport.lastFail = Date.now();
+    }
   }
 }
 

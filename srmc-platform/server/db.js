@@ -317,8 +317,9 @@ export function initDb() {
       ['window_end',     '20:00'],
       ['webhook_secret', 'whsec_' + uuidv4().replace(/-/g, '')],
       ['ngrok_url',       ''],
-      ['daily_cap',      '10000'],
-      ['region',         'IN'],
+      ['daily_cap',               '10000'],
+      ['max_concurrent_broadcasts', '0'],
+      ['region',                  'IN'],
       ['public_url',     ''],
     ]) {
       db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);

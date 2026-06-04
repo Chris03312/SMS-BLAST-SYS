@@ -13,10 +13,15 @@
  */
 
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, Notification, dialog, shell } from 'electron';
+import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer } from 'http';
+
+// electron-updater is CommonJS — use createRequire so it works inside the bundled portable exe
+const require = createRequire(import.meta.url);
+const { autoUpdater } = require('electron-updater');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.resolve(__dirname, '..');
@@ -93,7 +98,7 @@ async function startServer() {
   // Dynamic import so the env vars above are in place first.
   const appMod = await import('../server/app.js');
   const { initWss }                            = await import('../server/ws.js');
-  const { startNgrok, stopNgrok, hasAuthtoken } = await import('../server/ngrok-tunnel.js');
+  const { startNgrok, startNgrokAutoRetry, stopNgrok, hasAuthtoken } = await import('../server/ngrok-tunnel.js');
   const { startStatsReporter, stopStatsReporter } = await import('../server/stats-reporter.js');
   const { startPoller }                        = await import('../server/gateway-poller.js');
 
@@ -101,7 +106,7 @@ async function startServer() {
     serverApp: appMod.default,
     NGROK_URL: appMod.NGROK_URL,
     NGROK_AUTHTOKEN: appMod.NGROK_AUTHTOKEN,
-    initWss, startNgrok, stopNgrok, hasAuthtoken, startStatsReporter, stopStatsReporter, startPoller,
+    initWss, startNgrok, startNgrokAutoRetry, stopNgrok, hasAuthtoken, startStatsReporter, stopStatsReporter, startPoller,
   };
   PORT = appMod.PORT;
 
@@ -157,7 +162,8 @@ async function startTunnel() {
     addShutdownHook(server.stopNgrok);
   } catch (err) {
     console.error('[ngrok] Auto-start failed:', err.message);
-    console.log('[ngrok] Set NGROK_URL manually in .env or start from Settings page');
+    console.log('[ngrok] Will keep retrying in background — no internet yet');
+    server.startNgrokAutoRetry(PORT);
   }
 }
 
@@ -217,6 +223,11 @@ function createTray() {
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Open SRMC Platform', click: showWindow },
+    { type: 'separator' },
+    {
+      label: `v${app.getVersion()} — Check for updates`,
+      click: () => { autoUpdater.checkForUpdatesAndNotify(); },
+    },
     { type: 'separator' },
     { label: `Port: ${PORT}`, enabled: false },
     { label: ngrokUrl ? `Public: ${ngrokUrl}` : 'Public: tunnel off', enabled: false },
@@ -294,6 +305,56 @@ async function shutdown() {
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
 
+// ── Auto-updater config ─────────────────────────────────────────────────────
+
+function initAutoUpdater() {
+  // Allow overriding the update feed URL via env var (set at build time or in .env)
+  if (process.env.UPDATE_FEED_URL) {
+    autoUpdater.setFeedURL(process.env.UPDATE_FEED_URL);
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('[updater] Update available:', info.version);
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Available',
+      message: `A new version (v${info.version}) is available.`,
+      detail: 'Download and install now? The app will restart after installation.',
+      buttons: ['Download & Install', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.downloadUpdate();
+      }
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] No updates available.');
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] Error:', err.message);
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    console.log(`[updater] Download ${Math.round(progress.percent)}%`);
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    console.log('[updater] Update downloaded — will install on quit');
+  });
+
+  // Check for updates silently on startup (no notification if none found)
+  setTimeout(() => {
+    autoUpdater.checkForUpdates();
+  }, 10000);
+}
+
 function bootstrap() {
   app.whenReady().then(async () => {
     initLogging();
@@ -302,6 +363,7 @@ function bootstrap() {
       await startServer();
       createTray();
       createWindow();
+      initAutoUpdater();
     } catch (err) {
       console.error('[electron] Startup failed:', err);
       dialog.showErrorBox(

@@ -26,7 +26,7 @@ import { fileURLToPath } from 'url';
 import { initDb } from './db.js';
 import db from './db.js';
 import { registerNgrokWebhook } from './services/gateway-service.js';
-import { startNgrok, stopNgrok, getNgrokStatus } from './ngrok-tunnel.js';
+import { startNgrok, stopNgrok, getNgrokStatus, startNgrokAutoRetry } from './ngrok-tunnel.js';
 import { startStatsReporter, stopStatsReporter, reportNow } from './stats-reporter.js';
 import { authMiddleware, adminOnly } from './middleware/auth.js';
 
@@ -171,6 +171,57 @@ app.get('/api/server-info', authMiddleware, async (req, res) => {
     primary_ip: primary || '',
     primary_url: primary ? url(primary) : '',
     addresses: addresses.map(a => ({ ...a, url: url(a.ip) })),
+  });
+});
+
+// ── Connectivity status (online/offline detection for the UI) ──────────
+
+async function checkInternet() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch('https://clients3.google.com/generate_204', {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
+  const tunnelStatus = getNgrokStatus();
+  const addresses = listLanIps();
+  let primaryIp = await primaryLanIp();
+  if (!primaryIp && addresses.length) primaryIp = addresses[0].ip;
+  const hasNgrokConfig = !!NGROK_URL || !!NGROK_AUTHTOKEN;
+
+  // Only check internet if there's an online feature that needs it
+  let online = true; // assume online unless we have a reason to check
+  const centralUrl = db.prepare("SELECT value FROM settings WHERE key = 'central_server_url'").get();
+  if (hasNgrokConfig || (centralUrl && centralUrl.value)) {
+    online = await checkInternet();
+  }
+
+  return res.json({
+    success: true,
+    online,
+    lan: {
+      primary_ip: primaryIp || '',
+      primary_url: primaryIp ? `http://${primaryIp}:${PORT}` : '',
+      addresses: addresses.map(a => ({ ip: a.ip, iface: a.iface, url: `http://${a.ip}:${PORT}` })),
+    },
+    ngrok: {
+      running: tunnelStatus.running,
+      url: tunnelStatus.url || '',
+      webhook_url: tunnelStatus.webhookUrl || '',
+      configured: hasNgrokConfig,
+    },
+    central_server: {
+      configured: !!(centralUrl && centralUrl.value),
+      url: (centralUrl && centralUrl.value) || '',
+    },
   });
 });
 

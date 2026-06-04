@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 
 import Login from './pages/Login.jsx';
+import Dashboard from './pages/agent/Dashboard.jsx';
 import BlastDashboard from './pages/agent/BlastDashboard.jsx';
 import History from './pages/agent/History.jsx';
 import AgentTemplates from './pages/agent/Templates.jsx';
@@ -25,7 +26,7 @@ function RoleRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === 'admin') return <Navigate to="/admin" replace />;
-  return <Navigate to="/compose" replace />;
+  return <Navigate to="/dashboard" replace />;
 }
 
 function ProtectedRoute({ children }) {
@@ -50,6 +51,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedRoute><RoleRedirect /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/compose" element={<ProtectedRoute><BlastDashboard /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
           <Route path="/templates" element={<ProtectedRoute><AgentTemplates /></ProtectedRoute>} />

@@ -17,7 +17,7 @@ const STATUS_MAP = {
   unknown:   'idle',
   pending:   'idle',
   idle:      'idle',
-  paused:    'idle',
+  paused:    'warn',
   info:      'info',
 };
 

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { api } from '../lib/api.js';
 
 const NAV_ITEMS = [
   { section: 'Overview', items: [
@@ -85,6 +86,20 @@ const NAV_ITEMS = [
 export default function AdminShell({ children, crumbs = [] }) {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const [connectivity, setConnectivity] = useState(null);
+  const [showNetInfo, setShowNetInfo] = useState(false);
+
+  const fetchConnectivity = useCallback(() => {
+    api.get('/server/connectivity')
+      .then(d => setConnectivity(d))
+      .catch(() => setConnectivity({ online: true, lan: { primary_url: '' }, ngrok: { running: false } }));
+  }, []);
+
+  useEffect(() => {
+    fetchConnectivity();
+    const interval = setInterval(fetchConnectivity, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchConnectivity]);
 
   function handleLogout() { logout(); }
 
@@ -122,6 +137,54 @@ export default function AdminShell({ children, crumbs = [] }) {
                 <div className="user-name">{user?.display_name || user?.username}</div>
                 <div className="user-role">{user?.role}</div>
               </div>
+            </div>
+            {/* Network status indicator */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="btn-ghost"
+                onClick={() => setShowNetInfo(s => !s)}
+                title="Network status"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  fontSize: 11, padding: '3px 7px',
+                }}
+              >
+                <span style={{
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: connectivity === null ? 'var(--ink-4)'
+                    : connectivity.online ? 'var(--ok)' : 'var(--warn)',
+                  transition: 'background 0.3s',
+                  flexShrink: 0,
+                }} />
+              </button>
+              {showNetInfo && connectivity && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowNetInfo(false)} />
+                  <div style={{
+                    position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                    background: 'var(--card-bg)', border: '1px solid var(--line)',
+                    borderRadius: 10, padding: 12, width: 220,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                    fontSize: 11, lineHeight: 1.5,
+                  }}>
+                    <div style={{ fontWeight: 600, color: 'var(--ink-1)', marginBottom: 6, fontSize: 12 }}>Network</div>
+                    <InfoRow label="Internet" value={connectivity.online ? 'Connected' : 'Offline'} good={connectivity.online} />
+                    <InfoRow label="Tunnel" value={connectivity.ngrok?.running ? 'Active' : 'Off'} good={connectivity.ngrok?.running} />
+                    {connectivity.lan?.primary_url && (
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--line-soft)' }}>
+                        <code style={{
+                          display: 'block', padding: '4px 6px',
+                          background: 'var(--bg-soft)', borderRadius: 4,
+                          fontSize: 10, color: 'var(--brand-1)',
+                          userSelect: 'all', fontFamily: 'var(--mono)',
+                        }}>
+                          {connectivity.lan.primary_url}
+                        </code>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             <button className="btn-ghost" onClick={handleLogout}>Sign out</button>
           </div>
@@ -170,5 +233,19 @@ export default function AdminShell({ children, crumbs = [] }) {
         </main>
       </div>
     </>
+  );
+}
+
+function InfoRow({ label, value, good }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>{label}</span>
+      <span style={{
+        fontSize: 10, fontWeight: 500,
+        color: good ? 'var(--ok)' : 'var(--warn)',
+      }}>
+        {value}
+      </span>
+    </div>
   );
 }

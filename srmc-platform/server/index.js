@@ -11,7 +11,7 @@
 import { createServer } from 'http';
 import { initWss } from './ws.js';
 import { startPoller } from './gateway-poller.js';
-import { startNgrok, hasAuthtoken } from './ngrok-tunnel.js';
+import { startNgrok, startNgrokAutoRetry, hasAuthtoken } from './ngrok-tunnel.js';
 import { startStatsReporter, stopStatsReporter } from './stats-reporter.js';
 import app, { PORT, NGROK_URL, NGROK_AUTHTOKEN } from './app.js';
 
@@ -32,7 +32,8 @@ server.listen(PORT, async () => {
       console.log(`[ngrok] ✅ Public URL: ${tunnel.url}`);
     } catch (err) {
       console.error('[ngrok] ❌ Auto-start failed:', err.message);
-      console.log('[ngrok] Add a token/domain in Settings or set NGROK_URL manually');
+      console.log('[ngrok] Will keep retrying in background…');
+      startNgrokAutoRetry(PORT);
     }
   } else {
     console.log('[ngrok] No auth token — add one in Settings to enable inbound tunneling');
