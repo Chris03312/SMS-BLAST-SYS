@@ -1,0 +1,43 @@
+/* ─── AGENT TOPNAV ─── */
+.nav {
+  height: 60px; background: #fff; border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; padding: 0 24px; flex-shrink: 0;
+}
+.nav-left { display: flex; align-items: center; gap: 12px; }
+
+/* Agent brand mark is slightly larger than admin */
+.nav .brand-mark       { width: 36px; height: 36px; }
+.nav .brand-mark img   { width: 24px; height: 24px; }
+.nav .brand-sub        { font-size: 11px; letter-spacing: normal; text-transform: none; font-weight: 400; }
+
+/* Agent user chip is slightly larger than admin */
+.nav .user-chip        { padding: 5px 12px 5px 5px; }
+.nav .user-avatar      { width: 28px; height: 28px; font-size: 11px; }
+.nav .user-role        { font-size: 10.5px; }
+
+/* ─── TAB BAR ─── */
+.nav-tabs {
+  display: flex; gap: 4px;
+  background: var(--bg-soft); padding: 4px; border-radius: 9px;
+}
+.nav-tab {
+  padding: 7px 14px; font-size: 13px; font-weight: 500; color: var(--ink-2);
+  background: transparent; border: none; border-radius: 6px; cursor: pointer;
+  text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+}
+.nav-tab.active {
+  background: #fff; color: var(--ink-1);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 0 0 1px var(--line);
+}
+.nav-badge {
+  font-size: 10px; font-weight: 600; color: #fff;
+  background: var(--brand-1); padding: 1px 6px;
+  border-radius: 10px; font-family: var(--mono);
+}
+
+/* ─── RIGHT SLOT ─── */
+.nav-right {
+  display: flex; align-items: center;
+  justify-content: flex-end; gap: 12px;
+}

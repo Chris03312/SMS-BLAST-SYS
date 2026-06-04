@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.flashsms.gateway'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.flashsms.gateway"
+        minSdk 21
+        targetSdk 34
+        versionCode 3
+        versionName "2.1"
+
+        // Needed for SmsMessage.createFromPdu(byte[], String) on API 23+
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    configurations.all {
+        resolutionStrategy {
+            // Force a single version of androidx.annotation to prevent duplicate R class
+            force 'androidx.annotation:androidx.annotation:1.7.1'
+        }
+        // Exclude the duplicate experimental annotation module pulled in transitively
+        exclude group: 'androidx.annotation', module: 'annotation-experimental'
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    // Explicit single annotation dep to prevent duplicate class conflict
+    implementation 'androidx.annotation:annotation:1.7.1'
+}

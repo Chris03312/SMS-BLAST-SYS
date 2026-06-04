@@ -1,0 +1,17 @@
+{
+  "name": "srmc-central-server",
+  "version": "1.0.0",
+  "description": "SRMC Central Monitoring Server — receives stats from remote SRMC Desktop installations",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3",
+    "cors": "^2.8.5",
+    "sql.js": "^1.14.1",
+    "uuid": "^9.0.0"
+  }
+}

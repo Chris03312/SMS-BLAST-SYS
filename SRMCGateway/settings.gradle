@@ -1,0 +1,2 @@
+rootProject.name = "SRMCGateway"
+include ':app'

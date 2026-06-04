@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+client/node_modules/
+central-server/node_modules/
+
+# Build output
+client/dist/
+dist-electron/
+
+# Runtime data & secrets (writable state lives in the OS userData dir in prod)
+data/*.db
+data/secrets.json
+*.log
+
+# Environment — never commit real secrets
+.env
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Stray Windows device file
+nul
