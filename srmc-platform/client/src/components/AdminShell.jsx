@@ -73,14 +73,6 @@ const NAV_ITEMS = [
       </svg>
     )},
   ]},
-  { section: 'Billing', items: [
-    { label: 'Billing', path: '/admin/billing', icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="5" width="20" height="14" rx="2"/>
-        <line x1="2" y1="10" x2="22" y2="10"/>
-      </svg>
-    )},
-  ]},
 ];
 
 export default function AdminShell({ children, crumbs = [] }) {
@@ -162,7 +154,7 @@ export default function AdminShell({ children, crumbs = [] }) {
                   <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowNetInfo(false)} />
                   <div style={{
                     position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                    background: 'var(--card-bg)', border: '1px solid var(--line)',
+                    background: '#fff', border: '1px solid var(--line)',
                     borderRadius: 10, padding: 12, width: 220,
                     boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
                     fontSize: 11, lineHeight: 1.5,

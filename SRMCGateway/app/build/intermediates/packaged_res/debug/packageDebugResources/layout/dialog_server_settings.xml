@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/bg_surface"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="24dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/dialog_server_settings_title"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="24dp"
+        android:text="@string/dialog_server_settings_subtitle"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp" />
+
+    <!-- SERVER URL / IP -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:letterSpacing="0.12"
+        android:text="@string/label_server_url"
+        android:textColor="@color/text_label"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilDialogServerIp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="20dp"
+        android:hint="@string/hint_server_ip_login"
+        app:boxBackgroundColor="@color/input_bg"
+        app:boxCornerRadiusBottomEnd="10dp"
+        app:boxCornerRadiusBottomStart="10dp"
+        app:boxCornerRadiusTopEnd="10dp"
+        app:boxCornerRadiusTopStart="10dp"
+        app:boxStrokeColor="@color/primary"
+        app:boxStrokeWidth="1dp"
+        app:boxStrokeWidthFocused="1.5dp"
+        app:hintEnabled="false"
+        app:startIconDrawable="@drawable/ic_server"
+        app:startIconTint="@color/icon_muted">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etDialogServerIp"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:imeOptions="actionNext"
+            android:inputType="text"
+            android:paddingStart="36dp"
+            android:paddingEnd="8dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- PORT -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:letterSpacing="0.12"
+        android:text="@string/label_port"
+        android:textColor="@color/text_label"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilDialogServerPort"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/hint_port"
+        app:boxBackgroundColor="@color/input_bg"
+        app:boxCornerRadiusBottomEnd="10dp"
+        app:boxCornerRadiusBottomStart="10dp"
+        app:boxCornerRadiusTopEnd="10dp"
+        app:boxCornerRadiusTopStart="10dp"
+        app:boxStrokeColor="@color/primary"
+        app:boxStrokeWidth="1dp"
+        app:boxStrokeWidthFocused="1.5dp"
+        app:hintEnabled="false"
+        app:startIconDrawable="@drawable/ic_port"
+        app:startIconTint="@color/icon_muted">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etDialogServerPort"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:imeOptions="actionDone"
+            android:inputType="number"
+            android:paddingStart="36dp"
+            android:paddingEnd="8dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>

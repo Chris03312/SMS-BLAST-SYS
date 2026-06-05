@@ -313,12 +313,14 @@ export function initDb() {
       ['org_name',       'SRMC Credit Collection Services'],
       ['sender_id',      'SRMCCS'],
       ['delay',          '6000'],
-      ['window_start',   '09:00'],
-      ['window_end',     '20:00'],
+      ['window_start',   '00:00'],
+      ['window_end',     '23:59'],
       ['webhook_secret', 'whsec_' + uuidv4().replace(/-/g, '')],
       ['ngrok_url',       ''],
       ['daily_cap',               '10000'],
       ['max_concurrent_broadcasts', '0'],
+      ['turbo_delay',               '100'],
+      ['turbo_batch_size',           '5'],
       ['region',                  'IN'],
       ['public_url',     ''],
     ]) {
@@ -350,6 +352,14 @@ export function initDb() {
     "ALTER TABLE gateways ADD COLUMN consecutive_fails INTEGER DEFAULT 0",
     // Link activity entries to campaigns for the admin Activity Log.
     "ALTER TABLE activity ADD COLUMN campaign_id TEXT",
+    // Second SIM phone number for dual-SIM gateways
+    "ALTER TABLE gateways ADD COLUMN number2 TEXT",
+    // SIM 2 carrier name (auto-reported by Android gateway)
+    "ALTER TABLE gateways ADD COLUMN sim2_carrier TEXT",
+    // Whether turbo mode is allowed for this gateway
+    "ALTER TABLE gateways ADD COLUMN turbo_enabled INTEGER DEFAULT 0",
+    // Track consecutive delivery failures from carrier delivery reports
+    "ALTER TABLE gateways ADD COLUMN delivery_fails INTEGER DEFAULT 0",
   ];
   for (const sql of migrations) {
     try {

@@ -94,21 +94,41 @@ function ensureGateway(userId, deviceInfo) {
  * @param {string} userId     - Gateway user ID
  * @param {string} deviceInfo - Device model / info string
  */
-export function gatewayOnline(userId, deviceInfo, number) {
+export function gatewayOnline(userId, deviceInfo, number, simCarrier, number2, sim2Carrier) {
   const now = new Date().toISOString();
   ensureGateway(userId, deviceInfo);
-  db.prepare('UPDATE gateways SET status = ?, last_online = ?, device_info = ? WHERE id = ?')
-    .run('online', now, deviceInfo || '', userId);
-  // Record the SIM's own number if the phone reported it (used as send "sender").
-  if (number) {
-    db.prepare('UPDATE gateways SET number = ? WHERE id = ?').run(String(number), userId);
+
+  // Build update — only set fields that are provided
+  const updates = ["status = ?", "last_online = ?", "device_info = ?"];
+  const params = ['online', now, deviceInfo || ''];
+
+  if (number !== undefined && number !== null) {
+    updates.push("number = ?");
+    params.push(String(number));
   }
+  if (simCarrier !== undefined && simCarrier !== null) {
+    updates.push("sim_carrier = ?");
+    params.push(String(simCarrier));
+  }
+  if (number2 !== undefined && number2 !== null) {
+    updates.push("number2 = ?");
+    params.push(String(number2));
+  }
+  if (sim2Carrier !== undefined && sim2Carrier !== null) {
+    updates.push("sim2_carrier = ?");
+    params.push(String(sim2Carrier));
+  }
+
+  params.push(userId);
+  db.prepare(`UPDATE gateways SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   broadcast({
     type: 'gateway:online',
     gatewayId: userId,
     deviceInfo: deviceInfo || '',
     last_online: now,
+    sim_carrier: simCarrier || null,
+    sim2_carrier: sim2Carrier || null,
   });
 }
 
@@ -136,16 +156,40 @@ export function gatewayOffline(userId) {
  * @param {string} userId - Gateway user ID
  * @returns {boolean} - Whether the gateway was found
  */
-export function gatewayHeartbeat(userId) {
+export function gatewayHeartbeat(userId, extra = {}) {
   const now = new Date().toISOString();
   ensureGateway(userId);
-  db.prepare('UPDATE gateways SET status = ?, last_beat = ?, last_online = ? WHERE id = ?')
-    .run('online', now, now, userId);
+
+  // Build update — always set status/beat/online, optionally update SIM fields
+  const updates = ["status = ?", "last_beat = ?", "last_online = ?"];
+  const params = ['online', now, now];
+
+  if (extra.simCarrier !== undefined && extra.simCarrier !== null) {
+    updates.push("sim_carrier = ?");
+    params.push(String(extra.simCarrier));
+  }
+  if (extra.number2 !== undefined && extra.number2 !== null) {
+    updates.push("number2 = ?");
+    params.push(String(extra.number2));
+  }
+  if (extra.sim2Carrier !== undefined && extra.sim2Carrier !== null) {
+    updates.push("sim2_carrier = ?");
+    params.push(String(extra.sim2Carrier));
+  }
+  if (extra.number !== undefined && extra.number !== null) {
+    updates.push("number = ?");
+    params.push(String(extra.number));
+  }
+
+  params.push(userId);
+  db.prepare(`UPDATE gateways SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   broadcast({
     type: 'gateway:heartbeat',
     gatewayId: userId,
     timestamp: now,
+    sim_carrier: extra.simCarrier || null,
+    sim2_carrier: extra.sim2Carrier || null,
   });
 
   return true;

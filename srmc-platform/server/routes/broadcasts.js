@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
+import { fixTimestamps } from '../fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { startBroadcast, cancelBroadcast, pauseBroadcast, resumeBroadcast, getRunningCount } from '../broadcast-engine.js';
 import { normalizePhone } from '../phone.js';
@@ -31,7 +32,8 @@ router.get('/', (req, res) => {
         t.name as template_name,
         g.name as gateway_name,
         g.number as gateway_number,
-        c.name as campaign_name
+        c.name as campaign_name,
+        (SELECT COUNT(*) FROM messages WHERE broadcast_id = b.id AND status = 'delivered') as delivered
       FROM broadcasts b
       LEFT JOIN users u ON b.agent_id = u.id
       LEFT JOIN templates t ON b.template_id = t.id
@@ -74,7 +76,7 @@ router.get('/', (req, res) => {
       `SELECT COUNT(*) as c FROM broadcasts b ${conditions.length > 0 ? 'WHERE ' + conditions.slice(0, conditions.length).join(' AND ') : ''}`
     ).get(...params.slice(0, -2));
 
-    return ok(res, { broadcasts, total: total ? total.c : 0, limit, offset });
+    return ok(res, { broadcasts: fixTimestamps(broadcasts), total: total ? total.c : 0, limit, offset });
   } catch (e) {
     console.error('[broadcasts] GET error:', e);
     return fail(res, 'Internal server error', 500);
@@ -92,9 +94,60 @@ router.get('/running/list', (req, res) => {
        WHERE b.status IN ('pending', 'sending', 'paused')
        ORDER BY b.created_at DESC`
     ).all();
-    return ok(res, { broadcasts: running });
+    return ok(res, { broadcasts: fixTimestamps(running) });
   } catch (e) {
     console.error('[broadcasts] GET /running error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Get per-recipient message details for a broadcast ───────────────
+router.get('/:id/messages', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+    const status = req.query.status;
+
+    const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id);
+    if (!broadcast) {
+      return fail(res, 'Broadcast not found', 404);
+    }
+
+    if (req.user.role === 'agent' && broadcast.agent_id !== req.user.id) {
+      return fail(res, 'Access denied', 403);
+    }
+
+    let query = `
+      SELECT m.id, m.to_number, m.status, m.error, m.sent_at, m.created_at,
+             g.name as gateway_name, g.number as gateway_number, g.number2 as gateway_number2
+      FROM messages m
+      LEFT JOIN gateways g ON m.gateway_id = g.id
+      WHERE m.broadcast_id = ?
+    `;
+    const params = [req.params.id];
+
+    if (status && status !== 'all') {
+      query += ' AND m.status = ?';
+      params.push(status);
+    }
+
+    query += ' ORDER BY m.created_at ASC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const messages = db.prepare(query).all(...params);
+    const total = db.prepare(
+      `SELECT COUNT(*) as c FROM messages WHERE broadcast_id = ?${status && status !== 'all' ? ' AND status = ?' : ''}`
+    ).get(req.params.id, ...(status && status !== 'all' ? [status] : []));
+
+    return ok(res, {
+      messages: fixTimestamps(messages),
+      total: total ? total.c : 0,
+      limit,
+      offset,
+      broadcast: { id: broadcast.id, message: broadcast.message, total: broadcast.total },
+    });
+  } catch (e) {
+    console.error('[broadcasts] GET /:id/messages error:', e);
     return fail(res, 'Internal server error', 500);
   }
 });
@@ -126,7 +179,7 @@ router.get('/:id', (req, res) => {
 
     const messages = db.prepare('SELECT * FROM messages WHERE broadcast_id = ? ORDER BY created_at ASC').all(req.params.id);
 
-    return ok(res, { ...broadcast, messages });
+    return ok(res, { ...fixTimestamps(broadcast), messages: fixTimestamps(messages) });
   } catch (e) {
     console.error('[broadcasts] GET/:id error:', e);
     return fail(res, 'Internal server error', 500);
@@ -233,14 +286,18 @@ router.delete('/:id', (req, res) => {
       return fail(res, 'Access denied', 403);
     }
 
-    const cancelled = cancelBroadcast(req.params.id);
-    if (!cancelled) {
-      if (broadcast.status === 'pending' || broadcast.status === 'sending' || broadcast.status === 'paused') {
-        db.prepare(`UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?`).run(req.params.id);
-      }
+    cancelBroadcast(req.params.id);
+
+    // Always update DB — this is the authoritative cancel.
+    // The engine's in-memory cancel flag is advisory; the DB status
+    // is what the system checks for completion. This ensures cancel
+    // always works even if the engine's cancel handler is mid-batch.
+    if (broadcast.status === 'pending' || broadcast.status === 'sending' || broadcast.status === 'paused') {
+      db.prepare(`UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?`).run(req.params.id);
+      broadcast({ type: 'broadcast:complete', broadcastId: req.params.id, status: 'cancelled', sent: broadcast.sent || 0, failed: broadcast.failed || 0, total: broadcast.total || 0 });
     }
 
-    return ok(res, { success: true, cancelled });
+    return ok(res, { success: true });
   } catch (e) {
     console.error('[broadcasts] DELETE error:', e);
     return fail(res, 'Internal server error', 500);

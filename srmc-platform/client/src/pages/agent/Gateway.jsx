@@ -14,7 +14,7 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-const EMPTY_FORM = { name: '', url: '', token: '', sim_carrier: '', number: '' };
+const EMPTY_FORM = { name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' };
 
 // ── Inline gateway form (add or edit) ───────────────────────────────────────
 function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, saving, error }) {
@@ -96,20 +96,37 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, saving, error }) 
           </div>
         </div>
 
-        {/* Sender number — appears in send logs as the SENDER */}
+        {/* Sender number — SIM 1 */}
         <div style={{ marginBottom: 12 }}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 5 }}>
-            Sender number
+            SIM 1 number
           </label>
           <input
             className="input mono"
-            placeholder="e.g. +91XXXXXXXXXX (the SIM's own number)"
+            placeholder="e.g. +91XXXXXXXXXX (SIM 1's number)"
             value={form.number}
             onChange={e => set('number', e.target.value)}
             style={{ fontSize: 12 }}
           />
           <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
-            Shown as the sender in activity and the send logs. Pull gateways report this automatically.
+            Primary SIM sender number. Shown in activity and send logs.
+          </div>
+        </div>
+
+        {/* Sender number — SIM 2 */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 5 }}>
+            SIM 2 number
+          </label>
+          <input
+            className="input mono"
+            placeholder="e.g. +91XXXXXXXXXX (SIM 2's number)"
+            value={form.number2}
+            onChange={e => set('number2', e.target.value)}
+            style={{ fontSize: 12 }}
+          />
+          <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
+            Secondary SIM sender number for dual-SIM gateways.
           </div>
         </div>
 
@@ -151,10 +168,13 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, saving, error }) 
 }
 
 // ── Gateway card ─────────────────────────────────────────────────────────────
-function GatewayCard({ gw, onEdit, onDelete, onTest }) {
+function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [showToken, setShowToken] = useState(false);
+  const [testingSim1, setTestingSim1] = useState(false);
+  const [testingSim2, setTestingSim2] = useState(false);
+  const [simTestResult, setSimTestResult] = useState(null);
 
   async function handleTest() {
     setTesting(true);
@@ -166,6 +186,21 @@ function GatewayCard({ gw, onEdit, onDelete, onTest }) {
       setTestResult({ ok: false, msg: e.message || 'Unreachable' });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function handleTestSim(sim) {
+    if (sim === 'sim1') setTestingSim1(true);
+    else setTestingSim2(true);
+    setSimTestResult(null);
+    try {
+      const result = await onTestSim(gw, sim);
+      setSimTestResult({ sim, ok: !result.failed, msg: result.message });
+    } catch (e) {
+      setSimTestResult({ sim, ok: false, msg: e.message || 'Test failed' });
+    } finally {
+      if (sim === 'sim1') setTestingSim1(false);
+      else setTestingSim2(false);
     }
   }
 
@@ -201,6 +236,8 @@ function GatewayCard({ gw, onEdit, onDelete, onTest }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {[
           { label: 'SIM', value: gw.sim_carrier || '—' },
+          { label: 'SIM 1 #', value: gw.number || '—', mono: true },
+          { label: 'SIM 2 #', value: gw.number2 || '—', mono: true },
           { label: 'Last beat', value: timeAgo(gw.last_beat), mono: true },
           { label: 'Sent today', value: formatNumber(gw.sent_today), mono: true },
           { label: 'State', value: gw.active ? 'Active' : 'Disabled', color: gw.active ? 'var(--ok)' : 'var(--ink-3)' },
@@ -233,7 +270,7 @@ function GatewayCard({ gw, onEdit, onDelete, onTest }) {
       )}
 
       {/* Test result */}
-      {/* No-load warning */}
+      {/* No-load warning from send failures */}
       {gw.consecutive_fails >= 5 && (
         <div style={{
           padding: '7px 10px', borderRadius: 7, fontSize: 12,
@@ -250,6 +287,30 @@ function GatewayCard({ gw, onEdit, onDelete, onTest }) {
         </div>
       )}
 
+      {/* Delivery failure warning badge */}
+      {gw.delivery_fails >= 3 && (
+        <div style={{
+          padding: '7px 10px', borderRadius: 7, fontSize: 12,
+          background: 'linear-gradient(135deg, var(--err-bg), #fff4e5)',
+          border: '1.5px solid var(--warn)',
+          color: 'var(--warn)', display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>
+            <strong>{gw.delivery_fails} undelivered messages</strong> —{' '}
+            {gw.delivery_fails >= 10
+              ? 'Carrier is not delivering. SIM likely has no load!'
+              : gw.delivery_fails >= 5
+                ? 'Carrier delivery failing consistently. Check SIM load.'
+                : 'Carrier not confirming delivery. May indicate no load.'}
+          </span>
+        </div>
+      )}
+
+      {/* Connectivity test result */}
       {testResult && (
         <div style={{
           padding: '7px 10px', borderRadius: 7, fontSize: 12,
@@ -259,6 +320,20 @@ function GatewayCard({ gw, onEdit, onDelete, onTest }) {
           display: 'flex', alignItems: 'center', gap: 6,
         }}>
           {testResult.ok ? '✓' : '✗'} {testResult.msg}
+        </div>
+      )}
+
+      {/* SIM test result */}
+      {simTestResult && (
+        <div style={{
+          padding: '7px 10px', borderRadius: 7, fontSize: 12,
+          background: simTestResult.ok ? 'var(--ok-bg)' : 'var(--err-bg)',
+          border: `1px solid ${simTestResult.ok ? 'var(--ok-line)' : 'var(--err-line)'}`,
+          color: simTestResult.ok ? 'var(--ok)' : 'var(--err)',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          {simTestResult.ok ? '✓' : '✗'}
+          <span><strong>SIM {simTestResult.sim === 'sim2' ? '2' : '1'}:</strong> {simTestResult.msg}</span>
         </div>
       )}
 
@@ -276,6 +351,34 @@ function GatewayCard({ gw, onEdit, onDelete, onTest }) {
           onClick={() => onDelete(gw)}
         >
           Remove
+        </button>
+      </div>
+
+      {/* SIM test buttons */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          className="btn-ghost"
+          style={{
+            flex: 1, justifyContent: 'center',
+            borderColor: 'var(--ok-line)', color: 'var(--ok)',
+          }}
+          onClick={() => handleTestSim('sim1')}
+          disabled={testingSim1 || !gw.number}
+          title={!gw.number ? 'Set SIM 1 number first' : 'Send test SMS via SIM 1'}
+        >
+          {testingSim1 ? 'Sending…' : `📱 Test SIM 1`}
+        </button>
+        <button
+          className="btn-ghost"
+          style={{
+            flex: 1, justifyContent: 'center',
+            borderColor: 'var(--brand-1)', color: 'var(--brand-1)',
+          }}
+          onClick={() => handleTestSim('sim2')}
+          disabled={testingSim2 || !gw.number2}
+          title={!gw.number2 ? 'Set SIM 2 number first' : 'Send test SMS via SIM 2'}
+        >
+          {testingSim2 ? 'Sending…' : `📱 Test SIM 2`}
         </button>
       </div>
     </div>
@@ -319,7 +422,11 @@ export default function Gateway() {
     if (event.type === 'gateway:warning') {
       setGateways(prev => prev.map(g =>
         g.id === event.gatewayId
-          ? { ...g, consecutive_fails: event.consecutive_fails }
+          ? {
+              ...g,
+              consecutive_fails: event.consecutive_fails,
+              delivery_fails: event.delivery_fails ?? g.delivery_fails,
+            }
           : g
       ));
     }
@@ -371,6 +478,11 @@ export default function Gateway() {
       g.id === gw.id ? { ...g, status: gwData.status || g.status, last_beat: gwData.last_beat || g.last_beat } : g
     ));
     return gwData;
+  }
+
+  async function handleTestSim(gw, sim) {
+    const result = await api.post(`/gateways/${gw.id}/test-sim`, { sim });
+    return result;
   }
 
   const online  = gateways.filter(g => g.status === 'online').length;
@@ -525,6 +637,7 @@ export default function Gateway() {
               onEdit={openEdit}
               onDelete={handleDelete}
               onTest={handleTest}
+              onTestSim={handleTestSim}
             />
           ))}
         </div>

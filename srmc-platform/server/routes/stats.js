@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
+import { fixTimestamps } from '../fix-timestamps.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 import { getGlobalStats, getUserStats, getSendingStatus } from '../services/stats-service.js';
 
@@ -142,7 +143,7 @@ router.post('/report', (req, res) => {
 router.get('/remote-installations', authMiddleware, (req, res) => {
   try {
     const installations = db.prepare('SELECT * FROM remote_installations ORDER BY last_seen DESC').all();
-    return ok(res, { installations });
+    return ok(res, { installations: fixTimestamps(installations) });
   } catch (e) {
     console.error('[stats] remote-installations error:', e);
     return fail(res, 'Internal server error', 500);

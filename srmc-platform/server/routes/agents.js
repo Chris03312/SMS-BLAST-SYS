@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import db from '../db.js';
+import { fixTimestamps } from '../fix-timestamps.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 
 const router = Router();
@@ -26,7 +27,7 @@ router.get('/', (req, res) => {
       WHERE u.role = 'agent'
       ORDER BY u.created_at DESC
     `).all();
-    return ok(res, { agents });
+    return ok(res, { agents: fixTimestamps(agents) });
   } catch (e) {
     console.error('[agents] GET error:', e);
     return fail(res, 'Internal server error', 500);

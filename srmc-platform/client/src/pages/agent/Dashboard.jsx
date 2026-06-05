@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
@@ -6,6 +6,147 @@ import LiveBadge from '../../components/LiveBadge.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatTime } from '../../lib/format.js';
+
+// ── Broadcast Detail Modal ────────────────────────────────────────────────
+function BroadcastDetail({ broadcast, onClose }) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const limit = 50;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit, offset: page * limit });
+      if (filter !== 'all') params.set('status', filter);
+      const data = await api.get(`/broadcasts/${broadcast.id}/messages?${params}`);
+      setMessages(data.messages || []);
+      setTotal(data.total || 0);
+    } catch (_) {}
+    setLoading(false);
+  }, [broadcast.id, filter, page]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const pages = Math.ceil(total / limit);
+
+  function senderLabel(msg) {
+    // Show which sender number was used: SIM1, SIM2, or the number itself
+    if (msg.gateway_number && msg.gateway_number2) return `${msg.gateway_number} / ${msg.gateway_number2}`;
+    return msg.gateway_number || '—';
+  }
+
+  function statusColor(s) {
+    if (s === 'sent') return 'var(--ok)';
+    if (s === 'failed') return 'var(--err)';
+    return 'var(--ink-3)';
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000,
+      background: 'rgba(0,0,0,0.4)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 20,
+    }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        background: '#fff', borderRadius: 14,
+        width: '100%', maxWidth: 720, maxHeight: '90vh',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '16px 20px', borderBottom: '1px solid var(--line)',
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Broadcast Details</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
+              {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="seg" style={{ fontSize: 11 }}>
+              {['all', 'sent', 'failed'].map(s => (
+                <button key={s} className={filter === s ? 'on' : ''} onClick={() => { setFilter(s); setPage(0); }}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} style={{
+              width: 28, height: 28, padding: 0, border: 'none', borderRadius: 6,
+              background: 'var(--bg-soft)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--ink-3)', fontSize: 16, lineHeight: 1,
+            }}>×</button>
+          </div>
+        </div>
+
+        {/* Messages list */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
+          {loading && (
+            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
+          )}
+          {!loading && messages.length === 0 && (
+            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No messages found.</div>
+          )}
+          {!loading && messages.map((m, i) => (
+            <div key={m.id || i} style={{
+              display: 'grid', gridTemplateColumns: '1fr auto auto 1fr',
+              gap: 12, alignItems: 'center',
+              padding: '10px 0', borderBottom: '1px solid var(--line-soft)',
+              fontSize: 12,
+            }}>
+              {/* Recipient number */}
+              <div className="num" style={{ color: 'var(--ink-1)', fontWeight: 500, fontFamily: 'var(--mono)' }}>
+                {m.to_number}
+              </div>
+              {/* SIM / Sender */}
+              <div style={{ fontSize: 11, color: 'var(--ink-3)' }} title={senderLabel(m)}>
+                {m.gateway_number && m.gateway_number2
+                  ? <><span style={{ color: 'var(--brand-1)' }}>SIM1</span> / <span style={{ color: 'var(--info)' }}>SIM2</span></>
+                  : (m.gateway_number || '—')
+                }
+              </div>
+              {/* Status */}
+              <div style={{
+                fontSize: 11, fontWeight: 600, textAlign: 'center',
+                color: statusColor(m.status),
+                padding: '2px 8px', borderRadius: 4,
+                background: m.status === 'sent' ? 'var(--ok-bg)' : m.status === 'failed' ? 'var(--err-bg)' : 'transparent',
+              }}>
+                {m.status}
+              </div>
+              {/* Timestamp */}
+              <div style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
+                {m.sent_at ? formatTime(m.sent_at) : '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '12px 20px', borderTop: '1px solid var(--line)',
+          fontSize: 12, color: 'var(--ink-3)',
+        }}>
+          <span>{total} messages · {messages.filter(m => m.status === 'sent').length} sent · {messages.filter(m => m.status === 'failed').length} failed</span>
+          <div className="pager" style={{ margin: 0 }}>
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>‹</button>
+            {pages > 1 && Array.from({ length: Math.min(pages, 5) }, (_, i) => (
+              <button key={i} className={page === i ? 'on' : ''} onClick={() => setPage(i)}>{i + 1}</button>
+            ))}
+            <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}>›</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STATUSES = ['all', 'sending', 'paused', 'done', 'failed', 'cancelled'];
 
@@ -16,7 +157,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(0);
-  const [stats, setStats] = useState({ sent: 0, failed: 0, active: 0, paused: 0 });
+  const [stats, setStats] = useState({ sent: 0, failed: 0, delivered: 0, active: 0, paused: 0 });
   const limit = 20;
 
   async function loadBroadcasts() {
@@ -37,6 +178,7 @@ export default function Dashboard() {
       setStats({
         sent: list.reduce((s, b) => s + (b.sent || 0), 0),
         failed: list.reduce((s, b) => s + (b.failed || 0), 0),
+        delivered: list.reduce((s, b) => s + (b.delivered || 0), 0),
         active: list.filter(b => b.status === 'sending').length,
         paused: list.filter(b => b.status === 'paused').length,
       });
@@ -145,10 +287,16 @@ export default function Dashboard() {
     }
   }
 
+  const [detailBroadcast, setDetailBroadcast] = useState(null);
+
   const pages = Math.ceil(total / limit);
 
   return (
     <AgentShell>
+
+      {detailBroadcast && (
+        <BroadcastDetail broadcast={detailBroadcast} onClose={() => setDetailBroadcast(null)} />
+      )}
       <div className="page-head">
         <div>
           <div className="eyebrow">Overview</div>
@@ -170,11 +318,12 @@ export default function Dashboard() {
       </div>
 
       {/* Stats cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 20 }}>
         {[
           { label: 'Active', value: stats.active, color: 'var(--info)' },
           { label: 'Paused', value: stats.paused, color: 'var(--warn)' },
           { label: 'Total Sent', value: stats.sent.toLocaleString('en-PH'), color: 'var(--ok)' },
+          { label: 'Delivered', value: stats.delivered.toLocaleString('en-PH'), color: 'var(--info)' },
           { label: 'Total Failed', value: stats.failed.toLocaleString('en-PH'), color: stats.failed > 0 ? 'var(--err)' : 'var(--ink-3)' },
           { label: 'Broadcasts', value: total, color: 'var(--ink-1)' },
         ].map(s => (
@@ -239,6 +388,7 @@ export default function Dashboard() {
               <th>Recipients</th>
               <th style={{ minWidth: 180 }}>Progress</th>
               <th>Sent</th>
+              <th>Delivered</th>
               <th>Failed</th>
               <th>Status</th>
               <th style={{ minWidth: 160 }}>Actions</th>
@@ -246,12 +396,12 @@ export default function Dashboard() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '32px 18px' }}>
+              <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '32px 18px' }}>
                 Loading broadcasts...
               </td></tr>
             )}
             {!loading && broadcasts.length === 0 && (
-              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '40px 18px' }}>
+              <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '40px 18px' }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>
                   No broadcasts found
                 </div>
@@ -336,6 +486,11 @@ export default function Dashboard() {
                     {b.sent || 0}
                   </td>
 
+                  {/* Delivered */}
+                  <td className="num" style={{ fontSize: 13, color: 'var(--info)' }}>
+                    {b.delivered || 0}
+                  </td>
+
                   {/* Failed */}
                   <td className="num" style={{
                     fontSize: 13,
@@ -349,9 +504,28 @@ export default function Dashboard() {
                     <Pill status={b.status} label={statusLabel(b.status)} />
                   </td>
 
-                  {/* Actions — compact icon-only buttons */}
+                  {/* Actions — icon buttons + detail */}
                   <td>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
+                      {/* Detail icon — always visible */}
+                      <button
+                        onClick={() => setDetailBroadcast(b)}
+                        title="View details"
+                        style={{
+                          width: 28, height: 28, padding: 0,
+                          border: '1px solid var(--line)',
+                          borderRadius: 6, background: 'transparent',
+                          color: 'var(--ink-3)', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.12s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)'; e.currentTarget.style.color = 'var(--ink-1)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ink-3)'; }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 16 12 12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                      </button>
                       {isSending && (
                         <>
                           <button

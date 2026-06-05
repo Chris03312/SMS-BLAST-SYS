@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
 import db from '../db.js';
+import { fixTimestamps } from '../fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { broadcast } from '../ws.js';
 import { validateInboundToken } from '../services/gateway-service.js';
@@ -100,7 +101,7 @@ router.get('/inbound', authMiddleware, (req, res) => {
       `SELECT COUNT(*) as c FROM inbound${conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : ''}`
     ).get(...params.slice(0, -2));
 
-    return ok(res, { messages, total: total ? total.c : 0 });
+    return ok(res, { messages: fixTimestamps(messages), total: total ? total.c : 0 });
   } catch (e) {
     console.error('[inbound] GET error:', e);
     return fail(res, 'Internal server error', 500);

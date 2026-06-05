@@ -85,6 +85,59 @@ router.get('/gateway/outbound', (req, res) => {
 });
 
 // ── Report results for claimed messages ───────────────────────────────────
+// ── Delivery report from phone (carrier delivery status) ────────────────
+router.post('/gateway/delivery-report', (req, res) => {
+  const gatewayId = authGateway(req, res);
+  if (!gatewayId) return;
+
+  try {
+    const { message_id, to_number, status, error, sim_slot } = req.body;
+    if (!message_id || !status) {
+      return res.json({ success: false, error: 'Missing fields' });
+    }
+
+    const now = new Date().toISOString();
+    const gw = db.prepare('SELECT name FROM gateways WHERE id = ?').get(gatewayId);
+    const gwName = (gw && gw.name) || 'Gateway';
+
+    if (status === 'delivery_failed' || status === 'failed') {
+      // Carrier confirmed the message was NOT delivered (no load, etc.)
+      const errMsg = error || 'delivery_failed';
+      db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ? AND status != 'failed'").run(errMsg, message_id);
+      db.prepare('UPDATE gateways SET sent_today = GREATEST(0, sent_today - 1) WHERE id = ?').run(gatewayId);
+      trackGatewayResult(gatewayId, false, gwName, null);
+      // Increment delivery_fails counter
+      db.prepare('UPDATE gateways SET delivery_fails = delivery_fails + 1 WHERE id = ?').run(gatewayId);
+      const gw2 = db.prepare('SELECT delivery_fails FROM gateways WHERE id = ?').get(gatewayId);
+      const dfCount = gw2?.delivery_fails || 0;
+      logActivity(null, 'sms:delivery_failed',
+        `Delivery failed for ${message_id} → ${to_number} via ${gwName}: ${errMsg}`,
+        'warn');
+      broadcast({
+        type: 'gateway:warning',
+        gatewayId,
+        warning: 'delivery_failed',
+        delivery_fails: dfCount,
+        message_id,
+        message: `Delivery failed for message via ${gwName}: ${errMsg}`,
+      });
+    } else if (status === 'delivered') {
+      // Carrier confirmed delivery — mark as confirmed
+      db.prepare("UPDATE messages SET status = 'delivered' WHERE id = ?").run(message_id);
+      // Reset delivery_fails counter on successful delivery
+      db.prepare('UPDATE gateways SET delivery_fails = 0 WHERE id = ?').run(gatewayId);
+      logActivity(null, 'sms:delivered',
+        `Delivery confirmed for ${message_id} → ${to_number} via ${gwName}`,
+        'info');
+    }
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('[gateway-outbound] delivery-report error:', e);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 router.post('/gateway/outbound/ack', (req, res) => {
   const gatewayId = authGateway(req, res);
   if (!gatewayId) return;
@@ -104,19 +157,24 @@ router.post('/gateway/outbound/ack', (req, res) => {
       if (!msg) continue;
       const receiver = msg.to_number;
 
+      // Read which SIM the phone used (1 or 2), default to 1
+      const simSlot = parseInt(r.sim_slot) || 1;
+      const simLabel = simSlot === 2 ? 'SIM2' : 'SIM1';
+      const senderWithSim = `${sender} (${simLabel})`;
+
       if (r.status === 'sent') {
         db.prepare("UPDATE messages SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?").run(now, r.id);
         db.prepare('UPDATE gateways SET sent_today = sent_today + 1 WHERE id = ?').run(gatewayId);
         trackGatewayResult(gatewayId, true, gwName, msg.agent_id);
-        logActivity(msg.agent_id, 'sms:sent', `Sent from ${sender} to ${receiver} via ${gwName}`, 'info');
-        logSend({ name: gwName, sender, receiver, status: 'sent', time: now });
+        logActivity(msg.agent_id, 'sms:sent', `Sent from ${senderWithSim} to ${receiver} via ${gwName}`, 'info');
+        logSend({ name: gwName, sender: senderWithSim, receiver, status: 'sent', time: now });
       } else {
         const err = String(r.error || 'send failed').slice(0, 200);
         db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(err, r.id);
         db.prepare('UPDATE gateways SET sent_today = sent_today + 1 WHERE id = ?').run(gatewayId);
         trackGatewayResult(gatewayId, false, gwName, msg.agent_id);
-        logActivity(msg.agent_id, 'sms:failed', `Failed from ${sender} to ${receiver} via ${gwName}: ${err}`, 'error');
-        logSend({ name: gwName, sender, receiver, status: 'failed', time: now });
+        logActivity(msg.agent_id, 'sms:failed', `Failed from ${senderWithSim} to ${receiver} via ${gwName}: ${err}`, 'error');
+        logSend({ name: gwName, sender: senderWithSim, receiver, status: 'failed', time: now });
       }
       if (msg.broadcast_id) affected.add(msg.broadcast_id);
     }

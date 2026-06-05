@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
@@ -13,20 +13,46 @@ const FLAG_LABELS = {
   'needs-reply': 'Needs Reply',
 };
 
-const DELAY_OPTIONS = [
-  { label: '1s', value: 1000 },
-  { label: '2s', value: 2000 },
-  { label: '3s', value: 3000 },
-  { label: '4s', value: 4000 },
-  { label: '6s', value: 6000 },
-  { label: '8s', value: 8000 },
-  { label: '10s', value: 10000 },
-];
+function buildDelayOptions(turboDelay) {
+  return [
+    { label: '🚀 Turbo', value: turboDelay || 100 },
+    { label: '1s', value: 1000 },
+    { label: '2s', value: 2000 },
+    { label: '3s', value: 3000 },
+    { label: '4s', value: 4000 },
+    { label: '6s', value: 6000 },
+    { label: '8s', value: 8000 },
+    { label: '10s', value: 10000 },
+  ];
+}
+
+const STORAGE_KEY = 'srmc_compose_draft';
 
 function estimateTime(count, delay) {
   const secs = Math.ceil((count * delay) / 1000);
   if (secs < 60) return `~${secs}s`;
   return `~${Math.ceil(secs / 60)}m`;
+}
+
+function saveDraft(state) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (_) {}
+}
+
+function loadDraft() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch (_) {}
 }
 
 export default function BlastDashboard() {
@@ -37,13 +63,21 @@ export default function BlastDashboard() {
   const [activities, setActivities] = useState([]);
   const [inboundRecent, setInboundRecent] = useState([]);
   const [adminSettings, setAdminSettings] = useState({});
+  const [turboDelay, setTurboDelay] = useState(100);
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
 
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [selectedCampaign, setSelectedCampaign] = useState('');
-  const [message, setMessage] = useState('');
-  const [recipients, setRecipients] = useState('');
-  const [selectedGateways, setSelectedGateways] = useState([]);
-  const [distribution, setDistribution] = useState('round-robin'); // 'round-robin' | 'linear'
+  // Dynamic delay options using admin-configured turbo delay
+  const [delayOptions, setDelayOptions] = useState(() => buildDelayOptions(100));
+
+  // Restore draft from sessionStorage
+  const savedDraft = useRef(loadDraft());
+
+  const [selectedTemplate, setSelectedTemplate] = useState(savedDraft.current?.selectedTemplate ?? null);
+  const [selectedCampaign, setSelectedCampaign] = useState(savedDraft.current?.selectedCampaign ?? '');
+  const [message, setMessage] = useState(savedDraft.current?.message ?? '');
+  const [recipients, setRecipients] = useState(savedDraft.current?.recipients ?? '');
+  const [selectedGateways, setSelectedGateways] = useState(savedDraft.current?.selectedGateways ?? []);
+  const [distribution, setDistribution] = useState(savedDraft.current?.distribution ?? 'round-robin');
   const [delayMs, setDelayMs] = useState(6000);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -70,10 +104,14 @@ export default function BlastDashboard() {
       }
     }).catch(() => {});
 
-    // Load admin settings (delay default, time window, daily cap)
+    // Load admin settings (delay default, time window, daily cap, turbo delay)
     api.get('/settings').then(d => {
       setAdminSettings(d);
-      if (d.delay) setDelayMs(parseInt(d.delay));
+      const td = parseInt(d.turbo_delay) || 100;
+      setTurboDelay(td);
+      setDelayOptions(buildDelayOptions(td));
+      // Only set delay from settings if no saved draft
+      if (d.delay && !savedDraft.current) setDelayMs(parseInt(d.delay));
     }).catch(() => {});
 
     // Load stats
@@ -81,7 +119,30 @@ export default function BlastDashboard() {
       setStatsSent(d.sent_7d || 0);
       setStatsFailed(d.failed_7d || 0);
     }).catch(() => {});
+
+    setInitialDataLoaded(true);
   }, []);
+
+  // Restore delay from draft after settings are loaded
+  useEffect(() => {
+    if (initialDataLoaded && savedDraft.current?.delayMs) {
+      setDelayMs(savedDraft.current.delayMs);
+    }
+  }, [initialDataLoaded]);
+
+  // Save draft on every form state change
+  useEffect(() => {
+    if (!initialDataLoaded) return;
+    saveDraft({
+      selectedTemplate,
+      selectedCampaign,
+      message,
+      recipients,
+      selectedGateways,
+      distribution,
+      delayMs,
+    });
+  }, [selectedTemplate, selectedCampaign, message, recipients, selectedGateways, distribution, delayMs, initialDataLoaded]);
 
   useWS((event) => {
     if (event.type === 'broadcast:progress') {
@@ -111,6 +172,11 @@ export default function BlastDashboard() {
       setActivities(prev => [{ ...event, id: Date.now() }, ...prev].slice(0, 20));
     }
   });
+
+  // Rebuild delay options if turbo delay changes
+  useEffect(() => {
+    setDelayOptions(buildDelayOptions(turboDelay));
+  }, [turboDelay]);
 
   function handleTemplateSelect(t) {
     setSelectedTemplate(t);
@@ -146,8 +212,8 @@ export default function BlastDashboard() {
   const recipientList = parseRecipients(recipients);
   const charCount = message.length;
   const segments = Math.ceil(charCount / 160) || 1;
-  const costEst = (recipientList.length * 0.18).toFixed(2);
-  const isLowDelay = delayMs <= 2000;
+  const isTurbo = delayMs < 1000; // Turbo is the only option below 1000ms
+  const isLowDelay = delayMs <= 2000 && !isTurbo;
   const isLargeBatch = recipientList.length > 200;
 
   async function handleVerifyGateways() {
@@ -187,6 +253,8 @@ export default function BlastDashboard() {
       setStatsTotal(result.broadcast.total);
       setFailedMessages([]);
       setSending(false);
+      // Clear draft after successful send
+      clearDraft();
     } catch (e) {
       setError(e.message);
       setSending(false);
@@ -389,20 +457,19 @@ export default function BlastDashboard() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {gateways.map(g => {
                       const checked = selectedGateways.includes(g.id);
-                      const isInUse = g.in_use;
                       const statusColor = g.status === 'online' ? 'var(--ok)' : g.status === 'slow' ? 'var(--warn)' : 'var(--ink-4)';
                       return (
                         <div
                           key={g.id}
-                          onClick={() => !isInUse && toggleGateway(g.id)}
-                          title={isInUse ? 'Currently in use by an active broadcast' : g.name}
+                          onClick={() => toggleGateway(g.id)}
+                          title={g.name}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 10,
                             padding: '9px 12px', borderRadius: 8,
-                            cursor: isInUse ? 'not-allowed' : 'pointer',
-                            opacity: isInUse ? 0.55 : 1,
-                            border: `1.5px solid ${checked ? 'var(--ink-1)' : isInUse ? 'var(--line-soft)' : 'var(--line)'}`,
-                            background: checked ? 'var(--ink-1)' : isInUse ? 'var(--bg-soft)' : '#fff',
+                            cursor: 'pointer',
+                            opacity: 1,
+                            border: `1.5px solid ${checked ? 'var(--ink-1)' : 'var(--line)'}`,
+                            background: checked ? 'var(--ink-1)' : '#fff',
                             transition: 'all 0.12s',
                           }}
                         >
@@ -410,7 +477,7 @@ export default function BlastDashboard() {
                           <div style={{
                             width: 16, height: 16, borderRadius: 4, flexShrink: 0,
                             border: `2px solid ${checked ? '#fff' : 'var(--line)'}`,
-                            background: checked ? '#fff' : isInUse ? 'var(--bg)' : 'transparent',
+                            background: checked ? '#fff' : 'transparent',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>
                             {checked && (
@@ -420,22 +487,11 @@ export default function BlastDashboard() {
                             )}
                           </div>
                           {/* Name */}
-                          <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: checked ? '#fff' : isInUse ? 'var(--ink-3)' : 'var(--ink-1)' }}>
+                          <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: checked ? '#fff' : 'var(--ink-1)' }}>
                             {g.name}
                           </span>
-                          {/* In Use tag */}
-                          {isInUse && (
-                            <span style={{
-                              fontSize: 9, fontWeight: 600, textTransform: 'uppercase',
-                              letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 4,
-                              color: 'var(--info)', background: 'var(--info-bg)',
-                              border: '1px solid var(--info-line)',
-                            }}>
-                              Busy
-                            </span>
-                          )}
                           {/* SIM carrier */}
-                          {!isInUse && g.sim_carrier && (
+                          {g.sim_carrier && (
                             <span style={{ fontSize: 11, color: checked ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)' }}>
                               {g.sim_carrier}
                             </span>
@@ -443,7 +499,7 @@ export default function BlastDashboard() {
                           {/* Status dot */}
                           <span style={{
                             width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                            background: checked ? 'rgba(255,255,255,0.7)' : isInUse ? 'var(--ink-4)' : statusColor,
+                            background: checked ? 'rgba(255,255,255,0.7)' : statusColor,
                             boxShadow: g.status === 'online' && !checked ? '0 0 0 2px rgba(5,150,105,0.2)' : 'none',
                           }} />
                         </div>
@@ -516,7 +572,7 @@ export default function BlastDashboard() {
               <div style={{ marginBottom: 12 }}>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Send delay</label>
                 <div className="seg">
-                  {DELAY_OPTIONS.map(opt => (
+                  {delayOptions.map(opt => (
                     <button
                       key={opt.value}
                       type="button"
@@ -527,6 +583,20 @@ export default function BlastDashboard() {
                     </button>
                   ))}
                 </div>
+                {isTurbo && (
+                  <div style={{
+                    marginTop: 6, padding: '8px 12px',
+                    background: 'linear-gradient(135deg, #7c3aed, #db2777)',
+                    borderRadius: 8, fontSize: 11, color: '#fff',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <span style={{ fontSize: 16 }}>🚀</span>
+                    <div>
+                      <strong>TURBO MODE</strong> — sending at maximum speed! Messages are sent concurrently in batches.
+                      <div style={{ marginTop: 3, opacity: 0.8 }}>⚠️ May cause carrier throttling or SIM bans. Use responsibly.</div>
+                    </div>
+                  </div>
+                )}
                 {isLowDelay && (
                   <div style={{
                     marginTop: 6, padding: '6px 10px',
@@ -558,10 +628,22 @@ export default function BlastDashboard() {
               )}
 
               {/* Summary row */}
-              <div style={{ padding: '10px 14px', background: 'var(--bg-soft)', borderRadius: 8, marginBottom: 6, display: 'flex', gap: 20, fontSize: 12, color: 'var(--ink-2)' }}>
+              {/* Summary row */}
+              <div style={{
+                padding: '10px 14px',
+                background: isTurbo ? 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(219,39,119,0.08))' : 'var(--bg-soft)',
+                border: isTurbo ? '1px solid rgba(124,58,237,0.2)' : 'none',
+                borderRadius: 8, marginBottom: 6,
+                display: 'flex', gap: 20, fontSize: 12, color: 'var(--ink-2)',
+                alignItems: 'center',
+              }}>
                 <span>Recipients: <strong className="num">{recipientList.length}</strong></span>
-                <span>Est. time: <strong>{estimateTime(recipientList.length, delayMs)}</strong></span>
-                <span>Est. cost: <strong className="num">₹{costEst}</strong></span>
+                <span>Est. time: <strong>{isTurbo ? '⚡ Turbo' : estimateTime(recipientList.length, delayMs)}</strong></span>
+                {isTurbo && (
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#7c3aed', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Concurrent sending
+                  </span>
+                )}
               </div>
 
               {/* Admin limits info */}

@@ -1,6 +1,7 @@
 package com.flashsms.gateway;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.telephony.SmsManager;
 import android.util.Log;
@@ -33,26 +34,93 @@ public class FlashSmsSender {
     public static final int RESULT_OK            = 0;
     public static final int RESULT_ERROR_GENERIC = 1;
 
-    // ── Public entry point ───────────────────────────────────────────
+    // SharedPreferences keys for dual SIM
+    public static final String PREF_SIM1_SUB_ID = "sim1_subscription_id";
+    public static final String PREF_SIM2_SUB_ID = "sim2_subscription_id";
+    public static final String PREF_SIM1_CARRIER = "sim1_carrier";
+    public static final String PREF_SIM2_CARRIER = "sim2_carrier";
+    public static final String PREF_SIM_ALTERNATE_INDEX = "sim_alternate_index";
+    public static final String PREF_DUAL_SIM_ENABLED = "dual_sim_enabled";
+
+    // ── Public entry points ───────────────────────────────────────────
 
     /**
      * Send an SMS. If flash=true, attempts Class 0 (popup).
-     * Automatically falls back to regular SMS on any failure.
+     * Uses the default SIM (SIM 1) or configured single SIM.
      */
     public static int send(Context ctx, String toNumber, String message, boolean flash) {
         if (flash) {
-            return sendFlash(ctx, toNumber, message);
+            return sendFlash(ctx, toNumber, message, getDefaultSubId(ctx));
         } else {
-            return sendRegular(ctx, toNumber, message);
+            return sendRegular(ctx, toNumber, message, getDefaultSubId(ctx), null, null);
         }
+    }
+
+    /**
+     * Send an SMS with delivery tracking PendingIntents.
+     * Uses the default SIM (SIM 1) or configured single SIM.
+     */
+    public static int sendWithTracking(Context ctx, String toNumber, String message,
+                                        boolean flash,
+                                        android.app.PendingIntent sentIntent,
+                                        android.app.PendingIntent deliveryIntent) {
+        if (flash) {
+            return sendFlash(ctx, toNumber, message, getDefaultSubId(ctx));
+        } else {
+            return sendRegular(ctx, toNumber, message, getDefaultSubId(ctx), sentIntent, deliveryIntent);
+        }
+    }
+
+    /**
+     * Send an SMS via a specific subscription (SIM) ID.
+     */
+    public static int sendViaSubId(Context ctx, String toNumber, String message, boolean flash, int subId) {
+        if (flash) {
+            return sendFlash(ctx, toNumber, message, subId);
+        } else {
+            return sendRegular(ctx, toNumber, message, subId, null, null);
+        }
+    }
+
+    /**
+     * Automatically alternate between SIM 1 and SIM 2 for each call.
+     */
+    public static int sendAlternating(Context ctx, String toNumber, String message, boolean flash) {
+        int subId = getAlternatingSubId(ctx);
+        if (flash) {
+            return sendFlash(ctx, toNumber, message, subId);
+        } else {
+            return sendRegular(ctx, toNumber, message, subId);
+        }
+    }
+
+    /**
+     * Send two messages concurrently — one via SIM 1, one via SIM 2.
+     * Returns results array: [sim1Result, sim2Result]
+     */
+    public static int[] sendBothSims(Context ctx, String to1, String msg1, String to2, String msg2, boolean flash) {
+        final int[] results = new int[2];
+        final Thread t1 = new Thread(() -> {
+            int subId1 = getSim1SubId(ctx);
+            results[0] = flash ? sendFlash(ctx, to1, msg1, subId1) : sendRegular(ctx, to1, msg1, subId1);
+        });
+        final Thread t2 = new Thread(() -> {
+            int subId2 = getSim2SubId(ctx);
+            results[1] = flash ? sendFlash(ctx, to2, msg2, subId2) : sendRegular(ctx, to2, msg2, subId2);
+        });
+        t1.start();
+        t2.start();
+        try { t1.join(30000); } catch (InterruptedException e) { results[0] = RESULT_ERROR_GENERIC; }
+        try { t2.join(30000); } catch (InterruptedException e) { results[1] = RESULT_ERROR_GENERIC; }
+        return results;
     }
 
     // ── Flash SMS (Class 0 via hidden API + reflection) ──────────────
 
-    private static int sendFlash(Context ctx, String toNumber, String message) {
+    private static int sendFlash(Context ctx, String toNumber, String message, int subId) {
         try {
             byte[] pdu = buildPdu(toNumber, message);
-            SmsManager smsManager = getSmsManager(ctx);
+            SmsManager smsManager = getSmsManager(ctx, subId);
 
             Method sendRaw = SmsManager.class.getDeclaredMethod(
                     "sendRawPdu",
@@ -66,25 +134,27 @@ public class FlashSmsSender {
             // smsc=null uses SIM default, persistMessage=false keeps it out of inbox
             sendRaw.invoke(smsManager, null, pdu, null, null, false);
 
-            Log.d(TAG, "Flash SMS sent to " + toNumber);
+            Log.d(TAG, "Flash SMS sent to " + toNumber + " (subId=" + subId + ")");
             return RESULT_OK;
 
         } catch (Exception e) {
             Log.e(TAG, "Flash SMS failed, falling back to regular: " + e.getMessage());
-            return sendRegular(ctx, toNumber, message);
+            return sendRegular(ctx, toNumber, message, subId);
         }
     }
 
     // ── Regular SMS (Class 1) ────────────────────────────────────────
 
-    private static int sendRegular(Context ctx, String toNumber, String message) {
+    private static int sendRegular(Context ctx, String toNumber, String message, int subId,
+                                   android.app.PendingIntent sentIntent,
+                                   android.app.PendingIntent deliveryIntent) {
         try {
-            SmsManager smsManager = getSmsManager(ctx);
+            SmsManager smsManager = getSmsManager(ctx, subId);
             ArrayList<String> parts = smsManager.divideMessage(message);
 
             if (parts.size() == 1) {
                 // Single part — use sendTextMessage (not deprecated)
-                smsManager.sendTextMessage(toNumber, null, parts.get(0), null, null);
+                smsManager.sendTextMessage(toNumber, null, parts.get(0), sentIntent, deliveryIntent);
             } else {
                 // Multi-part — sendMultipartTextMessage is deprecated in API 31+
                 // Use reflection to call the non-deprecated internal version
@@ -100,7 +170,10 @@ public class FlashSmsSender {
                             String.class
                     );
                     sendMulti.setAccessible(true);
-                    sendMulti.invoke(smsManager, toNumber, null, parts, null, null, null, null);
+                    sendMulti.invoke(smsManager, toNumber, null, parts,
+                            sentIntent != null ? getList(sentIntent) : null,
+                            deliveryIntent != null ? getList(deliveryIntent) : null,
+                            null, null);
                 } catch (Exception ex) {
                     // Reflection fallback — call the deprecated version directly
                     // This is suppressed intentionally; no non-deprecated public API exists
@@ -108,27 +181,29 @@ public class FlashSmsSender {
                 }
             }
 
-            Log.d(TAG, "Regular SMS sent to " + toNumber);
+            Log.d(TAG, "Regular SMS sent to " + toNumber + " (subId=" + subId + ")");
             return RESULT_OK;
         } catch (Exception e) {
-            Log.e(TAG, "Regular SMS failed: " + e.getMessage());
+            Log.e(TAG, "Regular SMS failed: " + e.getMessage() + " (subId=" + subId + ")");
             return RESULT_ERROR_GENERIC;
         }
+    }
+
+    /** Helper to wrap a single PendingIntent into an ArrayList for the reflective multi-part call. */
+    private static ArrayList<android.app.PendingIntent> getList(android.app.PendingIntent pi) {
+        ArrayList<android.app.PendingIntent> list = new ArrayList<>(1);
+        list.add(pi);
+        return list;
     }
 
     // ── SmsManager factory ───────────────────────────────────────────
 
     /**
-     * Returns the SmsManager for the SIM selected in Settings.
-     * Reads 'sim_subscription_id' from SharedPreferences (saved when user picks a SIM).
-     * Falls back to system default if not set.
+     * Returns the SmsManager for a specific subscription ID.
+     * Falls back to system default if the subId is invalid.
      */
-    private static SmsManager getSmsManager(Context ctx) {
-        android.content.SharedPreferences prefs =
-                ctx.getSharedPreferences("settings", Context.MODE_PRIVATE);
-        int subId = prefs.getInt("sim_subscription_id", -1);
-
-        if (subId != -1) {
+    private static SmsManager getSmsManager(Context ctx, int subId) {
+        if (subId >= 0) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
                     return SmsManager.getSmsManagerForSubscriptionId(subId);
@@ -143,6 +218,53 @@ public class FlashSmsSender {
         } else {
             return SmsManager.getDefault();
         }
+    }
+
+    // ── SIM preference helpers ───────────────────────────────────────
+
+    private static SharedPreferences getPrefs(Context ctx) {
+        return ctx.getSharedPreferences("settings", Context.MODE_PRIVATE);
+    }
+
+    /** Get the default (first/subscription 0) SIM subId, or -1. */
+    public static int getDefaultSubId(Context ctx) {
+        int sim1 = getSim1SubId(ctx);
+        if (sim1 >= 0) return sim1;
+        return -1;
+    }
+
+    /** Get SIM 1 subscription ID from prefs. */
+    public static int getSim1SubId(Context ctx) {
+        return getPrefs(ctx).getInt(PREF_SIM1_SUB_ID, -1);
+    }
+
+    /** Get SIM 2 subscription ID from prefs. */
+    public static int getSim2SubId(Context ctx) {
+        return getPrefs(ctx).getInt(PREF_SIM2_SUB_ID, -1);
+    }
+
+    /** Check if dual SIM is enabled in prefs. */
+    public static boolean isDualSimEnabled(Context ctx) {
+        return getPrefs(ctx).getBoolean(PREF_DUAL_SIM_ENABLED, false)
+                && getSim2SubId(ctx) >= 0;
+    }
+
+    /**
+     * Get the next alternating subscription ID (round-robin).
+     * Every call returns the opposite SIM from the previous call.
+     */
+    public static int getAlternatingSubId(Context ctx) {
+        SharedPreferences prefs = getPrefs(ctx);
+        int sim1 = prefs.getInt(PREF_SIM1_SUB_ID, -1);
+        int sim2 = prefs.getInt(PREF_SIM2_SUB_ID, -1);
+
+        if (sim2 < 0) return sim1; // No SIM 2 configured
+        if (sim1 < 0) return sim2; // No SIM 1 configured
+
+        int idx = prefs.getInt(PREF_SIM_ALTERNATE_INDEX, 0);
+        int next = (idx % 2 == 0) ? sim1 : sim2;
+        prefs.edit().putInt(PREF_SIM_ALTERNATE_INDEX, idx + 1).apply();
+        return next;
     }
 
     // ── PDU Builder ──────────────────────────────────────────────────

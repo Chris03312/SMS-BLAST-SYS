@@ -120,7 +120,7 @@ export default function AgentShell({ children }) {
                 <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowNetInfo(false)} />
                 <div style={{
                   position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                  background: 'var(--card-bg)', border: '1px solid var(--line)',
+                  background: '#fff', border: '1px solid var(--line)',
                   borderRadius: 10, padding: 14, width: 260,
                   boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
                   fontSize: 12, lineHeight: 1.6,

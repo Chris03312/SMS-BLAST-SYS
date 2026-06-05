@@ -12,7 +12,7 @@
     <string name="hint_password">Enter your password</string>
     <string name="btn_sign_in">Sign In</string>
     <string name="label_ssl">256-bit SSL encrypted</string>
-    <string name="error_fields_required">User ID and password are required.</string>ing>
+    <string name="error_fields_required">User ID and password are required.</string>
     <string name="label_copyright">&#169; 2025 SRMC Global. All rights reserved.</string>
     <string name="label_user_id">USER ID</string>
     <string name="label_password">PASSWORD</string>
@@ -70,8 +70,13 @@
     <string name="label_api_key">API KEY  (long-press to regenerate)</string>
     <string name="label_api_key_placeholder">xxxxxxxxxxxxxxxxxxxx</string>
     <string name="label_default_sim">DEFAULT SIM  (tap to change)</string>
-    <string name="label_sim_slot">SIM Slot 1</string>
+    <string name="label_sim1_slot">SIM Slot 1</string>
+    <string name="label_sim2_slot">SIM Slot 2</string>
     <string name="label_sim_not_detected">not detected</string>
+    <string name="label_dual_sim_mode">DUAL SIM MODE (concurrent sending)</string>
+    <string name="label_dual_sim_enabled">&#9679; Dual SIM active — SIMs send in parallel</string>
+    <string name="label_dual_sim_disabled">&#9675; Single SIM mode — tap to enable dual SIM</string>
+    <string name="label_dual_sim_toggle_off">&#10003; Dual SIM on — tap to disable</string>
 
     <!-- Inbound Webhook -->
     <string name="label_inbound_webhook">INBOUND WEBHOOK</string>

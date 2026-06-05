@@ -115,124 +115,257 @@ export async function startBroadcast(broadcastId) {
   // so live changes take effect without a restart).
   function readConfig() {
     const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('window_start', 'window_end', 'daily_cap')").all();
-    const cfg = { window_start: '09:00', window_end: '20:00', daily_cap: 10000 };
+    const cfg = { window_start: '00:00', window_end: '23:59', daily_cap: 10000 };
     for (const r of rows) {
-      if (r.key === 'daily_cap') cfg.daily_cap = parseInt(r.value) || 10000;
-      else cfg[r.key] = r.value;
+      if (r.key === 'daily_cap') {
+        cfg.daily_cap = parseInt(r.value) || 10000;
+      } else {
+        // Ignore '00:00' or empty values — those mean the admin hasn't configured
+        // the window yet, so we fall back to the default (09:00–20:00).
+        cfg[r.key] = (r.value && r.value !== '00:00') ? r.value : cfg[r.key];
+      }
     }
     return cfg;
   }
 
   function nowHHMM() {
+    // Always use Philippines time (Asia/Manila, UTC+8) for sending window checks
     const d = new Date();
-    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    const phTime = d.toLocaleString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: false });
+    return phTime;
   }
 
   let config = readConfig();
 
-  for (const number of recipients) {
-    if (state.cancel) {
+  // ── Determine if turbo mode is active ─────────────────────────────
+  // Turbo mode: delay_ms <= 200ms, sends messages in concurrent batches.
+  // Only applies to PUSH gateways (server-side HTTP delivery). For PULL
+  // gateways (Android phones), messages are released to 'pending' faster.
+  // Read turbo batch size from settings (admin-configurable)
+  const turboBatchSetting = db.prepare("SELECT value FROM settings WHERE key = 'turbo_batch_size'").get();
+  const TURBO_BATCH = parseInt(turboBatchSetting?.value) || 5;
+
+  const isTurbo = broadcastRecord.delay_ms <= 200;
+
+  // Daily cap sent_today reset (hoisted so both turbo and normal paths use it)
+  const capTodayStr = new Date().toISOString().slice(0, 10);
+  const lastReset = db.prepare("SELECT value FROM settings WHERE key = 'sent_today_date'").get();
+  if (!lastReset || lastReset.value !== capTodayStr) {
+    db.prepare('UPDATE gateways SET sent_today = 0').run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sent_today_date', ?)").run(capTodayStr);
+  }
+
+  // ── Turbo: send in concurrent batches ─────────────────────────────
+  if (isTurbo) {
+    const pushGateways = Object.values(gatewayMap).filter(g => g.mode === 'push' && g.url);
+    const hasPushGateways = pushGateways.length > 0;
+    let i = 0;
+    let wasCancelled = false;
+
+    try {
+      while (i < recipients.length && !state.cancel) {
+        // Check pause
+        if (state.paused) {
+          db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
+          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
+          await new Promise((resolve) => { state._resume = resolve; });
+          db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
+          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+        }
+
+        // Time window check
+        while (true) {
+          config = readConfig();
+          const now = nowHHMM();
+          if (now >= config.window_start && now <= config.window_end) break;
+          if (state.cancel) break;
+          const phTimeDisplay = new Date().toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true });
+          logActivity(broadcastRecord.agent_id, 'broadcast:paused',
+            `Broadcast paused — outside sending window (${config.window_start}–${config.window_end}). Current time: ${phTimeDisplay}`,
+            'info', broadcastRecord.campaign_id);
+          await sleep(60000);
+        }
+        if (state.cancel) break;
+
+        // Daily cap check
+        while (true) {
+          config = readConfig();
+          const sentToday = db.prepare("SELECT COALESCE(SUM(sent_today), 0) AS c FROM gateways").get();
+          if (!sentToday || sentToday.c < config.daily_cap) break;
+          if (state.cancel) break;
+          await sleep(60000);
+        }
+        if (state.cancel) break;
+
+        // Build a batch of messages
+        const batch = [];
+        const batchSize = Math.min(TURBO_BATCH, recipients.length - i);
+        for (let j = 0; j < batchSize; j++) {
+          const num = recipients[i + j];
+          const msgRecord = db.prepare("SELECT * FROM messages WHERE broadcast_id = ? AND to_number = ? AND status IN ('queued', 'pending')")
+            .get(broadcastId, num);
+          if (!msgRecord) continue;
+          const gw = pushGateways.length > 0
+            ? pushGateways[j % pushGateways.length]
+            : (gatewayMap[msgRecord.gateway_id] || gateways[0]);
+          batch.push({ num, msgRecord, gateway: gw });
+        }
+        i += batchSize;
+
+        if (batch.length === 0) continue;
+
+        if (hasPushGateways) {
+          // ── PUSH turbo: send all in the batch concurrently ────────
+          const results = await Promise.allSettled(
+            batch.map(({ num, msgRecord, gateway }) =>
+              sendViaSingleGateway(gateway, num, broadcastRecord.message).then(result => ({ msgRecord, gateway, num, result }))
+            )
+          );
+
+          for (const r of results) {
+            if (r.status === 'fulfilled') {
+              const { msgRecord, gateway, num, result } = r.value;
+              const sender = resolveSender(gateway);
+              const senderLabel = gateway.number2 ? `${sender} (SIM1/SIM2)` : `${sender} (SIM1)`;
+              if (result.success) {
+                sent++;
+                db.prepare("UPDATE messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(msgRecord.id);
+                db.prepare('UPDATE gateways SET sent_today = sent_today + 1 WHERE id = ?').run(gateway.id);
+                trackGatewayResult(gateway.id, true, gateway.name, broadcastRecord.agent_id);
+                logActivity(broadcastRecord.agent_id, 'sms:sent', `Sent from ${senderLabel} to ${num} via ${gateway.name} [Turbo]`, 'info', broadcastRecord.campaign_id);
+                logSend({ name: gateway.name, sender: senderLabel, receiver: num, status: 'sent' });
+              } else {
+                failed++;
+                db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(result.error || 'Turbo send failed', msgRecord.id);
+                trackGatewayResult(gateway.id, false, gateway.name, broadcastRecord.agent_id);
+                logActivity(broadcastRecord.agent_id, 'sms:failed', `Failed from ${senderLabel} to ${num} via ${gateway.name} [Turbo]: ${result.error}`, 'error', broadcastRecord.campaign_id);
+                logSend({ name: gateway.name, sender: senderLabel, receiver: num, status: 'failed' });
+              }
+            } else {
+              failed++;
+            }
+          }
+        } else {
+          // ── PULL turbo: release messages to 'pending' faster ──────
+          // Do NOT increment sent here — the phone will ACK via outbound/ack.
+          for (const { num, msgRecord } of batch) {
+            db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
+            logActivity(broadcastRecord.agent_id, 'broadcast:queued', `Message queued for PULL ${num} [Turbo]`, 'info', broadcastRecord.campaign_id);
+          }
+        }
+
+        db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(sent, failed, broadcastId);
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+      }
+    } catch (e) {
+      console.error('[broadcast-engine] Turbo error:', e);
+      wasCancelled = true;
+    }
+
+    // ── Handle cancel or completion in turbo path ─────────────────
+    wasCancelled = wasCancelled || state.cancel;
+    if (wasCancelled) {
       db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now'), sent = ?, failed = ? WHERE id = ?")
         .run(sent, failed, broadcastId);
       broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total });
-      logActivity(broadcastRecord.agent_id, 'broadcast:cancel', `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent`, 'warn', broadcastRecord.campaign_id);
+      logActivity(broadcastRecord.agent_id, 'broadcast:cancel',
+        `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent [Turbo]`,
+        'warn', broadcastRecord.campaign_id);
       running.delete(broadcastId);
+      // Return early — skip the onMessageAcked completion below
+      onMessageAcked(broadcastId);
       return;
     }
-
-    // ── Time window check ────────────────────────────────────────────
-    // If outside the configured sending window, pause and wait until
-    // the window opens (checked every 60s).
-    while (true) {
-      config = readConfig();
-      const now = nowHHMM();
-      if (now >= config.window_start && now <= config.window_end) break;
-      if (state.cancel) break;
-      logActivity(broadcastRecord.agent_id, 'broadcast:paused',
-        `Broadcast paused — outside sending window (${config.window_start}–${config.window_end}). Current time: ${now}`,
-        'info', broadcastRecord.campaign_id);
-      await sleep(60000);
-    }
-    if (state.cancel) continue;
-
-    // ── Pause check ────────────────────────────────────────────────────
-    if (state.paused) {
-      db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
-      broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
-      // Wait until resumed
-      await new Promise((resolve) => {
-        state._resume = resolve;
-      });
-      db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
-      broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
-    }
-
-    // ── Daily cap check ───────────────────────────────────────────────
-    // Reset sent_today counters at the start of each new day so the daily
-    // cap refreshes automatically at midnight.
-    const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const lastReset = db.prepare("SELECT value FROM settings WHERE key = 'sent_today_date'").get();
-    if (!lastReset || lastReset.value !== todayStr) {
-      db.prepare('UPDATE gateways SET sent_today = 0').run();
-      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sent_today_date', ?)").run(todayStr);
-    }
-    // Sum sent_today across all gateways and compare to the configured cap.
-    while (true) {
-      config = readConfig();
-      const sentToday = db.prepare("SELECT COALESCE(SUM(sent_today), 0) AS c FROM gateways").get();
-      if (!sentToday || sentToday.c < config.daily_cap) break;
-      if (state.cancel) break;
-      logActivity(broadcastRecord.agent_id, 'broadcast:paused',
-        `Broadcast paused — daily cap of ${config.daily_cap} messages reached. Waiting for reset…`,
-        'warn', broadcastRecord.campaign_id);
-      await sleep(60000);
-    }
-    if (state.cancel) continue;
-
-    // Use the gateway pre-assigned to this message by the route.
-    // Messages inserted fresh (since the 'queued' default) start as 'queued'.
-    // Legacy messages from before the change may already be 'pending'.
-    const msgRecord = db.prepare("SELECT * FROM messages WHERE broadcast_id = ? AND to_number = ? AND status IN ('queued', 'pending')")
-      .get(broadcastId, number);
-    if (!msgRecord) continue;
-
-    // Resolve gateway: use the one assigned to the message, fall back to first available
-    const gateway = gatewayMap[msgRecord.gateway_id] || gateways[0];
-
-    // ── Pre-send delay ────────────────────────────────────────────────
-    // Wait the configured interval BEFORE dispatching each message so the
-    // pacing is "delay → send". Re-check cancel after waking so a cancel
-    // issued during the wait stops the broadcast before it sends.
-    await sleep(broadcastRecord.delay_ms);
-    if (state.cancel) continue;
-
-    if (gateway.mode === 'push' && gateway.url) {
-      // ── PUSH gateway: server sends SMS directly via HTTP ──────────
-      const { success, error: errorText } = await sendViaSingleGateway(gateway, number, broadcastRecord.message);
-      const sender = resolveSender(gateway);
-
-      if (success) {
-        sent++;
-        db.prepare("UPDATE messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(msgRecord.id);
-        db.prepare('UPDATE gateways SET sent_today = sent_today + 1 WHERE id = ?').run(gateway.id);
-        trackGatewayResult(gateway.id, true, gateway.name, broadcastRecord.agent_id);
-        logActivity(broadcastRecord.agent_id, 'sms:sent', `Sent from ${sender} to ${number} via ${gateway.name}`, 'info', broadcastRecord.campaign_id);
-        logSend({ name: gateway.name, sender, receiver: number, status: 'sent' });
-      } else {
-        failed++;
-        db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(errorText, msgRecord.id);
-        trackGatewayResult(gateway.id, false, gateway.name, broadcastRecord.agent_id);
-        logActivity(broadcastRecord.agent_id, 'sms:failed', `Failed from ${sender} to ${number} via ${gateway.name}: ${errorText}`, 'error', broadcastRecord.campaign_id);
-        logSend({ name: gateway.name, sender, receiver: number, status: 'failed' });
+  } else {
+    // ── Normal mode: one-at-a-time with delay ────────────────────────
+    for (const number of recipients) {
+      if (state.cancel) {
+        db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now'), sent = ?, failed = ? WHERE id = ?")
+          .run(sent, failed, broadcastId);
+        broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total });
+        logActivity(broadcastRecord.agent_id, 'broadcast:cancel', `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent`, 'warn', broadcastRecord.campaign_id);
+        running.delete(broadcastId);
+        return;
       }
 
-      db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(sent, failed, broadcastId);
-      broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
-    } else {
-      // ── PULL gateway (Android phone): release at the configured delay rate ──
-      // Change from 'queued' → 'pending' so the phone can claim it.
-      // The delay below paces how fast messages become available.
-      db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
+      // ── Time window check ────────────────────────────────────────────
+      while (true) {
+        config = readConfig();
+        const now = nowHHMM();
+        if (now >= config.window_start && now <= config.window_end) break;
+        if (state.cancel) break;
+        const phTimeDisplay = new Date().toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true });
+        logActivity(broadcastRecord.agent_id, 'broadcast:paused',
+          `Broadcast paused — outside sending window (${config.window_start}–${config.window_end}). Current time: ${phTimeDisplay}`,
+          'info', broadcastRecord.campaign_id);
+        await sleep(60000);
+      }
+      if (state.cancel) continue;
+
+      // ── Pause check ────────────────────────────────────────────────────
+      if (state.paused) {
+        db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
+        await new Promise((resolve) => { state._resume = resolve; });
+        db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+      }
+
+      // ── Daily cap check ───────────────────────────────────────────────
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const lastReset = db.prepare("SELECT value FROM settings WHERE key = 'sent_today_date'").get();
+      if (!lastReset || lastReset.value !== todayStr) {
+        db.prepare('UPDATE gateways SET sent_today = 0').run();
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sent_today_date', ?)").run(todayStr);
+      }
+      while (true) {
+        config = readConfig();
+        const sentToday = db.prepare("SELECT COALESCE(SUM(sent_today), 0) AS c FROM gateways").get();
+        if (!sentToday || sentToday.c < config.daily_cap) break;
+        if (state.cancel) break;
+        logActivity(broadcastRecord.agent_id, 'broadcast:paused',
+          `Broadcast paused — daily cap of ${config.daily_cap} messages reached. Waiting for reset…`,
+          'warn', broadcastRecord.campaign_id);
+        await sleep(60000);
+      }
+      if (state.cancel) continue;
+
+      const msgRecord = db.prepare("SELECT * FROM messages WHERE broadcast_id = ? AND to_number = ? AND status IN ('queued', 'pending')")
+        .get(broadcastId, number);
+      if (!msgRecord) continue;
+
+      const gateway = gatewayMap[msgRecord.gateway_id] || gateways[0];
+
+      // ── Pre-send delay ────────────────────────────────────────────────
+      await sleep(broadcastRecord.delay_ms);
+      if (state.cancel) continue;
+
+      if (gateway.mode === 'push' && gateway.url) {
+        const { success, error: errorText } = await sendViaSingleGateway(gateway, number, broadcastRecord.message);
+        const sender = resolveSender(gateway);
+        const senderLabel = gateway.number2 ? `${sender} (SIM1/SIM2)` : `${sender} (SIM1)`;
+
+        if (success) {
+          sent++;
+          db.prepare("UPDATE messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(msgRecord.id);
+          db.prepare('UPDATE gateways SET sent_today = sent_today + 1 WHERE id = ?').run(gateway.id);
+          trackGatewayResult(gateway.id, true, gateway.name, broadcastRecord.agent_id);
+          logActivity(broadcastRecord.agent_id, 'sms:sent', `Sent from ${senderLabel} to ${number} via ${gateway.name}`, 'info', broadcastRecord.campaign_id);
+          logSend({ name: gateway.name, sender: senderLabel, receiver: number, status: 'sent' });
+        } else {
+          failed++;
+          db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(errorText, msgRecord.id);
+          trackGatewayResult(gateway.id, false, gateway.name, broadcastRecord.agent_id);
+          logActivity(broadcastRecord.agent_id, 'sms:failed', `Failed from ${senderLabel} to ${number} via ${gateway.name}: ${errorText}`, 'error', broadcastRecord.campaign_id);
+          logSend({ name: gateway.name, sender: senderLabel, receiver: number, status: 'failed' });
+        }
+
+        db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(sent, failed, broadcastId);
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+      } else {
+        // ── PULL gateway: release at the configured delay rate ──
+        db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
+      }
     }
   }
 

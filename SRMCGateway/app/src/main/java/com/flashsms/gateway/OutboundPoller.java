@@ -1,8 +1,12 @@
 package com.flashsms.gateway;
 
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -18,6 +22,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * OutboundPoller — pull-based outbound sending.
@@ -44,6 +49,12 @@ public class OutboundPoller {
     /** Pause between individual sends so the SIM/carrier isn't flooded (ms). */
     private static final long SEND_GAP_MS = 1_200;
 
+    /** Unique request code counter for PendingIntents (per-process). */
+    private final AtomicInteger requestCodeSeq = new AtomicInteger(1000);
+    /** Dynamically registered receiver for sent/delivery intents. */
+    private SmsDeliveryReceiver deliveryReceiver;
+    private boolean receiverRegistered = false;
+
     private final Context         context;
     private final Handler         main    = new Handler(Looper.getMainLooper());
     private       ExecutorService executor;
@@ -67,6 +78,7 @@ public class OutboundPoller {
         if (running) return;
         running  = true;
         executor = Executors.newSingleThreadExecutor();
+        registerDeliveryReceiver();
         main.post(pollRunnable);
         Log.d(TAG, "Outbound poller started");
     }
@@ -74,8 +86,36 @@ public class OutboundPoller {
     public void stop() {
         running = false;
         main.removeCallbacks(pollRunnable);
+        unregisterDeliveryReceiver();
         if (executor != null) { executor.shutdownNow(); executor = null; }
         Log.d(TAG, "Outbound poller stopped");
+    }
+
+    private void registerDeliveryReceiver() {
+        if (receiverRegistered) return;
+        deliveryReceiver = new SmsDeliveryReceiver();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(SmsDeliveryReceiver.ACTION_SENT);
+        filter.addAction(SmsDeliveryReceiver.ACTION_DELIVERY);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(deliveryReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            context.registerReceiver(deliveryReceiver, filter);
+        }
+        receiverRegistered = true;
+        Log.d(TAG, "Delivery receiver registered");
+    }
+
+    private void unregisterDeliveryReceiver() {
+        if (!receiverRegistered || deliveryReceiver == null) return;
+        try {
+            context.unregisterReceiver(deliveryReceiver);
+        } catch (Exception e) {
+            Log.w(TAG, "Unregister receiver: " + e.getMessage());
+        }
+        deliveryReceiver = null;
+        receiverRegistered = false;
+        Log.d(TAG, "Delivery receiver unregistered");
     }
 
     // ── One poll cycle: claim → send → ack ────────────────────────────
@@ -111,8 +151,30 @@ public class OutboundPoller {
 
             String status = "sent";
             String error  = "";
+            int simSlot = 1; // Track which SIM was used (defaults to 1)
             try {
-                int rc = FlashSmsSender.send(context, to, msg, false);
+                // Create PendingIntents for delivery tracking.
+                // Using unique request codes per message so the receiver can
+                // correlate delivery reports back to the original message.
+                int reqCode = requestCodeSeq.incrementAndGet();
+
+                Intent sentIntent = new Intent(SmsDeliveryReceiver.ACTION_SENT);
+                sentIntent.putExtra("message_id", id);
+                sentIntent.putExtra("to_number", to);
+                sentIntent.putExtra("sim_slot", simSlot);
+
+                Intent deliveryIntent = new Intent(SmsDeliveryReceiver.ACTION_DELIVERY);
+                deliveryIntent.putExtra("message_id", id);
+                deliveryIntent.putExtra("to_number", to);
+                deliveryIntent.putExtra("sim_slot", simSlot);
+
+                int piFlags = PendingIntent.FLAG_UPDATE_CURRENT |
+                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+
+                PendingIntent sPi = PendingIntent.getBroadcast(context, reqCode, sentIntent, piFlags);
+                PendingIntent dPi = PendingIntent.getBroadcast(context, reqCode + 10000, deliveryIntent, piFlags);
+
+                int rc = FlashSmsSender.sendWithTracking(context, to, msg, false, sPi, dPi);
                 if (rc != FlashSmsSender.RESULT_OK) { status = "failed"; error = "SMS send error"; }
             } catch (Exception e) {
                 status = "failed";
@@ -123,6 +185,7 @@ public class OutboundPoller {
                 JSONObject r = new JSONObject();
                 r.put("id", id);
                 r.put("status", status);
+                r.put("sim_slot", simSlot);
                 if (!error.isEmpty()) r.put("error", error);
                 results.put(r);
             } catch (Exception ignored) {}

@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.flashsms.gateway.app-mergeDebugResources-29:/values-port/values-port.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\Chrxs0331\\.gradle\\caches\\transforms-3\\70150c7ef4356323ad2a9fcf21b9beb1\\transformed\\appcompat-1.6.1\\res\\values-port\\values-port.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "55",
+                        "endOffsets": "106"
+                    }
+                }
+            ]
+        }
+    ]
+}

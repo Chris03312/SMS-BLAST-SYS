@@ -11,7 +11,7 @@ export default function Numbers() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editGateway, setEditGateway] = useState(null);
-  const [form, setForm] = useState({ name: '', url: '', token: '', sim_carrier: '' });
+  const [form, setForm] = useState({ name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [testing, setTesting] = useState({});
@@ -44,14 +44,14 @@ export default function Numbers() {
 
   function openNew() {
     setEditGateway(null);
-    setForm({ name: '', url: 'http://192.168.3.', token: '', sim_carrier: '' });
+    setForm({ name: '', url: 'http://192.168.3.', token: '', sim_carrier: '', number: '', number2: '' });
     setError('');
     setShowModal(true);
   }
 
   function openEdit(g) {
     setEditGateway(g);
-    setForm({ name: g.name, url: g.url, token: g.token || '', sim_carrier: g.sim_carrier || '' });
+    setForm({ name: g.name, url: g.url, token: g.token || '', sim_carrier: g.sim_carrier || '', number: g.number || '', number2: g.number2 || '' });
     setError('');
     setShowModal(true);
   }
@@ -122,7 +122,8 @@ export default function Numbers() {
               <th>Gateway</th>
               <th>URL</th>
               <th>SIM Carrier</th>
-              <th>Number</th>
+              <th>SIM 1 #</th>
+              <th>SIM 2 #</th>
               <th>Status</th>
               <th>Last heartbeat</th>
               <th>Sent today</th>
@@ -131,8 +132,8 @@ export default function Numbers() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
-            {!loading && gateways.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No gateways configured.</td></tr>}
+            {loading && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
+            {!loading && gateways.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No gateways configured.</td></tr>}
             {gateways.map(g => (
               <tr key={g.id}>
                 <td>
@@ -142,6 +143,7 @@ export default function Numbers() {
                 <td className="num" style={{ fontSize: 12 }}>{g.url}</td>
                 <td style={{ fontSize: 13, color: 'var(--ink-2)' }}>{g.sim_carrier || '—'}</td>
                 <td className="num" style={{ fontSize: 12, color: 'var(--ink-2)' }}>{g.number || '—'}</td>
+                <td className="num" style={{ fontSize: 12, color: 'var(--ink-2)' }}>{g.number2 || '—'}</td>
               <td><Pill status={g.status} label={g.status} /></td>
               <td className="num" style={{ fontSize: 12, color: 'var(--ink-3)' }}>{formatBeat(g.last_beat)}</td>
               <td className="num">{g.sent_today || 0}</td>
@@ -194,6 +196,14 @@ export default function Numbers() {
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>SIM carrier</label>
                 <input className="input" value={form.sim_carrier} onChange={e => setForm(prev => ({ ...prev, sim_carrier: e.target.value }))} placeholder="e.g. Airtel, Jio, BSNL" />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>SIM 1 number</label>
+                <input className="input mono" value={form.number} onChange={e => setForm(prev => ({ ...prev, number: e.target.value }))} placeholder="e.g. +919700942849" style={{ fontSize: 12 }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>SIM 2 number</label>
+                <input className="input mono" value={form.number2} onChange={e => setForm(prev => ({ ...prev, number2: e.target.value }))} placeholder="e.g. +918800123456" style={{ fontSize: 12 }} />
               </div>
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

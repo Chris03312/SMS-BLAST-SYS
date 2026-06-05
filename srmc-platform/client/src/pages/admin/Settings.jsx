@@ -9,6 +9,7 @@ const SECTIONS = [
   { key: 'gateways',     label: 'SMS Gateways',    group: 'Messaging' },
   { key: 'sender-ids',   label: 'Sender IDs',      group: 'Messaging' },
   { key: 'webhooks',     label: 'Webhooks & API',  group: 'Security'  },
+  { key: 'central',      label: 'Central Server',  group: 'Security'  },
   { key: 'auth',         label: 'Authentication',  group: 'Security'  },
   { key: 'danger',       label: 'Danger Zone',     group: 'Advanced'  },
 ];
@@ -238,10 +239,10 @@ export default function Settings() {
               </Field>
               <FieldRow cols={3}>
                 <Field label="Window start">
-                  <input className="input mono" type="time" value={form.window_start || '09:00'} onChange={e => set('window_start', e.target.value)} style={{ fontSize: 12 }} />
+                  <input className="input mono" type="time" value={form.window_start || '00:00'} onChange={e => set('window_start', e.target.value)} style={{ fontSize: 12 }} />
                 </Field>
                 <Field label="Window end">
-                  <input className="input mono" type="time" value={form.window_end || '20:00'} onChange={e => set('window_end', e.target.value)} style={{ fontSize: 12 }} />
+                  <input className="input mono" type="time" value={form.window_end || '23:59'} onChange={e => set('window_end', e.target.value)} style={{ fontSize: 12 }} />
                 </Field>
                 <Field label="Daily cap (per agent)" help="Soft limit">
                   <div style={{ display: 'flex' }}>
@@ -253,6 +254,28 @@ export default function Settings() {
                   </div>
                 </Field>
               </FieldRow>
+              <Field label="Turbo mode delay" style={{ marginBottom: 18 }}>
+                <div style={{ display: 'flex' }}>
+                  <input className="input mono" type="number" min="0" max="1000" value={form.turbo_delay || 100} onChange={e => set('turbo_delay', e.target.value)}
+                    style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 120 }} />
+                  <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                    ms
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>Delay between message batches in Turbo mode. Lower = faster. 100ms default.</div>
+              </Field>
+
+              <Field label="Turbo batch size" style={{ marginBottom: 18 }}>
+                <div style={{ display: 'flex' }}>
+                  <input className="input mono" type="number" min="1" max="20" value={form.turbo_batch_size || 5} onChange={e => set('turbo_batch_size', e.target.value)}
+                    style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 120 }} />
+                  <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                    msgs/batch
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>How many messages to send concurrently in each Turbo batch. Higher = faster but more aggressive.</div>
+              </Field>
+
               <Field label="Max concurrent broadcasts" help="How many broadcasts can run at the same time. 0 = unlimited.">
                 <div style={{ display: 'flex' }}>
                   <input className="input mono" type="number" min="0" value={form.max_concurrent_broadcasts || 0} onChange={e => set('max_concurrent_broadcasts', e.target.value)}
@@ -476,6 +499,55 @@ export default function Settings() {
                   {settings.webhook_secret || '—'}
                 </div>
               </Field>
+            </SectionBlock>
+
+            <SectionDivider />
+
+            {/* ── Central Server ── */}
+            <SectionBlock sectionKey="central" label="Central Server" desc="Report stats to a central monitoring server so you can monitor this installation remotely." refs={sectionRefs}>
+              <Field
+                label="Central server URL"
+                help="Paste the URL of your central monitoring server (e.g. http://103.x.x.x:4000 or a cloudflare tunnel URL). Stats will be reported every 5 minutes."
+                style={{ marginBottom: 16 }}
+              >
+                <div style={{ display: 'flex' }}>
+                  <input
+                    className="input mono"
+                    value={form.central_server_url || ''}
+                    onChange={e => set('central_server_url', e.target.value)}
+                    placeholder="https://random-name.trycloudflare.com"
+                    style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none' }}
+                  />
+                  <span style={{
+                    padding: '0 12px', display: 'flex', alignItems: 'center',
+                    background: form.central_server_url ? 'var(--ok-bg)' : 'var(--bg-soft)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '0 8px 8px 0', fontSize: 11,
+                    color: form.central_server_url ? 'var(--ok)' : 'var(--ink-4)',
+                    whiteSpace: 'nowrap', fontWeight: 600,
+                  }}>
+                    {form.central_server_url ? 'Connected' : 'Not set'}
+                  </span>
+                </div>
+                {form.central_server_url && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                    Stats will auto-report every 5 minutes. Open{' '}
+                    <a href={form.central_server_url} target="_blank" rel="noopener noreferrer"
+                      style={{ color: 'var(--brand-1)', textDecoration: 'underline' }}>
+                      {form.central_server_url}
+                    </a>
+                    {' '}in your browser to view the dashboard.
+                  </div>
+                )}
+              </Field>
+              <div style={{
+                background: 'var(--bg-soft)', border: '1px solid var(--line-soft)',
+                borderRadius: 8, padding: '12px 16px', fontSize: 12,
+                color: 'var(--ink-3)', lineHeight: 1.6,
+              }}>
+                <strong style={{ color: 'var(--ink-1)' }}>How it works:</strong><br />
+                Run the central server on any VPS or remote PC, expose it with cloudflare tunnel (no ngrok account needed), then paste the URL here. Your desktop app will start reporting messages sent, gateways online, uptime, and system info every 5 minutes.
+              </div>
             </SectionBlock>
 
             <SectionDivider />

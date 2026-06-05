@@ -52,6 +52,15 @@ router.get('/', (req, res) => {
       `SELECT COUNT(*) as c FROM activity a ${conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''}`
     ).get(...params.slice(0, -2));
 
+    // Fix: SQLite datetime('now') returns UTC without timezone info.
+    // Append 'Z' so the client knows to treat it as UTC and convert to
+    // the viewer's local time (e.g., Asia/Manila) correctly.
+    for (const a of activities) {
+      if (a.created_at && !a.created_at.endsWith('Z')) {
+        a.created_at = a.created_at.replace(' ', 'T') + 'Z';
+      }
+    }
+
     return ok(res, { activities, total: total ? total.c : 0, limit, offset });
   } catch (e) {
     console.error('[activity] GET error:', e);

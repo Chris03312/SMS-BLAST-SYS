@@ -27,7 +27,7 @@ import java.nio.charset.StandardCharsets;
  *      If NGROK_WEBHOOK_URL is set on the server this is the ngrok URL
  *      (works over mobile data, from anywhere).
  *   2. Fallback: http://<serverIp>:<serverPort>/api/inbound
- *      (LAN only — only works when phone is on same WiFi as server).
+ *      (LAN only — only works when phone is on same Wi-Fi as server).
  *
  * AUTH: Bearer <inbound_token>  (returned by /api/auth/gateway/login and
  *       stored in SharedPreferences by LoginActivity).

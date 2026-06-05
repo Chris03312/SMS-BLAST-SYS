@@ -58,6 +58,7 @@ public class MainActivity extends AppCompatActivity {
 
     // Settings — gateway
     private TextView tvIpAddress, tvApiKey, tvSimSlot, tvSimCarrier;
+    private TextView tvSim2Slot, tvSim2Carrier, tvDualSimStatus;
     private EditText etPort;
 
     // Settings — SRMC server
@@ -150,10 +151,11 @@ public class MainActivity extends AppCompatActivity {
         if (key.isEmpty()) { key = generateApiKey(); prefs.edit().putString("api_key", key).apply(); }
         tvApiKey.setText(key);
 
-        tvSimSlot.setText(R.string.label_sim_slot);
+        tvSimSlot.setText(R.string.label_sim1_slot);
+        tvSim2Slot.setText(R.string.label_sim2_slot);
 
         listeners();
-        detectSim1();
+        detectSims();
         updateStatusUi();
         refreshLog();
         checkPermissions();
@@ -437,6 +439,13 @@ public class MainActivity extends AppCompatActivity {
         try {
             org.json.JSONObject body = new org.json.JSONObject();
             body.put("userId", userId);
+
+            // Include SIM carrier info from prefs
+            String sim1 = prefs.getString(FlashSmsSender.PREF_SIM1_CARRIER, "");
+            String sim2 = prefs.getString(FlashSmsSender.PREF_SIM2_CARRIER, "");
+            if (!sim1.isEmpty()) body.put("sim_carrier", sim1);
+            if (!sim2.isEmpty()) body.put("sim2_carrier", sim2);
+
             java.net.HttpURLConnection conn =
                     (java.net.HttpURLConnection) new java.net.URI(url).toURL().openConnection();
             conn.setRequestMethod("POST");
@@ -534,7 +543,10 @@ public class MainActivity extends AppCompatActivity {
         tvApiKey     = findViewById(R.id.tvApiKey);
         tvSimSlot    = findViewById(R.id.tvSimSlot);
         tvSimCarrier = findViewById(R.id.tvSimCarrier);
-        etPort       = findViewById(R.id.etPort);
+        tvSim2Slot    = findViewById(R.id.tvSim2Slot);
+        tvSim2Carrier = findViewById(R.id.tvSim2Carrier);
+        tvDualSimStatus = findViewById(R.id.tvDualSimStatus);
+        etPort        = findViewById(R.id.etPort);
 
         etSrmcIp       = findViewById(R.id.etSrmcIp);
         etSrmcPort     = findViewById(R.id.etSrmcPort);
@@ -636,6 +648,9 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnCheckServer.setOnClickListener(v -> checkSrmcServerNow());
+
+        // Dual SIM toggle
+        tvDualSimStatus.setOnClickListener(v -> toggleDualSim());
     }
 
     // ── Gateway toggle ────────────────────────────────────────────────
@@ -760,22 +775,94 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Toggle dual SIM mode on/off manually.
+     * Only works if both SIMs are detected (have stored subscription IDs).
+     */
+    private void toggleDualSim() {
+        int sim2 = FlashSmsSender.getSim2SubId(this);
+        if (sim2 < 0) {
+            android.widget.Toast.makeText(this,
+                    "SIM 2 not detected — can't enable dual SIM",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean currentlyEnabled = prefs.getBoolean(FlashSmsSender.PREF_DUAL_SIM_ENABLED, false);
+        boolean newState = !currentlyEnabled;
+        prefs.edit().putBoolean(FlashSmsSender.PREF_DUAL_SIM_ENABLED, newState).apply();
+
+        if (tvDualSimStatus != null) {
+            if (newState) {
+                tvDualSimStatus.setText(R.string.label_dual_sim_toggle_off);
+                tvDualSimStatus.setTextColor(0xFF4CAF50);
+            } else {
+                tvDualSimStatus.setText(R.string.label_dual_sim_disabled);
+                tvDualSimStatus.setTextColor(0xFF94A3B8);
+            }
+        }
+
+        android.widget.Toast.makeText(this,
+                newState ? "Dual SIM enabled — messages will be sent in parallel" : "Dual SIM disabled",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
     @SuppressLint("MissingPermission")
-    private void detectSim1() {
+    private void detectSims() {
         tvSimCarrier.setText(R.string.label_sim_not_detected);
+        tvSim2Carrier.setText(R.string.label_sim_not_detected);
+
+        // Clear stored subscription IDs by default
+        SharedPreferences.Editor edit = prefs.edit();
+        edit.remove(FlashSmsSender.PREF_SIM1_SUB_ID);
+        edit.remove(FlashSmsSender.PREF_SIM2_SUB_ID);
+        edit.remove(FlashSmsSender.PREF_SIM1_CARRIER);
+        edit.remove(FlashSmsSender.PREF_SIM2_CARRIER);
+
         try {
             SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
             if (sm == null) return;
             List<SubscriptionInfo> list = sm.getActiveSubscriptionInfoList();
             if (list == null) return;
+
+            boolean foundSim1 = false;
+            boolean foundSim2 = false;
+
             for (SubscriptionInfo info : list) {
-                if (info.getSimSlotIndex() == 0) {
-                    tvSimCarrier.setText(info.getCarrierName() == null
-                            ? getString(R.string.label_unknown)
-                            : info.getCarrierName().toString());
-                    return;
+                int slot = info.getSimSlotIndex();
+                String carrier = info.getCarrierName() == null
+                        ? getString(R.string.label_unknown)
+                        : info.getCarrierName().toString();
+                int subId = info.getSubscriptionId();
+
+                if (slot == 0) {
+                    tvSimCarrier.setText(carrier);
+                    edit.putInt(FlashSmsSender.PREF_SIM1_SUB_ID, subId);
+                    edit.putString(FlashSmsSender.PREF_SIM1_CARRIER, carrier);
+                    foundSim1 = true;
+                } else if (slot == 1) {
+                    tvSim2Carrier.setText(carrier);
+                    edit.putInt(FlashSmsSender.PREF_SIM2_SUB_ID, subId);
+                    edit.putString(FlashSmsSender.PREF_SIM2_CARRIER, carrier);
+                    foundSim2 = true;
                 }
             }
+
+            // Auto-enable dual SIM if both SIMs are detected
+            if (foundSim1 && foundSim2) {
+                edit.putBoolean(FlashSmsSender.PREF_DUAL_SIM_ENABLED, true);
+                if (tvDualSimStatus != null) {
+                    tvDualSimStatus.setText(R.string.label_dual_sim_toggle_off);
+                    tvDualSimStatus.setTextColor(0xFF4CAF50);
+                }
+            } else {
+                if (tvDualSimStatus != null) {
+                    tvDualSimStatus.setText(R.string.label_dual_sim_disabled);
+                    tvDualSimStatus.setTextColor(0xFF94A3B8);
+                }
+            }
+
+            edit.apply();
         } catch (Exception ignored) {}
     }
 
@@ -831,7 +918,7 @@ public class MainActivity extends AppCompatActivity {
                 receiverFlags);
 
         updateStatusUi();
-        detectSim1();
+        detectSims();
         refreshLog();
         if (GatewayService.isRunning) statsPoller.pollNow();
     }
