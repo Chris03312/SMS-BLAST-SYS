@@ -199,6 +199,13 @@ export async function startBroadcast(broadcastId) {
     // Resolve gateway: use the one assigned to the message, fall back to first available
     const gateway = gatewayMap[msgRecord.gateway_id] || gateways[0];
 
+    // ── Pre-send delay ────────────────────────────────────────────────
+    // Wait the configured interval BEFORE dispatching each message so the
+    // pacing is "delay → send". Re-check cancel after waking so a cancel
+    // issued during the wait stops the broadcast before it sends.
+    await sleep(broadcastRecord.delay_ms);
+    if (state.cancel) continue;
+
     if (gateway.mode === 'push' && gateway.url) {
       // ── PUSH gateway: server sends SMS directly via HTTP ──────────
       const { success, error: errorText } = await sendViaSingleGateway(gateway, number, broadcastRecord.message);
@@ -226,12 +233,6 @@ export async function startBroadcast(broadcastId) {
       // Change from 'queued' → 'pending' so the phone can claim it.
       // The delay below paces how fast messages become available.
       db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
-    }
-
-    // Apply delay between EVERY message (push AND pull) so the configured
-    // interval is respected regardless of gateway mode.
-    if (number !== recipients[recipients.length - 1]) {
-      await sleep(broadcastRecord.delay_ms);
     }
   }
 

@@ -57,23 +57,60 @@ public class LoginActivity extends AppCompatActivity {
             return;
         }
 
-        setContentView(R.layout.activity_login);
+        // Wrap setup so a layout-inflation or resource failure on older devices
+        // (Android 7/8) shows the actual error on screen instead of a blank crash.
+        try {
+            setContentView(R.layout.activity_login);
 
-        etUserId     = findViewById(R.id.etUserId);
-        etPassword   = findViewById(R.id.etPassword);
-        btnLogin     = findViewById(R.id.btnLogin);
-        btnSettings  = findViewById(R.id.btnSettings);
-        progressBar  = findViewById(R.id.progressBar);
-        tvError      = findViewById(R.id.tvError);
-        tvServerInfo = findViewById(R.id.tvServerInfo);
-        cardError    = findViewById(R.id.cardError);
+            etUserId     = findViewById(R.id.etUserId);
+            etPassword   = findViewById(R.id.etPassword);
+            btnLogin     = findViewById(R.id.btnLogin);
+            btnSettings  = findViewById(R.id.btnSettings);
+            progressBar  = findViewById(R.id.progressBar);
+            tvError      = findViewById(R.id.tvError);
+            tvServerInfo = findViewById(R.id.tvServerInfo);
+            cardError    = findViewById(R.id.cardError);
 
-        updateServerInfo();
+            updateServerInfo();
 
-        // Server URL & port now live behind the settings (gear) icon
-        btnSettings.setOnClickListener(v -> showServerSettingsDialog());
+            // Server URL & port now live behind the settings (gear) icon
+            btnSettings.setOnClickListener(v -> showServerSettingsDialog());
 
-        btnLogin.setOnClickListener(v -> attemptLogin());
+            btnLogin.setOnClickListener(v -> attemptLogin());
+        } catch (Throwable t) {
+            android.util.Log.e(TAG, "Fatal during login screen setup", t);
+            showFatalOnScreen(t);
+        }
+    }
+
+    /**
+     * Last-resort UI: render the stack trace into a scrollable text view so the
+     * operator can read/screenshot the exact failure on a device that crashes
+     * during normal layout inflation. Built entirely in code (no XML) so it can
+     * never hit the same inflation problem.
+     */
+    private void showFatalOnScreen(Throwable t) {
+        try {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            t.printStackTrace(new java.io.PrintWriter(sw));
+
+            android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+            android.widget.TextView tv = new android.widget.TextView(this);
+            int pad = (int) (16 * getResources().getDisplayMetrics().density);
+            tv.setPadding(pad, pad, pad, pad);
+            tv.setTextIsSelectable(true);
+            tv.setTextColor(0xFF000000);
+            tv.setText("SRMC Gateway failed to start on this device:\n\n"
+                    + "Android " + android.os.Build.VERSION.RELEASE
+                    + " (API " + android.os.Build.VERSION.SDK_INT + ")\n"
+                    + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + "\n\n"
+                    + sw);
+            scroll.addView(tv);
+            scroll.setBackgroundColor(0xFFFFFFFF);
+            setContentView(scroll);
+        } catch (Throwable ignored) {
+            // If even this fails, the global handler (App) has already saved the file.
+        }
     }
 
     // ── Server settings dialog ────────────────────────────────────────

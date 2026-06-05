@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- res/color/til_stroke.xml -->
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:color="#1A73C8" android:state_focused="true"/>
-    <item android:color="#94A3B8" android:state_hovered="true"/>
-    <item android:color="#E2E8F0" android:state_enabled="false"/>
-    <item android:color="#CBD5E1"/>
-</selector>
