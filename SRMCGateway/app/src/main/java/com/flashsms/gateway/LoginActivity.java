@@ -3,6 +3,7 @@ package com.flashsms.gateway;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.telephony.SubscriptionInfo;
@@ -232,7 +233,7 @@ public class LoginActivity extends AppCompatActivity {
                 runOnUiThread(() -> { setLoading(false); showError(getString(R.string.error_timeout)); });
             } catch (Exception e) {
                 android.util.Log.e(TAG, "Login error: " + e.getMessage(), e);
-                runOnUiThread(() -> { setLoading(false); showError(getString(R.string.error_cannot_reach_server, e.getMessage())); });
+                runOnUiThread(() -> { setLoading(false); showError(getString(R.string.error_cannot_reach_server)); });
             }
         });
     }
@@ -280,20 +281,24 @@ public class LoginActivity extends AppCompatActivity {
                 // Auto-report SIM info
                 String sim1Carrier = "";
                 String sim2Carrier = "";
-                try {
-                    SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
-                    if (sm != null) {
-                        java.util.List<SubscriptionInfo> list = sm.getActiveSubscriptionInfoList();
-                        if (list != null) {
-                            for (SubscriptionInfo info : list) {
-                                String carrier = info.getCarrierName() == null ? "" : info.getCarrierName().toString();
-                                int slot = info.getSimSlotIndex();
-                                if (slot == 0) sim1Carrier = carrier;
-                                else if (slot == 1) sim2Carrier = carrier;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                    try {
+                        SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+                        if (sm != null) {
+                            java.util.List<SubscriptionInfo> list = sm.getActiveSubscriptionInfoList();
+                            if (list != null) {
+                                for (SubscriptionInfo info : list) {
+                                    String carrier = info.getCarrierName() == null ? "" : info.getCarrierName().toString();
+                                    int slot = info.getSimSlotIndex();
+                                    if (slot == 0) sim1Carrier = carrier;
+                                    else if (slot == 1) sim2Carrier = carrier;
+                                }
                             }
                         }
-                    }
-                } catch (Exception ignored) {}
+                    } catch (SecurityException ignored) {
+                        // READ_PHONE_STATE permission not granted — SIM detection unavailable
+                    } catch (Exception ignored) {}
+                }
 
                 if (!sim1Carrier.isEmpty()) body.put("sim_carrier", sim1Carrier);
                 if (!sim2Carrier.isEmpty()) body.put("sim2_carrier", sim2Carrier);

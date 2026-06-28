@@ -29,7 +29,6 @@ public class GatewayService extends Service {
     public static final String ACTION_SERVER_OFFLINE  = "com.flashsms.SERVER_OFFLINE";
     public static final String ACTION_GATEWAY_STARTED = "com.flashsms.GATEWAY_STARTED";
 
-    private SmsHttpServer       server;
     private OutboundPoller      outboundPoller;
     private NotificationManager notificationManager;
     private PowerManager.WakeLock wakeLock;
@@ -81,14 +80,12 @@ public class GatewayService extends Service {
                 return;
             }
 
-            if (server == null) {
+            if (!isRunning) {
                 try {
-                    server    = new SmsHttpServer(getApplicationContext());
                     isRunning = true;
-                    int    port    = SmsHttpServer.getPort(getApplicationContext());
                     String srvAddr = ServerConfig.getBaseUrl(getApplicationContext());
-                    updateNotification("\u2713 Port " + port + "  |  Server: " + srvAddr);
-                    Log.d(TAG, "Gateway started \u2014 SRMC server OK @ " + srvAddr);
+                    updateNotification("\u2713 Connected to: " + srvAddr);
+                    Log.d(TAG, "Gateway started — SRMC server OK @ " + srvAddr);
 
                     // Pull-based outbound: poll the central server for queued
                     // messages and send them. Runs here (foreground service) so
@@ -98,7 +95,7 @@ public class GatewayService extends Service {
 
                     sendBroadcast(new Intent(ACTION_GATEWAY_STARTED));
                 } catch (Exception e) {
-                    Log.e(TAG, "Failed to start local server: " + e.getMessage(), e);
+                    Log.e(TAG, "Failed to start gateway: " + e.getMessage(), e);
                     isRunning = false;
                     updateNotification("\u26a0 Failed: " + e.getMessage());
                     stopSelf();
@@ -136,11 +133,7 @@ public class GatewayService extends Service {
             outboundPoller.stop();
             outboundPoller = null;
         }
-        if (server != null) {
-            server.stop();
-            server    = null;
-            isRunning = false;
-        }
+        isRunning = false;
         releaseWakeLock();
         super.onDestroy();
         Log.d(TAG, "Gateway stopped");
@@ -176,7 +169,7 @@ public class GatewayService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel ch = new NotificationChannel(
                 CHANNEL, "SMS Gateway", NotificationManager.IMPORTANCE_LOW);
-        ch.setDescription("SRMC Flash SMS Gateway service");
+        ch.setDescription("SRMC SMS Gateway service");
         ch.setShowBadge(false);
         notificationManager.createNotificationChannel(ch);
     }

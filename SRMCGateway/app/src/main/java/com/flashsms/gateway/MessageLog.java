@@ -26,15 +26,13 @@ public class MessageLog {
     public static class Entry {
         public String to;
         public String message;
-        public boolean flash;
         public String status;   // "ok" | "error"
         public String note;
         public String timestamp;
 
-        public Entry(String to, String message, boolean flash, String status, String note) {
+        public Entry(String to, String message, String status, String note) {
             this.to        = to;
             this.message   = message;
-            this.flash     = flash;
             this.status    = status;
             this.note      = note;
             this.timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())

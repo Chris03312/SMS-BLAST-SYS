@@ -1,0 +1,16 @@
+{
+  "name": "@srmc/web",
+  "version": "1.0.0",
+  "description": "SRMC Platform — Standalone Web Server (Docker)",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start:central": "node central-server/index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@srmc/server": "*"
+  }
+}

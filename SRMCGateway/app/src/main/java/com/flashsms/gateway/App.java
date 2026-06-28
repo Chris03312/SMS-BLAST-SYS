@@ -1,6 +1,6 @@
 package com.flashsms.gateway;
 
-import android.app.Application;
+import androidx.multidex.MultiDexApplication;
 import android.os.Build;
 import android.util.Log;
 
@@ -27,7 +27,7 @@ import java.util.Locale;
  * After saving, we still hand the exception to the platform's default handler so
  * the normal crash dialog / process kill behaviour is unchanged.
  */
-public class App extends Application {
+public class App extends MultiDexApplication {
 
     private static final String TAG  = "SRMCGateway";
     private static final String FILE = "last_crash.txt";

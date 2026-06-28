@@ -36,7 +36,7 @@ public class LogAdapter extends RecyclerView.Adapter<LogAdapter.ViewHolder> {
         MessageLog.Entry e = items.get(pos);
         h.tvTo.setText(e.to);
         h.tvMessage.setText(e.message);
-        h.tvMeta.setText((e.flash ? "⚡ Flash" : "✉ Regular") + "  ·  " + e.note);
+        h.tvMeta.setText(e.note);
         h.tvTime.setText(e.timestamp);
         h.tvStatus.setText(e.status.equals("ok") ? "✓" : "✗");
         h.tvStatus.setTextColor(e.status.equals("ok")

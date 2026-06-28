@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  SRMC Platform — Docker Compose
+#
+#  Runs one service:
+#    srmc-web — Main SMS broadcast platform (Express + React)
+#
+#  Build context must be the monorepo root (srmc-platform/).
+#  Usage:
+#    docker compose -f apps/web/docker-compose.yml up -d --build
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────
+  # Entry point for all traffic. Serves static files directly, proxies
+  # API / WebSocket to Express. Run ngrok pointing to this service:
+  #   ngrok http 8080
+  srmc-nginx:
+    image: nginx:alpine
+    container_name: srmc-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - srmc-web
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ── Main web server ──────────────────────────────────────────────────────
+  srmc-web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    container_name: srmc-web
+    restart: unless-stopped
+    expose:
+      - "${PORT:-3001}"
+    volumes:
+      - srmc-web-data:/data
+    environment:
+      - PORT=${PORT:-3001}
+      - SRMC_DATA_DIR=/data
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+      - NGROK_URL=${NGROK_URL:-}
+      - CENTRAL_SERVER_URL=${CENTRAL_SERVER_URL:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${PORT:-3001}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  srmc-web-data:
+    name: srmc-web-data

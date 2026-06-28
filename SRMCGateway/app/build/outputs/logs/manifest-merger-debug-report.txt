@@ -45,6 +45,7 @@ MERGED from [androidx.arch.core:core-runtime:2.2.0] C:\Users\Chrxs0331\.gradle\c
 MERGED from [androidx.documentfile:documentfile:1.0.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\505fbcd7f20a67cdbfcffb49ea4343a2\transformed\documentfile-1.0.0\AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.localbroadcastmanager:localbroadcastmanager:1.0.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\bb70dfcadb1b3babfcd321012a1f6f0e\transformed\localbroadcastmanager-1.0.0\AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.print:print:1.0.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\bc1fe0365c95955600d134aa88e878b6\transformed\print-1.0.0\AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.multidex:multidex:2.0.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\4d1ecf11dd7916e11fb01349ed54d7be\transformed\multidex-2.0.1\AndroidManifest.xml:17:1-22:12
 	package
 		INJECTED from C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml
 	android:versionName
@@ -298,6 +299,8 @@ MERGED from [androidx.localbroadcastmanager:localbroadcastmanager:1.0.0] C:\User
 MERGED from [androidx.localbroadcastmanager:localbroadcastmanager:1.0.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\bb70dfcadb1b3babfcd321012a1f6f0e\transformed\localbroadcastmanager-1.0.0\AndroidManifest.xml:20:5-44
 MERGED from [androidx.print:print:1.0.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\bc1fe0365c95955600d134aa88e878b6\transformed\print-1.0.0\AndroidManifest.xml:20:5-44
 MERGED from [androidx.print:print:1.0.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\bc1fe0365c95955600d134aa88e878b6\transformed\print-1.0.0\AndroidManifest.xml:20:5-44
+MERGED from [androidx.multidex:multidex:2.0.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\4d1ecf11dd7916e11fb01349ed54d7be\transformed\multidex-2.0.1\AndroidManifest.xml:20:5-43
+MERGED from [androidx.multidex:multidex:2.0.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\4d1ecf11dd7916e11fb01349ed54d7be\transformed\multidex-2.0.1\AndroidManifest.xml:20:5-43
 	android:targetSdkVersion
 		INJECTED from C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml
 	android:minSdkVersion

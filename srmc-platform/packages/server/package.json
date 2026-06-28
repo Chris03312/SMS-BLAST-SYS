@@ -1,0 +1,38 @@
+{
+  "name": "@srmc/server",
+  "version": "1.0.0",
+  "description": "SRMC Platform — shared Express server code",
+  "private": true,
+  "type": "module",
+  "main": "app.js",
+  "exports": {
+    ".": "./app.js",
+    "./app": "./app.js",
+    "./app.js": "./app.js",
+    "./db": "./db.js",
+    "./db.js": "./db.js",
+    "./secrets": "./secrets.js",
+    "./secrets.js": "./secrets.js",
+    "./ws": "./ws.js",
+    "./ws.js": "./ws.js",
+    "./ngrok-tunnel": "./ngrok-tunnel.js",
+    "./ngrok-tunnel.js": "./ngrok-tunnel.js",
+    "./stats-reporter": "./stats-reporter.js",
+    "./stats-reporter.js": "./stats-reporter.js",
+    "./gateway-poller": "./gateway-poller.js",
+    "./gateway-poller.js": "./gateway-poller.js",
+    "./*": "./*.js"
+  },
+  "dependencies": {
+    "@ngrok/ngrok": "^1.7.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.18.3",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2",
+    "sql.js": "^1.14.1",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  }
+}

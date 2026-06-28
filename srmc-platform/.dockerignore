@@ -1,0 +1,15 @@
+node_modules/
+apps/desktop/
+apps/*/node_modules/
+packages/*/node_modules/
+data/
+.git
+.gitignore
+*.md
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+nul

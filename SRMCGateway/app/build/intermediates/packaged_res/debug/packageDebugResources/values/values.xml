@@ -44,7 +44,7 @@
     <string name="dialog_regen_key_title">Regenerate API Key?</string>
     <string name="dialog_server_settings_subtitle">Set the SRMC server URL and port.</string>
     <string name="dialog_server_settings_title">Server Settings</string>
-    <string name="error_cannot_reach_server">Cannot reach server: %1$s\nVerify IP/Port in Settings.</string>
+    <string name="error_cannot_reach_server">Unable to connect to server. Make sure the server is running and the IP/Port in Settings are correct.</string>
     <string name="error_connection_refused">Connection refused. Check the server IP and port in Settings.</string>
     <string name="error_fields_required">User ID and password are required.</string>
     <string name="error_login_failed">Login failed. Check credentials.</string>

@@ -37,6 +37,8 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQ_PERMISSIONS = 100;
+    /** Default port for the embedded HTTP gateway server. */
+    private static final int GATEWAY_DEFAULT_PORT = 8088;
 
     // Tabs
     private LinearLayout btnTabDashboard, btnTabSettings;
@@ -141,7 +143,7 @@ public class MainActivity extends AppCompatActivity {
         setupUserHeader();
 
         tvIpAddress.setText(getLocalIp());
-        int savedPort = prefs.getInt("port", SmsHttpServer.DEFAULT_PORT);
+        int savedPort = prefs.getInt("port", GATEWAY_DEFAULT_PORT);
         etPort.setText(String.valueOf(savedPort));
 
         etSrmcIp.setText(ServerConfig.getIp(this));
@@ -441,8 +443,8 @@ public class MainActivity extends AppCompatActivity {
             body.put("userId", userId);
 
             // Include SIM carrier info from prefs
-            String sim1 = prefs.getString(FlashSmsSender.PREF_SIM1_CARRIER, "");
-            String sim2 = prefs.getString(FlashSmsSender.PREF_SIM2_CARRIER, "");
+            String sim1 = prefs.getString(SmsSender.PREF_SIM1_CARRIER, "");
+            String sim2 = prefs.getString(SmsSender.PREF_SIM2_CARRIER, "");
             if (!sim1.isEmpty()) body.put("sim_carrier", sim1);
             if (!sim2.isEmpty()) body.put("sim2_carrier", sim2);
 
@@ -695,7 +697,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateStatusUi() {
-        int port = prefs.getInt("port", SmsHttpServer.DEFAULT_PORT);
+        int port = prefs.getInt("port", GATEWAY_DEFAULT_PORT);
         if (GatewayService.isRunning) {
             tvStatus.setText(getString(R.string.msg_running_on_port, port));
             tvStatus.setTextColor(0xFF4CAF50);
@@ -725,8 +727,8 @@ public class MainActivity extends AppCompatActivity {
     private void savePort() {
         String val = etPort.getText().toString().trim();
         int port;
-        try { port = Integer.parseInt(val); } catch (Exception e) { port = SmsHttpServer.DEFAULT_PORT; }
-        if (port < 1024 || port > 65535) port = SmsHttpServer.DEFAULT_PORT;
+        try { port = Integer.parseInt(val); } catch (Exception e) { port = GATEWAY_DEFAULT_PORT; }
+        if (port < 1024 || port > 65535) port = GATEWAY_DEFAULT_PORT;
         prefs.edit().putInt("port", port).apply();
         etPort.setText(String.valueOf(port));
         updateStatusUi();
@@ -780,7 +782,7 @@ public class MainActivity extends AppCompatActivity {
      * Only works if both SIMs are detected (have stored subscription IDs).
      */
     private void toggleDualSim() {
-        int sim2 = FlashSmsSender.getSim2SubId(this);
+        int sim2 = SmsSender.getSim2SubId(this);
         if (sim2 < 0) {
             android.widget.Toast.makeText(this,
                     "SIM 2 not detected — can't enable dual SIM",
@@ -788,9 +790,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        boolean currentlyEnabled = prefs.getBoolean(FlashSmsSender.PREF_DUAL_SIM_ENABLED, false);
+        boolean currentlyEnabled = prefs.getBoolean(SmsSender.PREF_DUAL_SIM_ENABLED, false);
         boolean newState = !currentlyEnabled;
-        prefs.edit().putBoolean(FlashSmsSender.PREF_DUAL_SIM_ENABLED, newState).apply();
+        prefs.edit().putBoolean(SmsSender.PREF_DUAL_SIM_ENABLED, newState).apply();
 
         if (tvDualSimStatus != null) {
             if (newState) {
@@ -814,11 +816,12 @@ public class MainActivity extends AppCompatActivity {
 
         // Clear stored subscription IDs by default
         SharedPreferences.Editor edit = prefs.edit();
-        edit.remove(FlashSmsSender.PREF_SIM1_SUB_ID);
-        edit.remove(FlashSmsSender.PREF_SIM2_SUB_ID);
-        edit.remove(FlashSmsSender.PREF_SIM1_CARRIER);
-        edit.remove(FlashSmsSender.PREF_SIM2_CARRIER);
+        edit.remove(SmsSender.PREF_SIM1_SUB_ID);
+        edit.remove(SmsSender.PREF_SIM2_SUB_ID);
+        edit.remove(SmsSender.PREF_SIM1_CARRIER);
+        edit.remove(SmsSender.PREF_SIM2_CARRIER);
 
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
         try {
             SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
             if (sm == null) return;
@@ -837,20 +840,20 @@ public class MainActivity extends AppCompatActivity {
 
                 if (slot == 0) {
                     tvSimCarrier.setText(carrier);
-                    edit.putInt(FlashSmsSender.PREF_SIM1_SUB_ID, subId);
-                    edit.putString(FlashSmsSender.PREF_SIM1_CARRIER, carrier);
+                    edit.putInt(SmsSender.PREF_SIM1_SUB_ID, subId);
+                    edit.putString(SmsSender.PREF_SIM1_CARRIER, carrier);
                     foundSim1 = true;
                 } else if (slot == 1) {
                     tvSim2Carrier.setText(carrier);
-                    edit.putInt(FlashSmsSender.PREF_SIM2_SUB_ID, subId);
-                    edit.putString(FlashSmsSender.PREF_SIM2_CARRIER, carrier);
+                    edit.putInt(SmsSender.PREF_SIM2_SUB_ID, subId);
+                    edit.putString(SmsSender.PREF_SIM2_CARRIER, carrier);
                     foundSim2 = true;
                 }
             }
 
             // Auto-enable dual SIM if both SIMs are detected
             if (foundSim1 && foundSim2) {
-                edit.putBoolean(FlashSmsSender.PREF_DUAL_SIM_ENABLED, true);
+                edit.putBoolean(SmsSender.PREF_DUAL_SIM_ENABLED, true);
                 if (tvDualSimStatus != null) {
                     tvDualSimStatus.setText(R.string.label_dual_sim_toggle_off);
                     tvDualSimStatus.setTextColor(0xFF4CAF50);
@@ -863,7 +866,10 @@ public class MainActivity extends AppCompatActivity {
             }
 
             edit.apply();
+        } catch (SecurityException ignored) {
+            // READ_PHONE_STATE permission not granted — SIM detection unavailable
         } catch (Exception ignored) {}
+    }
     }
 
     // ── Permissions ───────────────────────────────────────────────────
@@ -956,7 +962,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String generateApiKey() {
-        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        String chars = "abcdefghijklmnopqrstuvwxyz0123456789";
         StringBuilder sb = new StringBuilder();
         java.util.Random r = new java.util.Random();
         for (int i = 0; i < 32; i++) sb.append(chars.charAt(r.nextInt(chars.length())));

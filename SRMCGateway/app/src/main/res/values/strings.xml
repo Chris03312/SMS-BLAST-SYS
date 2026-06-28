@@ -23,7 +23,7 @@
     <string name="error_login_failed">Login failed. Check credentials.</string>
     <string name="error_connection_refused">Connection refused. Check the server IP and port in Settings.</string>
     <string name="error_timeout">Connection timed out. Make sure the server is running.</string>
-    <string name="error_cannot_reach_server">Cannot reach server: %1$s\nVerify IP/Port in Settings.</string>
+    <string name="error_cannot_reach_server">Unable to connect to server. Make sure the server is running and the IP/Port in Settings are correct.</string>
 
     <!-- Login success -->
     <string name="toast_welcome">Welcome, %1$s!</string>

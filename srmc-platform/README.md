@@ -1,40 +1,72 @@
-# SRMC Platform — Desktop App
+# SRMC Platform — Monorepo
 
 SMS broadcast & gateway-management platform for SRMC Credit Collection Services.
-Ships as a self-contained **Electron desktop app** that embeds an Express server,
-a React UI, and a SQLite (sql.js / WASM) database — no separate Node.js or
-database install required on the target machine.
+This monorepo contains both a **desktop app** (Electron) and a **web server**
+(Docker-friendly), sharing the same Express backend and React frontend via
+npm workspaces.
 
 ## Architecture
 
 ```
-electron/main.js      Electron main process — embeds the server, system tray,
-                      single-instance lock, IPC, file logging
-server/               Express app (app.js) + routes/services/db
-  db.js               sql.js (WASM) DB; writes to the OS userData dir in prod
-  secrets.js          Resolves/auto-generates JWT & webhook secrets
-client/               React + Vite UI (built to client/dist, served by Express)
-central-server/       Optional separate monitoring server (receives stats)
+srmc-platform/
+├── packages/
+│   ├── server/          @srmc/server — shared Express server
+│   │   ├── app.js       Express app factory (middleware, routes, DB init)
+│   │   ├── db.js        sql.js (WASM) database wrapper
+│   │   ├── secrets.js   Auto-generates JWT & webhook secrets
+│   │   ├── routes/      API route handlers
+│   │   ├── services/    Business logic (gateway, stats, config)
+│   │   └── middleware/  Auth middleware
+│   └── client/          @srmc/client — shared React + Vite frontend
+│       ├── src/         React components, pages, context
+│       └── public/      Static assets & CSS
+├── apps/
+│   ├── desktop/         @srmc/desktop — Electron desktop app
+│   │   └── electron/    main.js (embeds server), preload.cjs
+│   └── web/             @srmc/web — standalone web server (Docker)
+│       ├── index.js     Entry point (starts server, WebSocket, tunnel)
+│       ├── Dockerfile   Multi-stage Docker build
+│       └── docker-compose.yml
+├── central-server/      Optional separate monitoring server
+├── data/                Runtime SQLite DB + secrets (gitignored)
+└── package.json         Root — npm workspaces config
 ```
 
-The renderer loads the UI from `http://localhost:<PORT>` (served by the embedded
+The renderer loads the UI from `http://localhost:<PORT>` (served by the Express
 server), so the app works identically in the browser and in Electron.
 
-## Develop
+## Develop (monorepo)
 
 ```bash
-npm run install:all      # install root + client deps
-npm run client:build     # build the React UI into client/dist
+# Install everything (one command — workspaces install all packages)
+npm install
 
-# Run the server standalone (UI at http://localhost:3001):
+# Build the React frontend (needed before first launch)
+npm run client:build
+
+# ▶️ Run as web server (http://localhost:3001):
 npm start
 
-# Or run the full desktop app (after client:build):
-npm run electron
+# ▶️ Run as desktop app (after client:build):
+npm run start:desktop
 ```
 
-For live UI development, run the Vite dev server (`npm run client`, port 5173)
-which proxies `/api` and `/ws` to the server on port 3001.
+For live UI development, run the Vite dev server separately:
+```bash
+npm run client:dev        # Runs Vite on port 5173, proxies /api to :3001
+```
+
+## Docker (web server)
+
+```bash
+# From the monorepo root:
+docker compose -f apps/web/docker-compose.yml up -d --build
+
+# Or set env vars via .env file:
+cp .env.example .env
+# Edit .env with your settings
+docker compose -f apps/web/docker-compose.yml up -d
+```
 
 ## Configuration
 
@@ -47,45 +79,39 @@ Copy `.env.example` → `.env`. All values are optional:
 | `WEBHOOK_SECRET`  | Inbound webhook secret. Leave blank → auto-generated.          |
 | `NGROK_AUTHTOKEN` | Auto-open an ngrok tunnel for the inbound-SMS webhook.         |
 | `NGROK_URL`       | Use a fixed public URL instead of auto-tunneling.              |
+| `ADMIN_PASSWORD`  | Set admin password on every launch (recommended for Docker).   |
+| `CENTRAL_SERVER_URL` | URL of the central monitoring server to report stats to.   |
 
-**Secrets:** if `JWT_SECRET`/`WEBHOOK_SECRET` are left as the placeholders, a
-strong random secret is generated on first run and persisted to
-`<userData>/secrets.json`, so no install ever runs on a known default key.
+**Secrets:** if `JWT_SECRET`/`WEBHOOK_SECRET` are left as placeholders, strong
+random secrets are generated on first run and persisted to `<dataDir>/secrets.json`.
 
-## Writable data (production)
+## Writable data
 
-When packaged, the app bundle is read-only. All writable state lives under the
-OS per-user data directory (`app.getPath('userData')`):
+All writable state is stored under the `data/` directory (or `SRMC_DATA_DIR`):
 
-- `srmc.db` — the SQLite database
+- `srmc.db` — SQLite database
 - `secrets.json` — generated secrets
-- `logs/main.log` — runtime log
+- `sent.log` / `failed.log` — SMS send logs
 
-Typical locations:
+For the **desktop app**, data goes to the OS user data dir:
 - Windows: `%APPDATA%\SRMC Platform`
 - macOS: `~/Library/Application Support/SRMC Platform`
 - Linux: `~/.config/SRMC Platform`
 
-## Build installers
+For the **web server** (Docker), mount a volume at `/data`.
+
+## Build desktop installer
 
 ```bash
-npm run electron:build       # current platform
+# From the monorepo root:
+npm run build:desktop
 ```
-
-Output lands in `dist-electron/` (Windows: NSIS installer; macOS: dmg; Linux:
-AppImage). The app icon is generated by `node electron/make-icon.mjs`
-(`electron/icon.png`); electron-builder converts it to platform formats.
-
-`sql.js` (WASM) and `@ngrok/ngrok` (native) are unpacked from the asar archive
-so they load correctly at runtime — see `build.asarUnpack` in `package.json`.
 
 ## Admin account (first run)
 
-On a fresh database the app seeds **one** admin account — no demo/agent logins.
+On a fresh database the app seeds **one** admin account.
 
-- Set `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env` to choose the credentials, **or**
-- leave `ADMIN_PASSWORD` blank and a strong random password is generated and written to
-  `<dataDir>/INITIAL_ADMIN.txt` (e.g. `%APPDATA%\srmc-platform\INITIAL_ADMIN.txt`).
+- Set `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env` to choose credentials, **or**
+- leave `ADMIN_PASSWORD` blank and a random password is written to `<dataDir>/INITIAL_ADMIN.txt`.
 
 Log in with those, change the password on the **Agents** page, then delete the file.
-Additional agent accounts are created from the admin UI.

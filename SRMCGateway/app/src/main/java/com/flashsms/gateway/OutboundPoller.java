@@ -7,6 +7,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
+
+import androidx.core.content.ContextCompat;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -55,6 +57,9 @@ public class OutboundPoller {
     private SmsDeliveryReceiver deliveryReceiver;
     private boolean receiverRegistered = false;
 
+    /** Track which SIM to use next when dual SIM is enabled (0=SIM1, 1=SIM2). */
+    private int simAlternateIndex = 0;
+
     private final Context         context;
     private final Handler         main    = new Handler(Looper.getMainLooper());
     private       ExecutorService executor;
@@ -97,11 +102,10 @@ public class OutboundPoller {
         IntentFilter filter = new IntentFilter();
         filter.addAction(SmsDeliveryReceiver.ACTION_SENT);
         filter.addAction(SmsDeliveryReceiver.ACTION_DELIVERY);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(deliveryReceiver, filter, Context.RECEIVER_EXPORTED);
-        } else {
-            context.registerReceiver(deliveryReceiver, filter);
-        }
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? ContextCompat.RECEIVER_EXPORTED
+                : 0;
+        ContextCompat.registerReceiver(context, deliveryReceiver, filter, flags);
         receiverRegistered = true;
         Log.d(TAG, "Delivery receiver registered");
     }
@@ -151,11 +155,27 @@ public class OutboundPoller {
 
             String status = "sent";
             String error  = "";
-            int simSlot = 1; // Track which SIM was used (defaults to 1)
+
+            // Determine which SIM slot to use
+            int simSlot;
+            int subId;
+            boolean dualSim = SmsSender.isDualSimEnabled(context);
+            if (dualSim) {
+                // Alternate between SIM 1 and SIM 2 round-robin
+                simAlternateIndex = 1 - simAlternateIndex;
+                if (simAlternateIndex == 0) {
+                    subId = SmsSender.getSim1SubId(context);
+                    simSlot = 1;
+                } else {
+                    subId = SmsSender.getSim2SubId(context);
+                    simSlot = 2;
+                }
+            } else {
+                subId = SmsSender.getSim1SubId(context);
+                simSlot = 1;
+            }
+
             try {
-                // Create PendingIntents for delivery tracking.
-                // Using unique request codes per message so the receiver can
-                // correlate delivery reports back to the original message.
                 int reqCode = requestCodeSeq.incrementAndGet();
 
                 Intent sentIntent = new Intent(SmsDeliveryReceiver.ACTION_SENT);
@@ -174,8 +194,13 @@ public class OutboundPoller {
                 PendingIntent sPi = PendingIntent.getBroadcast(context, reqCode, sentIntent, piFlags);
                 PendingIntent dPi = PendingIntent.getBroadcast(context, reqCode + 10000, deliveryIntent, piFlags);
 
-                int rc = FlashSmsSender.sendWithTracking(context, to, msg, false, sPi, dPi);
-                if (rc != FlashSmsSender.RESULT_OK) { status = "failed"; error = "SMS send error"; }
+                int rc;
+                if (dualSim && subId >= 0) {
+                    rc = SmsSender.sendViaSubIdWithTracking(context, to, msg, subId, sPi, dPi);
+                } else {
+                    rc = SmsSender.sendWithTracking(context, to, msg, sPi, dPi);
+                }
+                if (rc != SmsSender.RESULT_OK) { status = "failed"; error = "SMS send error"; }
             } catch (Exception e) {
                 status = "failed";
                 error  = e.getMessage() != null ? e.getMessage() : "send exception";
@@ -192,7 +217,7 @@ public class OutboundPoller {
 
             // Log on the phone UI.
             MessageLog.add(context, new MessageLog.Entry(
-                    to, msg, false, status.equals("sent") ? "ok" : "error",
+                    to, msg, status.equals("sent") ? "ok" : "error",
                     status.equals("sent") ? "Sent (pulled)" : ("Failed: " + error)));
             context.sendBroadcast(new Intent("com.flashsms.LOG_UPDATED"));
 
