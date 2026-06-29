@@ -45,8 +45,8 @@ import statsRoutes from './routes/stats.js';
 import activityRoutes from './routes/activity.js';
 import settingsRoutes from './routes/settings.js';
 
-export const PORT    = parseInt(process.env.PORT) || 3001;
-export const NGROK_URL       = process.env.NGROK_URL       || '';
+export const PORT = parseInt(process.env.PORT) || 3001;
+export const NGROK_URL = process.env.NGROK_URL || '';
 export const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || process.env.NGROK_TOKEN || '';
 
 
@@ -82,8 +82,8 @@ const clientDist = path.join(__dirname, '..', '..', 'packages', 'client', 'dist'
 app.use(express.static(clientDist));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
-  if (req.path.startsWith('/ws'))    return next();
-  if (req.path === '/health')        return next();
+  if (req.path.startsWith('/ws')) return next();
+  if (req.path === '/health') return next();
   res.sendFile(path.join(clientDist, 'index.html'));
 });
 
@@ -140,11 +140,11 @@ function primaryLanIp() {
     const finish = (ip) => { if (!done) { done = true; resolve(ip || null); } };
     try {
       const s = createSocket('udp4');
-      s.once('error', () => { try { s.close(); } catch {} finish(null); });
+      s.once('error', () => { try { s.close(); } catch { } finish(null); });
       s.connect(80, '8.8.8.8', () => {
         let ip = null;
-        try { ip = s.address().address; } catch {}
-        try { s.close(); } catch {}
+        try { ip = s.address().address; } catch { }
+        try { s.close(); } catch { }
         finish(ip);
       });
       setTimeout(() => finish(null), 600);
@@ -182,6 +182,8 @@ async function checkInternet() {
   }
 }
 
+let online;
+
 app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
   const tunnelStatus = getNgrokStatus();
   const addresses = listLanIps();
@@ -189,9 +191,11 @@ app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
   if (!primaryIp && addresses.length) primaryIp = addresses[0].ip;
   const hasNgrokConfig = !!NGROK_URL || !!NGROK_AUTHTOKEN;
 
+
   if (hasNgrokConfig) {
     online = await checkInternet();
   }
+
 
   return res.json({
     success: true,

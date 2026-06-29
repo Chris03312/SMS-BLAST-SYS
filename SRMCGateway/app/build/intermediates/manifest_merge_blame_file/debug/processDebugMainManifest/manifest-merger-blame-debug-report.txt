@@ -97,149 +97,148 @@
 56-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:37:9-54
 57        android:supportsRtl="true"
 57-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:39:9-35
-58        android:testOnly="true"
-59        android:theme="@style/Theme.SRMCGateway"
-59-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:41:9-49
-60        android:usesCleartextTraffic="true" >
-60-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:40:9-44
-61        <activity
-61-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:43:9-51:20
-62            android:name="com.flashsms.gateway.LoginActivity"
-62-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:44:13-42
-63            android:exported="true"
-63-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:45:13-36
-64            android:windowSoftInputMode="adjustResize" >
-64-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:46:13-55
-65            <intent-filter>
-65-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:47:13-50:29
-66                <action android:name="android.intent.action.MAIN" />
-66-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:48:17-68
-66-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:48:25-66
-67
-68                <category android:name="android.intent.category.LAUNCHER" />
-68-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:49:17-76
-68-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:49:27-74
-69            </intent-filter>
-70        </activity>
-71        <activity
-71-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:53:9-55:39
-72            android:name="com.flashsms.gateway.MainActivity"
-72-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:54:13-41
-73            android:exported="false" />
-73-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:55:13-37
-74
-75        <!--
-76            foregroundServiceType="dataSync" is REQUIRED on Android 14+ (API 34).
-77            On Android 9–13 the attribute is parsed but not enforced — no crash.
-78            GatewayService.startForeground() passes the matching type flag at runtime
-79            only when running on API 29+ so older devices use the 2-arg overload.
-80        -->
-81        <service
-81-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:63:9-67:55
-82            android:name="com.flashsms.gateway.GatewayService"
-82-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:64:13-43
-83            android:exported="false"
-83-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:65:13-37
-84            android:foregroundServiceType="dataSync"
-84-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:67:13-53
-85            android:stopWithTask="false" />
-85-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:66:13-41
-86
-87        <receiver
-87-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:69:9-75:20
-88            android:name="com.flashsms.gateway.BootReceiver"
-88-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:70:13-41
-89            android:exported="true" >
-89-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:71:13-36
-90            <intent-filter>
-90-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:72:13-74:29
-91                <action android:name="android.intent.action.BOOT_COMPLETED" />
-91-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:73:17-78
-91-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:73:25-76
-92            </intent-filter>
-93        </receiver>
-94        <receiver
-94-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:77:9-84:20
-95            android:name="com.flashsms.gateway.InboundSmsReceiver"
-95-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:78:13-47
-96            android:exported="true"
-96-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:79:13-36
-97            android:permission="android.permission.BROADCAST_SMS" >
-97-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:80:13-66
-98            <intent-filter android:priority="999" >
-98-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:81:13-83:29
-98-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:81:28-50
-99                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
-99-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:82:17-81
-99-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:82:25-79
-100            </intent-filter>
-101        </receiver>
-102
-103        <provider
-103-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:24:9-32:20
-104            android:name="androidx.startup.InitializationProvider"
-104-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:25:13-67
-105            android:authorities="com.flashsms.gateway.androidx-startup"
-105-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:26:13-68
-106            android:exported="false" >
-106-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:27:13-37
-107            <meta-data
-107-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:29:13-31:52
-108                android:name="androidx.emoji2.text.EmojiCompatInitializer"
-108-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:30:17-75
-109                android:value="androidx.startup" />
-109-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:31:17-49
-110            <meta-data
-110-->[androidx.lifecycle:lifecycle-process:2.6.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\970e203f413c268542220d51d3971598\transformed\jetified-lifecycle-process-2.6.1\AndroidManifest.xml:29:13-31:52
-111                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-111-->[androidx.lifecycle:lifecycle-process:2.6.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\970e203f413c268542220d51d3971598\transformed\jetified-lifecycle-process-2.6.1\AndroidManifest.xml:30:17-78
-112                android:value="androidx.startup" />
-112-->[androidx.lifecycle:lifecycle-process:2.6.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\970e203f413c268542220d51d3971598\transformed\jetified-lifecycle-process-2.6.1\AndroidManifest.xml:31:17-49
-113            <meta-data
-113-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:29:13-31:52
-114                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
-114-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:30:17-85
-115                android:value="androidx.startup" />
-115-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:31:17-49
-116        </provider>
-117
-118        <receiver
-118-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:34:9-52:20
-119            android:name="androidx.profileinstaller.ProfileInstallReceiver"
-119-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:35:13-76
-120            android:directBootAware="false"
-120-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:36:13-44
-121            android:enabled="true"
-121-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:37:13-35
-122            android:exported="true"
-122-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:38:13-36
-123            android:permission="android.permission.DUMP" >
-123-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:39:13-57
-124            <intent-filter>
-124-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:40:13-42:29
-125                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
-125-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:41:17-91
-125-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:41:25-88
-126            </intent-filter>
-127            <intent-filter>
-127-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:43:13-45:29
-128                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
-128-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:44:17-85
-128-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:44:25-82
-129            </intent-filter>
-130            <intent-filter>
-130-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:46:13-48:29
-131                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
-131-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:47:17-88
-131-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:47:25-85
-132            </intent-filter>
-133            <intent-filter>
-133-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:49:13-51:29
-134                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
-134-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:50:17-95
-134-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:50:25-92
-135            </intent-filter>
-136        </receiver>
-137    </application>
-138
-139</manifest>
+58        android:theme="@style/Theme.SRMCGateway"
+58-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:41:9-49
+59        android:usesCleartextTraffic="true" >
+59-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:40:9-44
+60        <activity
+60-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:43:9-51:20
+61            android:name="com.flashsms.gateway.LoginActivity"
+61-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:44:13-42
+62            android:exported="true"
+62-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:45:13-36
+63            android:windowSoftInputMode="adjustResize" >
+63-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:46:13-55
+64            <intent-filter>
+64-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:47:13-50:29
+65                <action android:name="android.intent.action.MAIN" />
+65-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:48:17-68
+65-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:48:25-66
+66
+67                <category android:name="android.intent.category.LAUNCHER" />
+67-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:49:17-76
+67-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:49:27-74
+68            </intent-filter>
+69        </activity>
+70        <activity
+70-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:53:9-55:39
+71            android:name="com.flashsms.gateway.MainActivity"
+71-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:54:13-41
+72            android:exported="false" />
+72-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:55:13-37
+73
+74        <!--
+75            foregroundServiceType="dataSync" is REQUIRED on Android 14+ (API 34).
+76            On Android 9–13 the attribute is parsed but not enforced — no crash.
+77            GatewayService.startForeground() passes the matching type flag at runtime
+78            only when running on API 29+ so older devices use the 2-arg overload.
+79        -->
+80        <service
+80-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:63:9-67:55
+81            android:name="com.flashsms.gateway.GatewayService"
+81-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:64:13-43
+82            android:exported="false"
+82-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:65:13-37
+83            android:foregroundServiceType="dataSync"
+83-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:67:13-53
+84            android:stopWithTask="false" />
+84-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:66:13-41
+85
+86        <receiver
+86-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:69:9-75:20
+87            android:name="com.flashsms.gateway.BootReceiver"
+87-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:70:13-41
+88            android:exported="true" >
+88-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:71:13-36
+89            <intent-filter>
+89-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:72:13-74:29
+90                <action android:name="android.intent.action.BOOT_COMPLETED" />
+90-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:73:17-78
+90-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:73:25-76
+91            </intent-filter>
+92        </receiver>
+93        <receiver
+93-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:77:9-84:20
+94            android:name="com.flashsms.gateway.InboundSmsReceiver"
+94-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:78:13-47
+95            android:exported="true"
+95-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:79:13-36
+96            android:permission="android.permission.BROADCAST_SMS" >
+96-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:80:13-66
+97            <intent-filter android:priority="999" >
+97-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:81:13-83:29
+97-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:81:28-50
+98                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+98-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:82:17-81
+98-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:82:25-79
+99            </intent-filter>
+100        </receiver>
+101
+102        <provider
+102-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:24:9-32:20
+103            android:name="androidx.startup.InitializationProvider"
+103-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:25:13-67
+104            android:authorities="com.flashsms.gateway.androidx-startup"
+104-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:26:13-68
+105            android:exported="false" >
+105-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:27:13-37
+106            <meta-data
+106-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:29:13-31:52
+107                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+107-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:30:17-75
+108                android:value="androidx.startup" />
+108-->[androidx.emoji2:emoji2:1.2.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\cc405e9f41b010e39965e970bcc62b6b\transformed\jetified-emoji2-1.2.0\AndroidManifest.xml:31:17-49
+109            <meta-data
+109-->[androidx.lifecycle:lifecycle-process:2.6.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\970e203f413c268542220d51d3971598\transformed\jetified-lifecycle-process-2.6.1\AndroidManifest.xml:29:13-31:52
+110                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+110-->[androidx.lifecycle:lifecycle-process:2.6.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\970e203f413c268542220d51d3971598\transformed\jetified-lifecycle-process-2.6.1\AndroidManifest.xml:30:17-78
+111                android:value="androidx.startup" />
+111-->[androidx.lifecycle:lifecycle-process:2.6.1] C:\Users\Chrxs0331\.gradle\caches\transforms-3\970e203f413c268542220d51d3971598\transformed\jetified-lifecycle-process-2.6.1\AndroidManifest.xml:31:17-49
+112            <meta-data
+112-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:29:13-31:52
+113                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+113-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:30:17-85
+114                android:value="androidx.startup" />
+114-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:31:17-49
+115        </provider>
+116
+117        <receiver
+117-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:34:9-52:20
+118            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+118-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:35:13-76
+119            android:directBootAware="false"
+119-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:36:13-44
+120            android:enabled="true"
+120-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:37:13-35
+121            android:exported="true"
+121-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:38:13-36
+122            android:permission="android.permission.DUMP" >
+122-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:39:13-57
+123            <intent-filter>
+123-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:40:13-42:29
+124                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+124-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:41:17-91
+124-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:41:25-88
+125            </intent-filter>
+126            <intent-filter>
+126-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:43:13-45:29
+127                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+127-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:44:17-85
+127-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:44:25-82
+128            </intent-filter>
+129            <intent-filter>
+129-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:46:13-48:29
+130                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+130-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:47:17-88
+130-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:47:25-85
+131            </intent-filter>
+132            <intent-filter>
+132-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:49:13-51:29
+133                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+133-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:50:17-95
+133-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\Chrxs0331\.gradle\caches\transforms-3\3a0182e5ca08a8d410c305ed5579e204\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:50:25-92
+134            </intent-filter>
+135        </receiver>
+136    </application>
+137
+138</manifest>
