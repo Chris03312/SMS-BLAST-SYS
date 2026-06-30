@@ -81,10 +81,10 @@ export default function AgentShell({ children }) {
       <div className="nav">
         <div className="nav-left">
           <div className="brand-mark">
-            <img src="/assets/LOGO.png" alt="SRMC" />
+            <img src="/assets/LOGO.svg" alt="SMS Platform" style={{ width: 32, height: 32 }} />
           </div>
           <div>
-            <div className="brand-title">SRMC</div>
+            <div className="brand-title">SMS Platform</div>
             <div className="brand-sub">Broadcast Console</div>
           </div>
         </div>

@@ -146,7 +146,7 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] C:\Users\Chrxs0331\.gradle\
 	android:allowBackup
 		ADDED from C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:35:9-35
 	android:theme
-		ADDED from C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:41:9-49
+		ADDED from C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:41:9-48
 	android:usesCleartextTraffic
 		ADDED from C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:40:9-44
 	android:name

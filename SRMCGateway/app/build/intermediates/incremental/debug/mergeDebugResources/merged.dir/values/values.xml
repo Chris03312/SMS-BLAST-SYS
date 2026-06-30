@@ -1987,7 +1987,7 @@
     <string name="abc_shareactionprovider_share_with_application">Share with <ns2:g example="Mail" id="application_name">%s</ns2:g></string>
     <string name="abc_toolbar_collapse_description">Collapse</string>
     <string name="androidx_startup" translatable="false">androidx.startup</string>
-    <string name="app_name">SRMC Gateway</string>
+    <string name="app_name">SMS Gateway</string>
     <string name="appbar_scrolling_view_behavior" translatable="false">com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior</string>
     <string name="bottom_sheet_behavior" translatable="false">com.google.android.material.bottomsheet.BottomSheetBehavior</string>
     <string description="A description of an accessibility action to collapse the bottom sheet [CHAR LIMIT=NONE]" name="bottomsheet_action_collapse">Collapse the bottom sheet</string>
@@ -2010,14 +2010,14 @@
     <string name="character_counter_pattern" translatable="false">%1$d/%2$d</string>
     <string name="clear_text_end_icon_content_description">Clear text</string>
     <string name="content_desc_error">Error</string>
-    <string name="content_desc_logo">SRMC Gateway Logo</string>
+    <string name="content_desc_logo">SMS Gateway Logo</string>
     <string name="content_desc_secure">Secure</string>
     <string name="content_desc_settings">Server settings</string>
     <string name="dialog_logout_message">Are you sure you want to log out?</string>
     <string name="dialog_logout_title">Logout</string>
     <string name="dialog_regen_key_message">The old key will stop working immediately.</string>
     <string name="dialog_regen_key_title">Regenerate API Key?</string>
-    <string name="dialog_server_settings_subtitle">Set the SRMC server URL and port.</string>
+    <string name="dialog_server_settings_subtitle">Set the server URL and port.</string>
     <string name="dialog_server_settings_title">Server Settings</string>
     <string description="Screen reader announcement for when a checkbox is on error. [CHAR LIMIT=NONE]" name="error_a11y_label">
     Error: invalid
@@ -2027,7 +2027,7 @@
     <string name="error_fields_required">User ID and password are required.</string>
     <string name="error_icon_content_description">Error</string>
     <string name="error_login_failed">Login failed. Check credentials.</string>
-    <string name="error_no_server_configured">No server configured. Go to Settings and enter the SRMC Server IP.</string>
+    <string name="error_no_server_configured">No server configured. Go to Settings and enter the server IP.</string>
     <string name="error_timeout">Connection timed out. Make sure the server is running.</string>
     <string name="exposed_dropdown_menu_content_description">Show dropdown menu</string>
     <string name="fab_transformation_scrim_behavior" translatable="false">com.google.android.material.transformation.FabTransformationScrimBehavior</string>
@@ -2050,7 +2050,7 @@
     <string name="label_api_key">API KEY  (long-press to regenerate)</string>
     <string name="label_api_key_placeholder">xxxxxxxxxxxxxxxxxxxx</string>
     <string name="label_blast_status">BLAST STATUS</string>
-    <string name="label_copyright">© 2025 SRMC Global. All rights reserved.</string>
+    <string name="label_copyright">© 2025 SMS Platform. All rights reserved.</string>
     <string name="label_default_sim">DEFAULT SIM  (tap to change)</string>
     <string name="label_default_value">—</string>
     <string name="label_device_ip">DEVICE IP</string>
@@ -2081,7 +2081,7 @@
     <string name="label_sim2_slot">SIM Slot 2</string>
     <string name="label_sim_not_detected">not detected</string>
     <string name="label_sms_gateway">SMS GATEWAY</string>
-    <string name="label_srmc_sms_server">SRMC SMS SERVER</string>
+    <string name="label_srmc_sms_server">SMS SERVER</string>
     <string name="label_ssl">256-bit SSL encrypted</string>
     <string name="label_start_gateway_to_sync">Start gateway to sync</string>
     <string name="label_status_stopped">◯  Stopped</string>
@@ -2133,7 +2133,7 @@
     <string description="Suffix for time in 12-hour standard, after noon. [CHAR_LIMIT=2]" name="material_timepicker_pm">PM</string>
     <string description="Title for the dialog with a time picker. [CHAR_LIMIT=32]" name="material_timepicker_select_time">Select time</string>
     <string name="material_timepicker_text_input_mode_description">Switch to text input mode for the time input.</string>
-    <string name="msg_banner_template">⚠  %1$s\n→ Go to Settings and verify the SRMC Server IP / Port.</string>
+    <string name="msg_banner_template">⚠  %1$s\n→ Go to Settings and verify the server IP / Port.</string>
     <string name="msg_checking">Checking…</string>
     <string name="msg_checking_server">⟹ Checking server…</string>
     <string name="msg_gateway_stopped">Gateway stopped</string>
@@ -6439,18 +6439,18 @@
     <style name="TextAppearance.MaterialComponents.Tooltip" parent="TextAppearance.MaterialComponents.Body2">
     <item name="android:textColor">?attr/colorOnPrimary</item>
   </style>
-    <style name="TextAppearance.SRMCGateway.FieldLabel" parent="TextAppearance.MaterialComponents.Caption">
+    <style name="TextAppearance.SMSGateway.FieldLabel" parent="TextAppearance.MaterialComponents.Caption">
         <item name="android:textSize">11sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:letterSpacing">0.12</item>
         <item name="android:textColor">@color/text_label</item>
     </style>
-    <style name="TextAppearance.SRMCGateway.Heading" parent="TextAppearance.MaterialComponents.Headline6">
+    <style name="TextAppearance.SMSGateway.Heading" parent="TextAppearance.MaterialComponents.Headline6">
         <item name="android:textSize">18sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:textColor">@color/text_primary</item>
     </style>
-    <style name="TextAppearance.SRMCGateway.Subtitle" parent="TextAppearance.MaterialComponents.Body2">
+    <style name="TextAppearance.SMSGateway.Subtitle" parent="TextAppearance.MaterialComponents.Body2">
         <item name="android:textSize">13sp</item>
         <item name="android:textColor">@color/text_secondary</item>
     </style>
@@ -6648,7 +6648,7 @@
     <item name="windowActionBar">false</item>
     <item name="windowNoTitle">true</item>
   </style>
-    <style name="Theme.SRMCGateway" parent="Theme.MaterialComponents.Light.NoActionBar">
+    <style name="Theme.SMSGateway" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryVariant">@color/primary_dark</item>
         <item name="colorOnPrimary">#FFFFFF</item>

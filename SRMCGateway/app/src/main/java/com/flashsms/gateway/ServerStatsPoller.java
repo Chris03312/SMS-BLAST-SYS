@@ -15,7 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Polls the SRMC SMS Server for live dashboard data.
+ * Polls the SMS server for live dashboard data.
  *
  * Global endpoints (admin-level):
  *   GET /api/admin/stats  → { totalSent, totalFailed, totalQueued, totalUsers }

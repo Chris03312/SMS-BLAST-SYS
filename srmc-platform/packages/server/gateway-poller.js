@@ -107,9 +107,14 @@ export function startPoller() {
   console.log('[poller] Gateway poller started');
 }
 
-export async function checkGatewayNow(gatewayId) {
-  const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(gatewayId);
+export async function checkGatewayNow(gatewayId, overrideToken) {
+  let gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(gatewayId);
   if (!gateway) return null;
+  // If an override token is provided, use it instead of the DB-stored one.
+  // This lets the frontend test with a newly typed token before saving.
+  if (overrideToken !== undefined) {
+    gateway = { ...gateway, token: overrideToken };
+  }
   await checkGateway(gateway);
   return db.prepare('SELECT * FROM gateways WHERE id = ?').get(gatewayId);
 }

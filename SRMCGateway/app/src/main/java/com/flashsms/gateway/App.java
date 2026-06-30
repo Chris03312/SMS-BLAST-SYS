@@ -29,7 +29,7 @@ import java.util.Locale;
  */
 public class App extends MultiDexApplication {
 
-    private static final String TAG  = "SRMCGateway";
+    private static final String TAG  = "SMSGateway";
     private static final String FILE = "last_crash.txt";
 
     @Override
@@ -54,7 +54,7 @@ public class App extends MultiDexApplication {
         StringWriter sw = new StringWriter();
         PrintWriter  pw = new PrintWriter(sw);
 
-        pw.println("SRMC Gateway — crash report");
+        pw.println("SMS Gateway — crash report");
         pw.println("Time     : " + new SimpleDateFormat(
                 "yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()));
         pw.println("Device   : " + Build.MANUFACTURER + " " + Build.MODEL);

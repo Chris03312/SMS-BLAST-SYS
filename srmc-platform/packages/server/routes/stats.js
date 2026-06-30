@@ -139,6 +139,7 @@ router.get('/historical', authMiddleware, adminOnly, (req, res) => {
         g.id   AS gateway_id,
         g.name AS gateway_name,
         g.number,
+        g.number2,
         COUNT(CASE WHEN m.status = 'sent'   THEN 1 END) AS sent,
         COUNT(CASE WHEN m.status = 'failed' THEN 1 END) AS failed
       FROM messages m

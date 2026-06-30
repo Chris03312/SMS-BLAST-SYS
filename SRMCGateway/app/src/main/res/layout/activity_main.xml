@@ -549,7 +549,7 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- SRMC SMS SERVER section -->
+                <!-- SMS SERVER section -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

@@ -30,7 +30,7 @@ export function gatewayLogin(userId) {
   // For simplicity, we do a direct hash comparison. The caller handles bcrypt.
   // This function just looks up the user and generates the token.
   const inboundToken = jwt.sign(
-    { gatewayId: userId, type: 'gateway', role: user.role },
+    { gatewayId: String(user.id), type: 'gateway', role: user.role },
     JWT_SECRET,
     { expiresIn: INBOUND_TOKEN_EXPIRY }
   );

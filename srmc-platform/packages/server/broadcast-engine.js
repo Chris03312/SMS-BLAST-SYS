@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import fetch from 'node-fetch';
 import db from './db.js';
 import { broadcast } from './ws.js';
 
@@ -116,7 +117,8 @@ export async function startBroadcast(broadcastId) {
     const tz = getTimezone();
     const d = new Date();
     const time = d.toLocaleString('en-PH', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
-    return time;
+    // Fix: some locales return "24:xx" for midnight (00:xx-00:xx)
+    return time.replace(/^24:/, '00:');
   }
 
   let config = readConfig();
@@ -218,11 +220,38 @@ export async function startBroadcast(broadcastId) {
 
         if (batch.length === 0) continue;
 
-        // ── PULL turbo: release messages to 'pending' ──────────────
-        // The phone will pick them up on its next poll and ACK via outbound/ack.
-        for (const { num, msgRecord } of batch) {
-          db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
-          logActivity(broadcastRecord.agent_id, 'broadcast:queued', `Message queued for ${num} [Turbo]`, 'info', broadcastRecord.campaign_id);
+        // ── Release messages: PUSH goes directly, PULL goes to 'pending' ─
+        for (const { num, msgRecord, gateway } of batch) {
+          const isPush = gateway && gateway.url && gateway.mode !== 'pull';
+
+          if (isPush) {
+            // PUSH gateway — POST directly to the phone's HTTP server
+            try {
+              const controller = new AbortController();
+              const t = setTimeout(() => controller.abort(), 10000);
+              await fetch(`${gateway.url}/send`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
+                },
+                body: JSON.stringify({ to: num, message: msgRecord.message }),
+                signal: controller.signal,
+              });
+              clearTimeout(t);
+              db.prepare("UPDATE messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(msgRecord.id);
+              sent++;
+            } catch (pushErr) {
+              failed++;
+              db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
+                'Push failed: ' + (pushErr.message || 'timeout'), msgRecord.id
+              );
+            }
+          } else {
+            // PULL gateway — release to 'pending' so the phone picks it up
+            db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
+          }
+          logActivity(broadcastRecord.agent_id, 'broadcast:queued', `Message ${isPush ? 'sent' : 'queued'} for ${num} [Turbo]`, 'info', broadcastRecord.campaign_id);
         }
 
         broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
@@ -333,8 +362,43 @@ export async function startBroadcast(broadcastId) {
       await sleep(broadcastRecord.delay_ms);
       if (state.cancel) continue;
 
-      // ── PULL gateway: release at the configured delay rate ──
-      db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
+      // ── PUSH gateway: send directly; PULL gateway: release to 'pending' ─
+      const isPush = gateway && gateway.url && gateway.mode !== 'pull';
+
+      if (isPush) {
+        // PUSH gateway — POST directly to the phone's HTTP server
+        try {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), 10000);
+          const response = await fetch(`${gateway.url}/send`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
+            },
+            body: JSON.stringify({ to: number, message: msgRecord.message }),
+            signal: controller.signal,
+          });
+          clearTimeout(t);
+          if (response.ok) {
+            db.prepare("UPDATE messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(msgRecord.id);
+            sent++;
+          } else {
+            failed++;
+            db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
+              'Gateway returned HTTP ' + response.status, msgRecord.id
+            );
+          }
+        } catch (pushErr) {
+          failed++;
+          db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
+            'Push failed: ' + (pushErr.message || 'timeout'), msgRecord.id
+          );
+        }
+      } else {
+        // PULL gateway — release to 'pending' so the phone picks it up
+        db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
+      }
     }
   }
 

@@ -4,10 +4,10 @@
 
 ---
 
-**Version:** 2.2  
+**Version:** 2.3  
 **Organization:** SRMC Credit Collection Services  
 **Platform:** Web Server + Android Gateway  
-**Last Updated:** June 2026
+**Last Updated:** July 2026
 
 ---
 
@@ -194,7 +194,7 @@ To design and develop a scalable SMS broadcast system that uses Android smartpho
 | **SMS Templates** | Reusable message templates with variable support | Admin, Agent |
 | **Gateway Management** | View/Add/Edit/Delete gateway devices, monitor online status | Admin |
 | **Inbound Messages** | View incoming SMS replies with auto-flagging (STOP → opt-out) | Admin, Agent |
-| **Analytics** | Historical charts by day/week/month/year, per-user/per-gateway breakdown | Admin |
+| **Analytics** | Historical charts by day/week/month/year, per-user/per-gateway breakdown. Export as multi-sheet Excel (.xlsx) with sheets: Period Breakdown, By Campaign, By Agent, By Gateway — gateway sheet includes both SIM numbers | Admin |
 | **Activity Log** | Full audit trail of all system actions | Admin, Agent |
 | **Agent/Admin Management** | Create and manage user accounts with role assignment | Super Admin |
 | **Settings** | Sending window, daily caps, ngrok tunnel, timezone, concurrent limits | Admin |

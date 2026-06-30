@@ -21,6 +21,7 @@ How to work on this project efficiently without rebuilding Docker containers eve
 | `package.json` | Run `npm install`, then restart | Rebuild needed |
 | `Dockerfile` or `docker-compose.yml` | Not applicable | Rebuild needed |
 | Environment variables (`.env`) | Restart the server process | Set in `docker-compose.yml` |
+| `xlsx` (SheetJS) dependency | `npm install xlsx` in `packages/client` | Rebuild needed |
 
 ---
 
@@ -79,7 +80,47 @@ The Vite dev server auto-proxies `/api` and `/ws` requests to the Express server
 
 ---
 
-## Before Deploying (Docker)
+## Internet Demo Deployment (ngrok)
+
+For a quick demo accessible over the internet — no LAN needed. Uses the built-in ngrok tunnel in the web server.
+
+### Setup
+
+```bash
+# 1. Get a free ngrok authtoken
+#    Go to https://dashboard.ngrok.com/authtokens
+
+# 2. Copy and configure the env template
+cp apps/web/.env.example apps/web/.env
+# Edit apps/web/.env → paste your NGROK_AUTHTOKEN
+
+# 3. Deploy with the internet compose file
+docker compose -f apps/web/docker-compose.internet.yml up -d --build
+
+# 4. Find your public URL
+docker logs srmc-web --tail 10
+# Look for: ✅ Tunnel established: https://xxx.ngrok-free.app
+
+# 5. Open in browser and login
+# Username: admin
+# Password: (from .env ADMIN_PASSWORD, or check INITIAL_ADMIN.txt)
+```
+
+### Configure Android Phone
+
+1. Open the SRMCGateway app
+2. Tap the gear icon on the login screen
+3. Set Server to your ngrok URL: `https://xxx.ngrok-free.app`
+4. Leave Port blank (not needed for full URLs)
+5. Log in with an agent account
+
+### Internet Compose File
+
+Located at `apps/web/docker-compose.internet.yml` — identical to the regular compose file but sets up `NGROK_AUTHTOKEN` so the web server auto-creates an ngrok tunnel on startup. The tunnel URL is registered in the database and served to Android phones via `/api/config`.
+
+---
+
+## Docker Deployment (Standard)
 
 ### Rebuild a single service
 
@@ -96,7 +137,7 @@ docker compose -f apps/web/docker-compose.yml up -d --build
 
 ### Data persistence
 
-Your SQLite database and configuration live in Docker volumes (`srmc-web-data`, `srmc-central-data`), **not** inside the image. Rebuilding doesn't touch them — all data, admin accounts, and settings survive intact.
+Your SQLite database and configuration live in Docker volumes (`srmc-web-data`), **not** inside the image. Rebuilding doesn't touch them — all data, admin accounts, and settings survive intact.
 
 ### Sanity check after deploy
 
@@ -139,6 +180,7 @@ The Docker build uses layer caching — if you only changed `package.json`, only
 | Build Docker images | `docker compose -f apps/web/docker-compose.yml build` |
 | Start all Docker services | `docker compose -f apps/web/docker-compose.yml up -d` |
 | Rebuild and restart Docker | `docker compose -f apps/web/docker-compose.yml up -d --build` |
+| Deploy internet demo (ngrok) | `docker compose -f apps/web/docker-compose.internet.yml up -d --build` |
 | View Docker logs | `docker compose -f apps/web/docker-compose.yml logs -f` |
 | Stop Docker services | `docker compose -f apps/web/docker-compose.yml down` |
 
@@ -157,8 +199,17 @@ srmc-platform/
 │           └── components/  # Reusable UI components
 ├── apps/
 │   └── web/             # Docker entry point + config
+│       ├── .env.example          # Environment template (internet demo)
+│       ├── docker-compose.yml         # Standard deployment
+│       ├── docker-compose.internet.yml# Internet demo deployment (ngrok)
+│       ├── Dockerfile
+│       ├── index.js
+│       └── nginx/
 ├── data/                # Runtime data (SQLite DB, logs, secrets)
-│   └── schema/          # Database schema DDL reference
+│   ├── schema/          # Database schema DDL reference
+│   │   ├── srmc-schema.sql     # Main server schema
+│   │   └── central-schema.sql  # Central monitoring schema
+│   └── INITIAL_ADMIN.txt
 └── package.json         # Monorepo root (npm workspaces)
 ```
 

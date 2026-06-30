@@ -7,6 +7,8 @@ import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber } from '../../lib/format.js';
 
+const EMPTY_FORM = { name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' };
+
 function timeAgo(iso) {
   if (!iso) return 'never';
   const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
@@ -15,11 +17,11 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-const EMPTY_FORM = { name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' };
-
 // ── Inline gateway form (add or edit) ───────────────────────────────────────
-function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, saving, error }) {
+function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, onTestInline, saving, error }) {
   const [form, setForm] = useState(initial);
+  const [inlineTestResult, setInlineTestResult] = useState(null);
+  const [inlineTesting, setInlineTesting] = useState(false);
   const isEdit = !!initial.id;
 
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
@@ -27,6 +29,20 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, saving, error }) 
   function handleSubmit(e) {
     e.preventDefault();
     onSave(form);
+  }
+
+  async function handleTestInline() {
+    if (!isEdit || !form.url) return;
+    setInlineTesting(true);
+    setInlineTestResult(null);
+    try {
+      const result = await onTestInline(initial.id, form.token);
+      setInlineTestResult(result);
+    } catch (e) {
+      setInlineTestResult({ ok: false, msg: e.message || 'Test failed' });
+    } finally {
+      setInlineTesting(false);
+    }
   }
 
   return (
@@ -144,6 +160,18 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, saving, error }) 
           {' '}— use everything before <code style={{ fontFamily: 'var(--mono)', background: 'var(--line-soft)', padding: '1px 5px', borderRadius: 4 }}>/send</code>.
         </div>
 
+        {/* Inline test result */}
+        {inlineTestResult && (
+          <div style={{
+            padding: '8px 12px', marginBottom: 12,
+            background: inlineTestResult.ok ? 'var(--ok-bg)' : 'var(--err-bg)',
+            border: `1px solid ${inlineTestResult.ok ? 'var(--ok-line)' : 'var(--err-line)'}`,
+            borderRadius: 7, color: inlineTestResult.ok ? 'var(--ok)' : 'var(--err)', fontSize: 12,
+          }}>
+            {inlineTestResult.ok ? '✓' : '✗'} {inlineTestResult.msg}
+          </div>
+        )}
+
         {error && (
           <div style={{
             padding: '8px 12px', marginBottom: 12,
@@ -155,6 +183,18 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, saving, error }) 
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          {isEdit && (
+            <button
+              type="button"
+              className="btn-ghost"
+              style={{ borderColor: 'var(--ok-line)', color: 'var(--ok)' }}
+              onClick={handleTestInline}
+              disabled={inlineTesting || !form.url}
+              title={form.url ? 'Test with this token without saving' : 'Enter a URL first'}
+            >
+              {inlineTesting ? 'Testing…' : 'Test connection'}
+            </button>
+          )}
           <button type="button" className="btn-ghost" onClick={onCancel} disabled={saving}>
             Cancel
           </button>
@@ -277,7 +317,6 @@ function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim }) {
         </div>
       )}
 
-      {/* Test result */}
       {/* No-load warning from send failures */}
       {gw.consecutive_fails >= 5 && (
         <div style={{
@@ -490,6 +529,21 @@ export default function Gateway() {
     return gwData;
   }
 
+  async function handleTestInline(gatewayId, token) {
+    // Test with the form's token instead of the DB-stored one
+    const result = await api.post(`/gateways/${gatewayId}/test`, { token });
+    const gwData = result.gateway || result;
+    if (gwData.status === 'online') {
+      return { ok: true, msg: '✓ Gateway reachable and responding' };
+    } else if (gwData.last_error) {
+      return { ok: false, msg: gwData.last_error };
+    } else if (gwData.status === 'slow') {
+      return { ok: false, msg: 'Gateway slow to respond — may be overloaded' };
+    } else {
+      return { ok: false, msg: `Status: ${gwData.status}` };
+    }
+  }
+
   async function handleTestSim(gw, sim) {
     const result = await api.post(`/gateways/${gw.id}/test-sim`, { sim });
     return result;
@@ -609,6 +663,7 @@ export default function Gateway() {
             initial={editingGw || EMPTY_FORM}
             onSave={handleSave}
             onCancel={closeForm}
+            onTestInline={handleTestInline}
             saving={saving}
             error={formError}
           />

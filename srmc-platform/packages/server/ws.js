@@ -18,7 +18,7 @@ export function initWss(server) {
 
   wss.on('connection', (ws) => {
     console.log('[ws] Client connected');
-    ws.send(JSON.stringify({ type: 'connected', message: 'SRMC WebSocket connected' }));
+    ws.send(JSON.stringify({ type: 'connected', message: 'SMS Platform WebSocket connected' }));
 
     ws.on('close', () => {
       console.log('[ws] Client disconnected');

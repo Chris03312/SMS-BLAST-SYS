@@ -3,7 +3,7 @@
  *
  * Starts the Express server, WebSocket, gateway poller, ngrok tunnel,
  * and stats reporter. This is the Docker-deployable version of the
- * SRMC Platform (no Electron dependency).
+ * SMS Platform (no Electron dependency).
  *
  * Usage:
  *   node apps/web/index.js
@@ -21,7 +21,7 @@ const server = createServer(app);
 initWss(server);
 
 server.listen(PORT, async () => {
-  console.log(`[server] SRMC Platform running on http://localhost:${PORT}`);
+  console.log(`[server] SMS Platform running on http://localhost:${PORT}`);
 
   if (NGROK_URL) {
     console.log(`[server] Ngrok webhook URL: ${NGROK_URL}/api/webhook/inbound`);

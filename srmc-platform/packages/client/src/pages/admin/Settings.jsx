@@ -205,7 +205,7 @@ export default function Settings() {
             <div style={{ marginBottom: 24 }}>
               <div className="eyebrow">System</div>
               <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', marginTop: 4 }}>Settings</h1>
-              <div className="page-sub">Platform configuration for your SRMC workspace.</div>
+              <div className="page-sub">Platform configuration for your SMS workspace.</div>
             </div>
 
             {/* ── Account ── */}

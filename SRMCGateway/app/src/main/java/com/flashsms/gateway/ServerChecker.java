@@ -11,7 +11,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Pings the SRMC SMS Server at GET /api/ping.
+ * Pings the SMS server at GET /api/ping.
  * The callback is always delivered on the main thread.
  */
 public class ServerChecker {

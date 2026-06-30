@@ -1,0 +1,11 @@
+LOCALY SETUP DOCKER USING EXISTING FILE ARCHITECTURE
+
+docker compose -f apps/web/docker-compose.yml --env-file .env up -d --build
+
+USING NGROK WHICH IS STATED IN THE .ENV IF YOU HAVE A AUTHTOKEN + NGROK URL
+
+docker compose -f apps/web/docker-compose.internet.yml --env-file .env up -d --build
+
+IF ITS JUST LOCALY LIKE USING ROOT ARCHITECTURE
+
+docker compose up -d --build

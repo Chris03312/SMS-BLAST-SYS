@@ -1,7 +1,7 @@
 {
   "name": "@srmc/web",
   "version": "1.0.0",
-  "description": "SRMC Platform — Standalone Web Server (Docker)",
+  "description": "SMS Platform — Standalone Web Server (Docker)",
   "private": true,
   "type": "module",
   "main": "index.js",

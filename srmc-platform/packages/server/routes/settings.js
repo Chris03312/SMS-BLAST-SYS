@@ -64,8 +64,8 @@ router.post('/purge-activity', adminOnly, (req, res) => {
 router.post('/reset', adminOnly, (req, res) => {
   try {
     const defaults = [
-      ['org_name',       'SRMC Credit Collection Services'],
-      ['sender_id',      'SRMCCS'],
+      ['org_name',       'SMS Platform'],
+      ['sender_id',      'SMSGATEWAY'],
       ['delay',          '6000'],
       ['window_start',   '00:00'],
       ['window_end',     '23:59'],

@@ -104,7 +104,7 @@ public class LoginActivity extends AppCompatActivity {
             tv.setPadding(pad, pad, pad, pad);
             tv.setTextIsSelectable(true);
             tv.setTextColor(0xFF000000);
-            tv.setText("SRMC Gateway failed to start on this device:\n\n"
+            tv.setText("SMS Gateway failed to start on this device:\n\n"
                     + "Android " + android.os.Build.VERSION.RELEASE
                     + " (API " + android.os.Build.VERSION.SDK_INT + ")\n"
                     + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + "\n\n"

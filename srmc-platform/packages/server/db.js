@@ -275,16 +275,24 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_broadcasts_created_at    ON broadcasts(created_at);
     CREATE INDEX IF NOT EXISTS idx_broadcasts_campaign_id   ON broadcasts(campaign_id);
 
+    -- campaigns: owner-based filtering
+    CREATE INDEX IF NOT EXISTS idx_campaigns_owner_id    ON campaigns(owner_id);
+
+    -- templates: creator-based filtering
+    CREATE INDEX IF NOT EXISTS idx_templates_created_by  ON templates(created_by);
+
     -- users: role-based filtering for dashboards and agent management
     CREATE INDEX IF NOT EXISTS idx_users_role               ON users(role);
     CREATE INDEX IF NOT EXISTS idx_users_role_active        ON users(role, active);
 
     -- gateways: poller filtering and online/offline counting
     CREATE INDEX IF NOT EXISTS idx_gateways_status          ON gateways(status);
-    CREATE INDEX IF NOT EXISTS idx_gateways_active_mode     ON gateways(active, mode);
+    -- idx_gateways_active_mode is created after migrations (below)
+    -- since it references the 'mode' column added by migration.
 
-    -- inbound: agent-scoped views, time-ordered listing, enrichment lookups
-    CREATE INDEX IF NOT EXISTS idx_inbound_agent_id         ON inbound(agent_id);
+    -- inbound: time-ordered listing, enrichment lookups
+    -- idx_inbound_agent_id is created after migrations (below)
+    -- since it references the 'agent_id' column added by migration.
     CREATE INDEX IF NOT EXISTS idx_inbound_created_at       ON inbound(created_at);
     CREATE INDEX IF NOT EXISTS idx_inbound_read_at          ON inbound(read_at);
 
@@ -302,8 +310,8 @@ export function initDb() {
   if (!existing || existing.c === 0) {
     // Default settings
     for (const [key, value] of [
-      ['org_name',       'SRMC Credit Collection Services'],
-      ['sender_id',      'SRMCCS'],
+      ['org_name',       'SMS Platform'],
+      ['sender_id',      'SMSGATEWAY'],
       ['delay',          '6000'],
       ['window_start',   '00:00'],
       ['window_end',     '23:59'],
@@ -368,6 +376,14 @@ export function initDb() {
     }
   }
 
+  // Create indexes that depend on migration-added columns
+  try {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_gateways_active_mode ON gateways(active, mode)");
+  } catch (_) {}
+  try {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_inbound_agent_id ON inbound(agent_id)");
+  } catch (_) {}
+
   // Guarantee a known admin login on EVERY boot (fresh DB or reinstall).
   ensureAdminAccount();
 
@@ -409,7 +425,7 @@ function ensureAdminAccount() {
       .run(uuidv4(), adminUser, hash, 'Admin', 'super_admin');
     const credFile = join(DATA_DIR, 'INITIAL_ADMIN.txt');
     const note =
-      `SRMC Platform — initial admin credentials\n` +
+      `SMS Platform — initial admin credentials\n` +
       `Generated: ${new Date().toISOString()}\n\n` +
       `  Username: ${adminUser}\n` +
       `  Password: ${pass}\n\n` +

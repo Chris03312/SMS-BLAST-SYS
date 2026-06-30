@@ -124,7 +124,8 @@ router.delete('/:id', adminOnly, (req, res) => {
 
 router.post('/:id/test', async (req, res) => {
   try {
-    const updated = await checkGatewayNow(req.params.id);
+    const { token } = req.body; // optional — use form token instead of DB token
+    const updated = await checkGatewayNow(req.params.id, token);
     if (!updated) {
       return fail(res, 'Gateway not found', 404);
     }
@@ -179,18 +180,49 @@ router.post('/:id/test-sim', async (req, res) => {
       return fail(res, `SIM ${sim === 'sim2' ? '2' : '1'} has no number configured`, 400);
     }
 
-    // Create a test message in the outbound queue for this PULL gateway
-    const messageId = uuidv4();
     const tzRow = db.prepare("SELECT value FROM settings WHERE key = 'timezone'").get();
     const tz = (tzRow && tzRow.value) || 'Asia/Manila';
-    const testMsg = `SRMC test — SIM ${sim === 'sim2' ? '2' : '1'} at ${new Date().toLocaleTimeString('en-PH', { timeZone: tz })}`;
+    const testMsg = `SMS test — SIM ${sim === 'sim2' ? '2' : '1'} at ${new Date().toLocaleTimeString('en-PH', { timeZone: tz })}`;
 
+    // PUSH gateway — send directly to the phone's HTTP server
+    if (gateway.url && gateway.mode !== 'pull') {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
+      try {
+        const response = await fetch(`${gateway.url}/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
+          },
+          body: JSON.stringify({ to: targetNumber, message: testMsg }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          return ok(res, {
+            success: true,
+            message: `Test SMS sent via ${sim} → ${targetNumber}`,
+            method: 'push',
+          });
+        } else {
+          return fail(res, `Gateway returned HTTP ${response.status}`, 502);
+        }
+      } catch (e) {
+        clearTimeout(timeout);
+        return fail(res, `Failed to reach gateway: ${e.message}`, 502);
+      }
+    }
+
+    // PULL gateway — queue the message for the phone to pick up
+    const messageId = uuidv4();
     db.prepare(
       `INSERT INTO messages (id, broadcast_id, to_number, message, status, gateway_id, created_at)
        VALUES (?, ?, ?, ?, 'pending', ?, datetime('now'))`
     ).run(messageId, null, targetNumber, testMsg, req.params.id);
 
-    // Message is queued — the phone will pick it up on its next poll
     return ok(res, {
       success: true,
       message: `Test message queued for ${sim} → ${targetNumber}. Phone will send it on next poll.`,

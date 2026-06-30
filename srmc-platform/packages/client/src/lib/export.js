@@ -1,39 +1,15 @@
 /**
- * export.js — Data export utilities (CSV download).
+ * export.js — Data export utilities (XLSX multi-sheet download).
  */
 
-/**
- * Escape a CSV value (wrap in quotes if contains comma, quote, or newline).
- */
-function esc(val) {
-  const s = val == null ? '' : String(val);
-  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
-    return '"' + s.replace(/"/g, '""') + '"';
-  }
-  return s;
-}
+import * as XLSX from 'xlsx';
 
 /**
- * Build a CSV string from an array of objects.
- * @param {object[]} rows
- * @param {{ key: string, label: string }[]} columns
- * @returns {string} CSV content
+ * Trigger a browser download of a blob/file.
+ * @param {Blob} blob     - File blob
+ * @param {string} filename - e.g. "sms-analytics-2026-06-25.xlsx"
  */
-export function toCsv(rows, columns) {
-  const header = columns.map(c => esc(c.label)).join(',');
-  const body = rows.map(row =>
-    columns.map(c => esc(row[c.key])).join(',')
-  ).join('\n');
-  return header + '\n' + body;
-}
-
-/**
- * Trigger a browser download of a CSV file.
- * @param {string} csv     - CSV content
- * @param {string} filename - e.g. "analytics-2026-06-25.csv"
- */
-export function downloadCsv(csv, filename) {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+function downloadFile(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -46,61 +22,68 @@ export function downloadCsv(csv, filename) {
 }
 
 /**
- * Build and download a combined CSV export of all analytics data.
+ * Build and download a multi-sheet XLSX export of all analytics data.
+ *
+ * Each data section becomes its own sheet:
+ *   - Period Breakdown
+ *   - By Campaign
+ *   - By Agent
+ *   - By Gateway
  *
  * @param {object} data - The full analytics response (series, by_user, by_gateway, by_campaign)
  * @param {string} periodLabel - e.g. "Daily", "Weekly"
  */
-export function exportAnalyticsCsv(data, periodLabel) {
+export function exportAnalyticsXlsx(data, periodLabel) {
   const dateStr = new Date().toISOString().slice(0, 10);
-  const parts = [];
+  const wb = XLSX.utils.book_new();
 
-  // ── 1. Period breakdown ────────────────────────────────────────────
+  // ── 1. Period Breakdown sheet ────────────────────────────────────────
   if (data.series?.length) {
-    parts.push('--- Period Breakdown ---');
-    parts.push(toCsv(data.series, [
-      { key: 'date', label: periodLabel },
-      { key: 'sent', label: 'Sent' },
-      { key: 'failed', label: 'Failed' },
-    ]));
-    parts.push('');
+    const ws = XLSX.utils.json_to_sheet(data.series.map(s => ({
+      [periodLabel]: s.date,
+      Sent: s.sent,
+      Failed: s.failed,
+    })));
+    XLSX.utils.book_append_sheet(wb, ws, 'Period Breakdown');
   }
 
-  // ── 2. By Campaign ─────────────────────────────────────────────────
+  // ── 2. By Campaign sheet ─────────────────────────────────────────────
   if (data.by_campaign?.length) {
-    parts.push('--- By Campaign ---');
-    parts.push(toCsv(data.by_campaign, [
-      { key: 'campaign_name', label: 'Campaign' },
-      { key: 'sent', label: 'Sent' },
-      { key: 'failed', label: 'Failed' },
-    ]));
-    parts.push('');
+    const ws = XLSX.utils.json_to_sheet(data.by_campaign.map(c => ({
+      Campaign: c.campaign_name,
+      Sent: c.sent,
+      Failed: c.failed,
+    })));
+    XLSX.utils.book_append_sheet(wb, ws, 'By Campaign');
   }
 
-  // ── 3. By Agent ────────────────────────────────────────────────────
+  // ── 3. By Agent sheet ────────────────────────────────────────────────
   if (data.by_user?.length) {
-    parts.push('--- By Agent ---');
-    parts.push(toCsv(data.by_user, [
-      { key: 'display_name', label: 'Agent' },
-      { key: 'username', label: 'Username' },
-      { key: 'sent', label: 'Sent' },
-      { key: 'failed', label: 'Failed' },
-    ]));
-    parts.push('');
+    const ws = XLSX.utils.json_to_sheet(data.by_user.map(u => ({
+      Agent: u.display_name || u.username,
+      Username: u.username,
+      Sent: u.sent,
+      Failed: u.failed,
+    })));
+    XLSX.utils.book_append_sheet(wb, ws, 'By Agent');
   }
 
-  // ── 4. By Gateway ──────────────────────────────────────────────────
+  // ── 4. By Gateway sheet ──────────────────────────────────────────────
   if (data.by_gateway?.length) {
-    parts.push('--- By Gateway ---');
-    parts.push(toCsv(data.by_gateway, [
-      { key: 'gateway_name', label: 'Gateway' },
-      { key: 'number', label: 'Number' },
-      { key: 'sent', label: 'Sent' },
-      { key: 'failed', label: 'Failed' },
-    ]));
-    parts.push('');
+    const ws = XLSX.utils.json_to_sheet(data.by_gateway.map(g => ({
+      Gateway: g.gateway_name,
+      'SIM 1': g.number || '',
+      'SIM 2': g.number2 || '',
+      Sent: g.sent,
+      Failed: g.failed,
+    })));
+    XLSX.utils.book_append_sheet(wb, ws, 'By Gateway');
   }
 
-  const csv = parts.join('\n');
-  downloadCsv(csv, `srmc-analytics-${dateStr}.csv`);
+  // If there's at least one sheet, write and download
+  if (wb.SheetNames.length > 0) {
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    downloadFile(blob, `sms-analytics-${dateStr}.xlsx`);
+  }
 }

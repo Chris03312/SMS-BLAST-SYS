@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  SRMC Platform — Docker Compose (Root)
+#
+#  Run from this directory — Docker Compose auto-reads .env from here.
+#  Nginx on port 8081 (set via NGINX_PORT in .env). Ngrok points to this.
+#
+#  Usage:
+#    docker compose up -d --build
+#    ngrok http 8081
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────
+  # Entry point for all traffic. Serves static files directly, proxies
+  # API / WebSocket to Express. Point ngrok to this service:
+  #   ngrok http 8081
+  srmc-nginx:
+    image: nginx:alpine
+    container_name: srmc-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8081}:80"
+    volumes:
+      - ./apps/web/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - srmc-web
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ── Main web server ──────────────────────────────────────────────────────
+  # Express + React frontend. Auto-creates ngrok tunnel if NGROK_AUTHTOKEN is set.
+  srmc-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: srmc-web
+    restart: unless-stopped
+    expose:
+      - "${PORT:-3001}"
+    volumes:
+      - srmc-web-data:/data
+    environment:
+      - PORT=${PORT:-3001}
+      - SRMC_DATA_DIR=/data
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+      - NGROK_DOMAIN=${NGROK_DOMAIN:-}
+      - NGROK_URL=${NGROK_URL:-}
+      - CENTRAL_SERVER_URL=${CENTRAL_SERVER_URL:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${PORT:-3001}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  srmc-web-data:
+    name: srmc-web-data

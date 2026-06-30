@@ -1,7 +1,7 @@
 /**
- * electron/main.js — SRMC Platform Desktop App (thin client).
+ * electron/main.js — SMS Platform Desktop App (thin client).
  *
- * Thin client that connects to a remote SRMC web server instead of
+ * Thin client that connects to a remote SMS web server instead of
  * running one locally. User enters the server URL on first launch.
  * Settings are saved in app.getPath('userData').
  *
@@ -142,7 +142,7 @@ function createSettingsWindow(parentWin) {
     width: 520,
     height: 380,
     resizable: false,
-    title: 'SRMC Platform — Server Settings',
+    title: 'SMS Platform — Server Settings',
     parent: parentWin || null,
     modal: !!parentWin,
     autoHideMenuBar: true,
@@ -175,7 +175,7 @@ button { padding: 9px 22px; border: none; border-radius: 6px; font-size: 14px; c
 #status.checking { display: block; background: #1a2d3d; color: #6bb5ff; border: 1px solid #2d4d5a; }
 </style></head><body>
 <h2>⚙️ Server Settings</h2>
-<p class="desc">Configure which SRMC web server this desktop app connects to. The server must be running and reachable.</p>
+<p class="desc">Configure which SMS server this desktop app connects to. The server must be running and reachable.</p>
 <label for="url">Server URL</label>
 <input type="text" id="url" placeholder="http://localhost:3001" />
 <div class="hint">Examples: <code>http://192.168.1.20:3001</code> (local network) or <code>https://abc123.ngrok.io</code> (remote via ngrok)</div>
@@ -219,7 +219,7 @@ function createWindow(url) {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    title: 'SRMC Platform',
+    title: 'SMS Platform',
     icon: resolveIcon(),
     show: false,
     webPreferences: {
@@ -291,7 +291,7 @@ function showErrorScreen(errMsg, canRetry) {
       width: 640,
       height: 520,
       resizable: true,
-      title: 'SRMC Platform — Cannot Connect',
+      title: 'SMS Platform — Cannot Connect',
       icon: resolveIcon(),
       autoHideMenuBar: true,
       webPreferences: {
@@ -305,8 +305,8 @@ function showErrorScreen(errMsg, canRetry) {
 
   const title = '🔌 Cannot Connect';
   const message = errMsg
-    ? `Could not reach the SRMC web server.\n\n${errMsg}`
-    : `Could not reach the SRMC web server at:\n${getServerUrl()}\n\nMake sure the server is running and the URL is correct.`;
+    ? `Could not reach the SMS server.\n\n${errMsg}`
+    : `Could not reach the SMS server at:\n${getServerUrl()}\n\nMake sure the server is running and the URL is correct.`;
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
@@ -363,11 +363,11 @@ function updateTray() {
   if (!tray) return;
 
   tray.setToolTip(connected
-    ? `SRMC Platform — Connected to ${getServerUrl()}`
-    : 'SRMC Platform — Disconnected');
+    ? `SMS Platform — Connected to ${getServerUrl()}`
+    : 'SMS Platform — Disconnected');
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Open SRMC Platform', click: showWindow },
+    { label: 'Open SMS Platform', click: showWindow },
     { type: 'separator' },
     {
       label: connected ? '✅ Connected' : '❌ Disconnected',
@@ -449,7 +449,7 @@ function registerIpc() {
   // Notifications
   ipcMain.on('notification:show', (_e, { title, body } = {}) => {
     if (Notification.isSupported()) {
-      new Notification({ title: title || 'SRMC Platform', body: body || '' }).show();
+      new Notification({ title: title || 'SMS Platform', body: body || '' }).show();
     }
   });
 

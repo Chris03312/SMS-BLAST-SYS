@@ -213,7 +213,7 @@ string nav_icon_dashboard
 string nav_icon_settings
 string nav_settings
 string toast_welcome
-style TextAppearance.SRMCGateway.FieldLabel
-style TextAppearance.SRMCGateway.Heading
-style TextAppearance.SRMCGateway.Subtitle
-style Theme.SRMCGateway
+style TextAppearance.SMSGateway.FieldLabel
+style TextAppearance.SMSGateway.Heading
+style TextAppearance.SMSGateway.Subtitle
+style Theme.SMSGateway

@@ -3,7 +3,7 @@ import AdminShell from '../../components/AdminShell.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import { api } from '../../lib/api.js';
 import { formatNumber } from '../../lib/format.js';
-import { exportAnalyticsCsv } from '../../lib/export.js';
+import { exportAnalyticsXlsx } from '../../lib/export.js';
 
 const PERIODS = [
   { key: 'day',   label: 'Daily' },
@@ -37,7 +37,6 @@ function MiniBar({ data, color = 'var(--brand-1)', height = 28 }) {
 
 export default function AdminAnalytics() {
   const [period, setPeriod] = useState('day');
-  const [range, setRange] = useState('30d');
   const [campaignFilter, setCampaignFilter] = useState('');
   const [campaigns, setCampaigns] = useState([]);
   const [data, setData] = useState(null);
@@ -51,22 +50,25 @@ export default function AdminAnalytics() {
 
   useEffect(() => {
     loadData();
-  }, [period, range, campaignFilter]);
+  }, [period, campaignFilter]);
+
+  function rangeFromPeriod(p) {
+    const now = new Date();
+    switch (p) {
+      case 'day':   return new Date(now - 30  * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      case 'week':  return new Date(now - 90  * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      case 'month': return new Date(now - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      case 'year':  return new Date(now - 5 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      default:      return new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    }
+  }
 
   async function loadData() {
     setLoading(true);
     setError('');
     try {
-      const now = new Date();
-      const to = now.toISOString().slice(0, 10);
-      let from;
-      switch (range) {
-        case '7d':  from = new Date(now - 7  * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); break;
-        case '30d': from = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); break;
-        case '90d': from = new Date(now - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); break;
-        case '1y':  from = new Date(now - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); break;
-        default:    from = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      }
+      const to = new Date().toISOString().slice(0, 10);
+      const from = rangeFromPeriod(period);
       let url = `/stats/historical?period=${period}&from=${from}&to=${to}`;
       if (campaignFilter) url += `&campaign_id=${campaignFilter}`;
       const result = await api.get(url);
@@ -98,25 +100,11 @@ export default function AdminAnalytics() {
 
       {/* Controls row */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* Period selector */}
+        {/* Period selector — determines both grouping and date range */}
         <div className="seg">
           {PERIODS.map(p => (
             <button key={p.key} type="button" className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>
               {p.label}
-            </button>
-          ))}
-        </div>
-        <div style={{ width: 1, height: 24, background: 'var(--line)', margin: '0 4px' }} />
-        {/* Range selector */}
-        <div className="seg">
-          {[
-            { key: '7d',  label: '7 days' },
-            { key: '30d', label: '30 days' },
-            { key: '90d', label: '90 days' },
-            { key: '1y',  label: '1 year' },
-          ].map(r => (
-            <button key={r.key} type="button" className={range === r.key ? 'on' : ''} onClick={() => setRange(r.key)}>
-              {r.label}
             </button>
           ))}
         </div>
@@ -144,18 +132,18 @@ export default function AdminAnalytics() {
             className="btn-primary"
             onClick={() => {
               const periodLabel = PERIODS.find(p => p.key === period)?.label || period;
-              exportAnalyticsCsv(data, periodLabel);
+              exportAnalyticsXlsx(data, periodLabel);
             }}
             disabled={!data}
             style={{ fontSize: 12, padding: '7px 14px' }}
-            title="Export all data as CSV"
+            title="Export all data as Excel workbook (multi-sheet)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Export CSV
+            Export Excel
           </button>
         </div>
       </div>

@@ -82,8 +82,7 @@ export default function BlastDashboard() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
-  const [activeBroadcast, setActiveBroadcast] = useState(null);
-  const [progress, setProgress] = useState({ sent: 0, failed: 0, total: 0, status: 'idle' });
+  const [activeBroadcasts, setActiveBroadcasts] = useState({}); // { [id]: { sent, failed, total, status, message? } }
   const [failedMessages, setFailedMessages] = useState([]);
 
   const [statsSent, setStatsSent] = useState(0);
@@ -97,11 +96,13 @@ export default function BlastDashboard() {
     api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(() => {});
     api.get('/activity?limit=20').then(d => setActivities(d.activities || [])).catch(() => {});
     api.get('/inbound?limit=5').then(d => setInboundRecent(d.messages || [])).catch(() => {});
-    api.get('/broadcasts?status=sending&limit=1').then(d => {
+    api.get('/broadcasts?status=sending&limit=10').then(d => {
       if (d.broadcasts && d.broadcasts.length > 0) {
-        const b = d.broadcasts[0];
-        setActiveBroadcast(b);
-        setProgress({ sent: b.sent, failed: b.failed, total: b.total, status: b.status });
+        const map = {};
+        for (const b of d.broadcasts) {
+          map[b.id] = { sent: b.sent || 0, failed: b.failed || 0, total: b.total || 0, status: b.status, message: b.message };
+        }
+        setActiveBroadcasts(map);
       }
     }).catch(() => {});
 
@@ -147,23 +148,26 @@ export default function BlastDashboard() {
   }, [selectedTemplate, selectedCampaign, message, recipients, selectedGateways, distribution, delayMs, initialDataLoaded]);
 
   useWS((event) => {
-    if (event.type === 'broadcast:progress') {
-      setProgress({
-        sent: event.sent,
-        failed: event.failed,
-        total: event.total,
-        status: event.status,
-      });
-      setStatsSent(s => s + 1);
+    if (event.type === 'broadcast:progress' && event.broadcastId) {
+      setActiveBroadcasts(prev => ({
+        ...prev,
+        [event.broadcastId]: { sent: event.sent, failed: event.failed, total: event.total, status: event.status, message: prev[event.broadcastId]?.message },
+      }));
     }
-    if (event.type === 'broadcast:complete') {
-      setProgress(p => ({ ...p, status: event.status }));
-      setSending(false);
-      if (activeBroadcast) {
-        api.get(`/broadcasts/${activeBroadcast.id}`).then(d => {
-          setFailedMessages((d.messages || []).filter(m => m.status === 'failed'));
-        }).catch(() => {});
-      }
+    if (event.type === 'broadcast:complete' && event.broadcastId) {
+      setActiveBroadcasts(prev => {
+        const next = { ...prev };
+        if (next[event.broadcastId]) {
+          next[event.broadcastId] = { ...next[event.broadcastId], status: event.status, sent: event.sent, failed: event.failed };
+        }
+        return next;
+      });
+      // Load failed messages for this completed broadcast
+      api.get(`/broadcasts/${event.broadcastId}/messages?status=failed`).then(d => {
+        if (d.messages && d.messages.length > 0) {
+          setFailedMessages(prev => [...prev, ...d.messages]);
+        }
+      }).catch(() => {});
     }
     if (event.type === 'inbound:new') {
       // Agents only see messages belonging to their own broadcasts
@@ -256,11 +260,12 @@ export default function BlastDashboard() {
         recipients: recipientList,
         delay_ms: delayMs,
       });
-      setActiveBroadcast(result.broadcast);
-      setProgress({ sent: 0, failed: 0, total: result.broadcast.total, status: 'sending' });
-      setStatsSent(s => s);
+      const bid = result.broadcast.id;
+      setActiveBroadcasts(prev => ({
+        ...prev,
+        [bid]: { sent: 0, failed: 0, total: result.broadcast.total, status: 'sending', message: result.broadcast.message },
+      }));
       setStatsTotal(result.broadcast.total);
-      setFailedMessages([]);
       setSending(false);
       // Clear draft after successful send
       clearDraft();
@@ -270,15 +275,20 @@ export default function BlastDashboard() {
     }
   }
 
-  async function handleCancel() {
-    if (!activeBroadcast) return;
+  async function handleCancel(broadcastId) {
+    if (!broadcastId) return;
     try {
-      await api.del(`/broadcasts/${activeBroadcast.id}`);
+      await api.del(`/broadcasts/${broadcastId}`);
+      setActiveBroadcasts(prev => {
+        const next = { ...prev };
+        delete next[broadcastId];
+        return next;
+      });
     } catch (e) {}
   }
 
-  const isSending = progress.status === 'sending';
-  const pct = progress.total > 0 ? Math.round((progress.sent / progress.total) * 100) : 0;
+  const activeBcList = Object.entries(activeBroadcasts).filter(([_, b]) => b.status === 'sending' || b.status === 'paused');
+  const isSending = activeBcList.length > 0;
 
   return (
     <AgentShell>
@@ -290,29 +300,37 @@ export default function BlastDashboard() {
           <div className="card">
             <div className="card-head">
               <h3>System Status</h3>
-              {isSending ? <LiveBadge label="Sending" /> : <span className="pill idle"><span className="dot" />Idle</span>}
+              {isSending ? <LiveBadge label={`${activeBcList.length} active`} /> : <span className="pill idle"><span className="dot" />Idle</span>}
             </div>
-            <div style={{ padding: '14px 18px' }}>
-              {isSending && (
-                <>
-                  <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--ink-3)' }}>
-                    {progress.sent} of {progress.total} sent
-                  </div>
-                  <div style={{ height: 6, background: 'var(--bg-soft)', borderRadius: 3, overflow: 'hidden', marginBottom: 12 }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: 'var(--ok)', borderRadius: 3, transition: 'width 0.4s' }} />
-                  </div>
-                  <button className="btn-danger" style={{ width: '100%' }} onClick={handleCancel}>
-                    Cancel broadcast
-                  </button>
-                </>
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {activeBcList.length === 0 && (
+                <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>No active broadcast.</div>
               )}
-              {!isSending && (
-                <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                  {progress.status === 'done' && `Completed — ${progress.sent}/${progress.total} sent`}
-                  {progress.status === 'cancelled' && `Cancelled — ${progress.sent}/${progress.total} sent`}
-                  {progress.status === 'idle' && 'No active broadcast.'}
-                </div>
-              )}
+              {activeBcList.map(([id, bc]) => {
+                const pct = bc.total > 0 ? Math.round((bc.sent / bc.total) * 100) : 0;
+                return (
+                  <div key={id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                        {bc.message ? bc.message.substring(0, 30) + (bc.message.length > 30 ? '…' : '') : 'Broadcast'}
+                      </span>
+                      <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ink-2)', marginLeft: 8, flexShrink: 0 }}>
+                        {bc.sent}/{bc.total}
+                      </span>
+                    </div>
+                    <div style={{ height: 5, background: 'var(--bg-soft)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: bc.status === 'paused' ? 'var(--warn)' : 'var(--ok)', borderRadius: 3, transition: 'width 0.4s' }} />
+                    </div>
+                    <button
+                      className="btn-danger"
+                      style={{ width: '100%', padding: '3px 8px', fontSize: 11 }}
+                      onClick={() => handleCancel(id)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -322,7 +340,7 @@ export default function BlastDashboard() {
               { label: 'Sent (7d)', val: statsSent },
               { label: 'Failed (7d)', val: statsFailed },
               { label: 'Total msgs', val: statsTotal || progress.total },
-              { label: 'Queued', val: isSending ? Math.max(0, progress.total - progress.sent) : 0 },
+              { label: 'Queued', val: isSending ? activeBcList.reduce((sum, [_, b]) => sum + Math.max(0, b.total - b.sent), 0) : 0 },
             ].map(s => (
               <div key={s.label} className="card" style={{ padding: '12px 14px' }}>
                 <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{s.label}</div>
@@ -349,26 +367,17 @@ export default function BlastDashboard() {
 
         {/* CENTER COL */}
         <div>
-          {isSending && !sending && (
+          {isSending && (
             <div style={{
               padding: '10px 16px', marginBottom: 14,
               background: 'var(--info-bg)', border: '1px solid var(--info-line)',
               borderRadius: 10, fontSize: 12, color: 'var(--info)',
               display: 'flex', alignItems: 'center', gap: 10,
             }}>
-              <LiveBadge label="Sending" />
+              <LiveBadge label={`${activeBcList.length} running`} />
               <span style={{ flex: 1 }}>
-                Broadcast <strong>{progress.sent}/{progress.total}</strong> sent — running in background.
-                You can modify the form and send another.
+                {activeBcList.length} broadcast{activeBcList.length > 1 ? 'es' : ''} sending — all running simultaneously.
               </span>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={handleCancel}
-                style={{ fontSize: 11, padding: '4px 10px', color: 'var(--err)', borderColor: 'var(--err-line)' }}
-              >
-                Cancel
-              </button>
             </div>
           )}
           <div className="card">

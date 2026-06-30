@@ -5,8 +5,9 @@
 #    srmc-web — Main SMS broadcast platform (Express + React)
 #
 #  Build context must be the monorepo root (srmc-platform/).
-#  Usage:
-#    docker compose -f apps/web/docker-compose.yml up -d --build
+#  Reads environment from .env at the project root (single source of truth).
+#  Usage (run from srmc-platform/ root):
+#    docker compose -f apps/web/docker-compose.yml --env-file .env up -d --build
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -34,7 +35,7 @@ services:
   # ── Main web server ──────────────────────────────────────────────────────
   srmc-web:
     build:
-      context: ..
+      context: ../..
       dockerfile: apps/web/Dockerfile
     container_name: srmc-web
     restart: unless-stopped
@@ -50,6 +51,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+      - NGROK_DOMAIN=${NGROK_DOMAIN:-}
       - NGROK_URL=${NGROK_URL:-}
       - CENTRAL_SERVER_URL=${CENTRAL_SERVER_URL:-}
     healthcheck:

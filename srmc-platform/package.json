@@ -1,7 +1,7 @@
 {
   "name": "srmc-platform",
   "version": "1.0.0",
-  "description": "SRMC SMS Broadcast Platform — Monorepo",
+  "description": "SMS Broadcast Platform — Monorepo",
   "private": true,
   "type": "module",
   "workspaces": [

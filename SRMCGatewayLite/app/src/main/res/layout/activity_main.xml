@@ -1,0 +1,683 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#EEF2F7">
+
+    <!-- Top Bar -->
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#1A73C8"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvWelcomeUser"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Welcome"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"/>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="1dp">
+
+                <TextView
+                    android:id="@+id/tvUserRole"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="User"
+                    android:textSize="11sp"
+                    android:textColor="#BBDEFB"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" · "
+                    android:textColor="#90CAF9"
+                    android:textSize="11sp"/>
+
+                <TextView
+                    android:id="@+id/tvUserStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ACTIVE"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:textColor="#A5D6A7"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnLogout"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:text="Logout"
+            android:textSize="11sp"
+            android:textColor="#FFCDD2"
+            android:backgroundTint="#1565A8"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"/>
+    </LinearLayout>
+
+    <!-- Error Banner -->
+    <TextView
+        android:id="@+id/tvServerBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#B91C1C"
+        android:textSize="12sp"
+        android:background="#FEF2F2"
+        android:padding="10dp"
+        android:visibility="gone"/>
+
+    <!-- Tab content -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:overScrollMode="never">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <!-- ═══ DASHBOARD ═══ -->
+            <LinearLayout
+                android:id="@+id/layoutDashboard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Status card -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="#FFFFFF"
+                    android:padding="14dp"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="GATEWAY STATUS"
+                            android:textSize="10sp"
+                            android:textColor="#94A3B8"
+                            android:letterSpacing="0.08"
+                            android:layout_marginBottom="4dp"/>
+
+                        <TextView
+                            android:id="@+id/tvStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Stopped"
+                            android:textColor="#64748B"
+                            android:textSize="14sp"
+                            android:textStyle="bold"/>
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnToggle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:text="START GATEWAY"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        android:backgroundTint="#1A73C8"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp"/>
+                </LinearLayout>
+
+                <!-- Stats row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="70dp"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:background="#FFFFFF"
+                        android:padding="8dp"
+                        android:layout_marginEnd="4dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="SENT"
+                            android:textSize="10sp"
+                            android:textColor="#94A3B8"
+                            android:letterSpacing="0.06"/>
+
+                        <TextView
+                            android:id="@+id/tvSentCount"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="—"
+                            android:textColor="#1A73C8"
+                            android:textSize="24sp"
+                            android:textStyle="bold"
+                            android:layout_marginTop="2dp"/>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:background="#FFFFFF"
+                        android:padding="8dp"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginEnd="4dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="FAILED"
+                            android:textSize="10sp"
+                            android:textColor="#94A3B8"
+                            android:letterSpacing="0.06"/>
+
+                        <TextView
+                            android:id="@+id/tvFailCount"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="—"
+                            android:textColor="#EF4444"
+                            android:textSize="24sp"
+                            android:textStyle="bold"
+                            android:layout_marginTop="2dp"/>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:background="#FFFFFF"
+                        android:padding="8dp"
+                        android:layout_marginStart="4dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="QUEUE"
+                            android:textSize="10sp"
+                            android:textColor="#94A3B8"
+                            android:letterSpacing="0.06"/>
+
+                        <TextView
+                            android:id="@+id/tvQueueCount"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="—"
+                            android:textColor="#1D9E75"
+                            android:textSize="24sp"
+                            android:textStyle="bold"
+                            android:layout_marginTop="2dp"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- My Sent Today -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="70dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="#E8F1FB"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:layout_marginBottom="10dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="MY SENT TODAY"
+                        android:textSize="11sp"
+                        android:textColor="#1565A8"
+                        android:letterSpacing="0.06"/>
+
+                    <TextView
+                        android:id="@+id/tvMySentCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        android:textColor="#1A73C8"
+                        android:textSize="28sp"
+                        android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- Blast Status -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="#FFFFFF"
+                    android:padding="12dp"
+                    android:layout_marginBottom="12dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="BLAST STATUS"
+                            android:textSize="10sp"
+                            android:textColor="#94A3B8"
+                            android:letterSpacing="0.06"
+                            android:layout_marginBottom="3dp"/>
+
+                        <TextView
+                            android:id="@+id/tvSendingStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Start gateway to sync"
+                            android:textColor="#CBD5E1"
+                            android:textSize="11sp"/>
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvLastUpdated"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#94A3B8"
+                        android:textSize="10sp"/>
+                </LinearLayout>
+
+                <!-- Message Logs header + Clear -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="6dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="MESSAGE LOGS"
+                        android:textSize="10sp"
+                        android:textColor="#94A3B8"
+                        android:letterSpacing="0.06"/>
+
+                    <Button
+                        android:id="@+id/btnClearLog"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:text="Clear"
+                        android:textSize="11sp"
+                        android:textColor="#EF4444"
+                        android:backgroundTint="#FEF2F2"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"/>
+                </LinearLayout>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:nestedScrollingEnabled="false"/>
+
+            </LinearLayout>
+
+            <!-- ═══ SETTINGS ═══ -->
+            <LinearLayout
+                android:id="@+id/layoutSettings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- SMS Server -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="SMS SERVER"
+                    android:textSize="10sp"
+                    android:textColor="#94A3B8"
+                    android:letterSpacing="0.08"
+                    android:layout_marginBottom="6dp"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#FFFFFF"
+                    android:padding="14dp"
+                    android:layout_marginBottom="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Server IP"
+                        android:textSize="11sp"
+                        android:textColor="#64748B"
+                        android:layout_marginBottom="4dp"/>
+
+                    <EditText
+                        android:id="@+id/etSrmcIp"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:hint="192.168.1.100"
+                        android:textColor="#1E293B"
+                        android:textSize="14sp"
+                        android:background="#FFFFFF"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:inputType="textUri"
+                        android:imeOptions="actionNext"
+                        android:layout_marginBottom="12dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Server Port"
+                        android:textSize="11sp"
+                        android:textColor="#64748B"
+                        android:layout_marginBottom="4dp"/>
+
+                    <EditText
+                        android:id="@+id/etSrmcPort"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:hint="3001"
+                        android:textColor="#1E293B"
+                        android:textSize="14sp"
+                        android:background="#FFFFFF"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:inputType="number"
+                        android:imeOptions="actionDone"
+                        android:layout_marginBottom="12dp"/>
+
+                    <Button
+                        android:id="@+id/btnCheckServer"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:text="Check Server"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        android:backgroundTint="#1A73C8"/>
+
+                    <TextView
+                        android:id="@+id/tvSrmcStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#64748B"
+                        android:textSize="12sp"
+                        android:padding="8dp"
+                        android:visibility="gone"/>
+                </LinearLayout>
+
+                <!-- Local Gateway -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="LOCAL GATEWAY"
+                    android:textSize="10sp"
+                    android:textColor="#94A3B8"
+                    android:letterSpacing="0.08"
+                    android:layout_marginBottom="6dp"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#FFFFFF"
+                    android:padding="14dp"
+                    android:layout_marginBottom="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="DEVICE IP"
+                        android:textSize="10sp"
+                        android:textColor="#94A3B8"
+                        android:letterSpacing="0.06"
+                        android:layout_marginBottom="4dp"/>
+
+                    <TextView
+                        android:id="@+id/tvIpAddress"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:text="Unknown"
+                        android:textColor="#1A73C8"
+                        android:textSize="14sp"
+                        android:gravity="center_vertical"
+                        android:background="#F8FAFC"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:layout_marginBottom="12dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Gateway Port"
+                        android:textSize="11sp"
+                        android:textColor="#64748B"
+                        android:layout_marginBottom="4dp"/>
+
+                    <EditText
+                        android:id="@+id/etPort"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:hint="8088"
+                        android:textColor="#1E293B"
+                        android:textSize="14sp"
+                        android:background="#FFFFFF"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:inputType="number"
+                        android:imeOptions="actionDone"
+                        android:layout_marginBottom="12dp"/>
+
+                    <!-- API Key (long-press to regenerate) -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="API KEY (long-press to regenerate)"
+                        android:textSize="10sp"
+                        android:textColor="#94A3B8"
+                        android:letterSpacing="0.06"
+                        android:layout_marginBottom="4dp"/>
+
+                    <TextView
+                        android:id="@+id/tvApiKey"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        android:textColor="#1A73C8"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace"
+                        android:background="#F8FAFC"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
+                        android:layout_marginBottom="12dp"
+                        android:singleLine="false"
+                        android:maxLines="4"
+                        android:textIsSelectable="true"/>
+
+                    <!-- SIM Info -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="DETECTED SIMS"
+                        android:textSize="10sp"
+                        android:textColor="#94A3B8"
+                        android:letterSpacing="0.06"
+                        android:layout_marginBottom="6dp"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="#F8FAFC"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:layout_marginBottom="6dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="SIM Slot 1"
+                            android:textColor="#1E293B"
+                            android:textSize="13sp"/>
+
+                        <TextView
+                            android:id="@+id/tvSimCarrier"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="not detected"
+                            android:textColor="#1A73C8"
+                            android:textSize="12sp"/>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="#F8FAFC"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="SIM Slot 2"
+                            android:textColor="#1E293B"
+                            android:textSize="13sp"/>
+
+                        <TextView
+                            android:id="@+id/tvSim2Carrier"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="not detected"
+                            android:textColor="#1A73C8"
+                            android:textSize="12sp"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Bottom Navigation -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E2E8F0"/>
+
+    <LinearLayout
+        android:id="@+id/bottomNav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:background="#FFFFFF">
+
+        <LinearLayout
+            android:id="@+id/btnTabDashboard"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackground">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Dashboard"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#1A73C8"/>
+
+            <View
+                android:layout_width="16dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="#1A73C8"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btnTabSettings"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackground">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Settings"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#9A9AB0"/>
+
+            <View
+                android:layout_width="16dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="3dp"
+                android:background="@android:color/transparent"/>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

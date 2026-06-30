@@ -112,10 +112,10 @@ export default function AdminShell({ children }) {
         {/* ── Sidebar header (brand) ── */}
         <div className="sb-header">
           <div className="brand-mark">
-            <img src="/assets/LOGO.png" alt="SRMC" />
+            <img src="/assets/LOGO.svg" alt="SMS Platform" style={{ width: 36, height: 36 }} />
           </div>
           <div>
-            <div className="brand-title">SRMC Admin</div>
+            <div className="brand-title">SMS Admin</div>
             <div className="brand-sub">Management Portal</div>
           </div>
         </div>

@@ -63,7 +63,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvSim2Slot, tvSim2Carrier, tvDualSimStatus;
     private EditText etPort;
 
-    // Settings — SRMC server
+    // Settings — SMS server
     private EditText etSrmcIp, etSrmcPort;
     private Button   btnCheckServer;
     private TextView tvSrmcStatus;

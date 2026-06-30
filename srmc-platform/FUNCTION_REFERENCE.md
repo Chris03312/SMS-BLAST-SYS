@@ -28,7 +28,7 @@
 | `/admin/webhooks` | `Webhooks` | Admin | Ngrok tunnel management, webhook status, domain config |
 | `/admin/activity` | `Activity` | Admin | System-wide activity log with level filters |
 | `/admin/settings` | `Settings` | Admin | All system settings (timezone, caps, delays, pause, reset) |
-| `/admin/analytics` | `AdminAnalytics` | Admin | Historical analytics with period/campaign filters |
+| `/admin/analytics` | `AdminAnalytics` | Admin | Historical analytics — select period (Daily/Weekly/Monthly/Yearly) auto-calculates date range; optional campaign filter. Export as multi-sheet Excel (.xlsx) |
 | `/admin/campaigns` | `Campaigns` | Admin | Campaign management |
 | `/admin/billing` | `Billing` | Admin | Billing/usage page |
 
@@ -67,6 +67,7 @@
 | | `formatTime(iso)` | Time only: "02:30 PM" |
 | | `formatRelative(iso)` | Relative: "2m ago", "5h ago", "3d ago" |
 | | `formatNumber(n)` | Philippine locale number (123,456) |
+| `export.js` | `exportAnalyticsXlsx(data, periodLabel)` | Builds and downloads a multi-sheet Excel workbook (.xlsx) using SheetJS. Sheets: Period Breakdown, By Campaign, By Agent (SIM 1 & SIM 2 numbers), By Gateway |
 | `ws.js` | `useWS(handler)` | React hook — subscribes to WebSocket events from server; auto-reconnects every 3s |
 
 ---
@@ -138,7 +139,7 @@
 | `POST /api/gateways` | `(req, res)` | Create new gateway (name, url, token, sim_carrier, number) |
 | `PUT /api/gateways/:id` | `(req, res)` | Update gateway settings |
 | `DELETE /api/gateways/:id` | `(req, res)` | Soft-delete (active=0) |
-| `POST /api/gateways/:id/test` | `async (req, res)` | Test gateway connectivity (calls checkGatewayNow), returns updated record with `last_error` |
+| `POST /api/gateways/:id/test` | `async (req, res)` | Test gateway connectivity (calls checkGatewayNow). Accepts optional `{ token }` in body to test with a form-field token instead of the saved DB token. Returns updated record with `last_error` |
 | `DELETE /api/gateways/:id/log` | `async (req, res)` | Clear remote gateway's SMS log |
 | `POST /api/gateways/:id/test-sim` | `async (req, res)` | Send test SMS through specified SIM (sim1/sim2) |
 
@@ -189,7 +190,7 @@
 | `GET /api/user/stats/:userId` | `(req, res)` | Per-user stats (Android polls this) |
 | `POST /api/stats/report` | `(req, res)` | Receive stats report from remote installations (no auth) |
 | `GET /api/stats/remote-installations` | `(req, res)` | List remote installations |
-| `GET /api/stats/historical` | `(req, res)` | Analytics: time-series by day/week/month/year, per-user/per-gateway/per-campaign breakdowns |
+| `GET /api/stats/historical` | `(req, res)` | Analytics: time-series by day/week/month/year, per-user/per-gateway/per-campaign breakdowns. Includes `g.number` and `g.number2` (both SIM numbers) in per-gateway data |
 | `GET /api/stats/remote-dashboard` | `(req, res)` | Aggregated dashboard summary of all remote installations |
 
 ### 2.11 Template Routes (`routes/templates.js`)
@@ -262,7 +263,7 @@
 
 | Function | Description |
 |----------|-------------|
-| `startBroadcast(broadcastId)` | Main broadcast execution engine: supports turbo mode (concurrent batches for push, fast-release for pull) and normal mode (one-at-a-time with delay). Enforces max concurrent, time windows, daily caps, global pause, max duration |
+| `startBroadcast(broadcastId)` | Main broadcast execution engine: supports turbo mode (concurrent batches for push, fast-release for pull) and normal mode (one-at-a-time with delay). Enforces max concurrent, time windows, daily caps, global pause, max duration. Fix: `nowHHMM()` uses `.replace(/^24:/, '00:')` to handle midnight hours in `en-PH` locale |
 | `sendViaSingleGateway(gateway, toNumber, message)` | Sends single SMS to push gateway with 15s timeout |
 | `onMessageAcked(broadcastId)` | Recomputes broadcast progress from message rows; marks 'done' when nothing pending |
 | `cancelBroadcast(broadcastId)` | Sets in-memory cancel flag |
@@ -278,7 +279,7 @@
 |----------|-------------|
 | `checkGateway(gateway)` | Pings gateway with 5s timeout; categorizes errors (401→unauthorized, timeout→not responding, ECONNREFUSED→connection refused, etc.); stores `last_error` in DB; determines 'online'/'slow'/'offline' status |
 | `startPoller()` | Runs every 30s: checks all non-pull gateways, counts sent_today |
-| `checkGatewayNow(gatewayId)` | Immediate single-gateway check (called by test endpoint), returns updated gateway record |
+| `checkGatewayNow(gatewayId, overrideToken?)` | Immediate single-gateway check (called by test endpoint). If `overrideToken` is provided, uses it instead of the DB-stored token so the Gateway form can test with an unsaved token. Returns updated gateway record |
 
 ### 2.18 Other Server Modules
 
@@ -300,7 +301,9 @@
 | `ws.js` | `initWss(server)` | Initializes WebSocket server on `/ws` path |
 | | `broadcast(event)` | Sends JSON event to all connected WebSocket clients |
 
-### 2.19 Database Schema
+#### 2.19 Database Schema
+
+Full reference: `data/schema/srmc-schema.sql`
 
 | Table | Description |
 |-------|-------------|
@@ -314,8 +317,39 @@
 | `inbound` | Inbound SMS messages with flags (opt-out, needs-reply, confirmed) |
 | `activity` | System-wide activity log |
 | `settings` | Key-value configuration store |
-| `remote_installations` | Stats from connected remote servers |
-| `remote_stats_snapshots` | Historical snapshots of remote installation stats |
+| `remote_installations` | Stats from connected remote servers (central server only) |
+| `remote_stats_snapshots` | Historical snapshots of remote installation stats (central server only) |
+
+### Indexes (created by db.js)
+
+| Index | Table | Columns | Created |
+|-------|-------|---------|---------|
+| `idx_messages_broadcast_id` | messages | broadcast_id | Initial schema |
+| `idx_messages_gateway_id_status` | messages | gateway_id, status | Initial schema |
+| `idx_messages_to_number` | messages | to_number | Initial schema |
+| `idx_messages_status` | messages | status | Initial schema |
+| `idx_messages_sent_at` | messages | sent_at | Initial schema |
+| `idx_broadcasts_agent_id` | broadcasts | agent_id | Initial schema |
+| `idx_broadcasts_status` | broadcasts | status | Initial schema |
+| `idx_broadcasts_created_at` | broadcasts | created_at | Initial schema |
+| `idx_broadcasts_campaign_id` | broadcasts | campaign_id | Initial schema |
+| `idx_campaigns_owner_id` | campaigns | owner_id | Initial schema |
+| `idx_templates_created_by` | templates | created_by | Initial schema |
+| `idx_users_role` | users | role | Initial schema |
+| `idx_users_role_active` | users | role, active | Initial schema |
+| `idx_gateways_status` | gateways | status | Initial schema |
+| `idx_gateways_active_mode` | gateways | active, mode | After migration |
+| `idx_inbound_created_at` | inbound | created_at | Initial schema |
+| `idx_inbound_read_at` | inbound | read_at | Initial schema |
+| `idx_inbound_agent_id` | inbound | agent_id | After migration |
+| `idx_activity_user_id` | activity | user_id | Initial schema |
+| `idx_activity_created_at` | activity | created_at | Initial schema |
+| `idx_activity_action` | activity | action | Initial schema |
+| `idx_gateway_tokens_gateway_id` | gateway_tokens | gateway_id | Initial schema |
+
+**Note:** Indexes on `idx_gateways_active_mode` and `idx_inbound_agent_id` are created AFTER
+migrations because they reference columns (`mode`, `agent_id`) that are added to existing
+databases via ALTER TABLE.
 
 ---
 
@@ -396,7 +430,7 @@
 | `detectSims()` | Reads SubscriptionManager for SIM1/SIM2 carriers and subscription IDs, auto-enables dual SIM if both detected |
 | `checkPermissions()` | Requests SEND_SMS, RECEIVE_SMS, READ_SMS, READ_PHONE_STATE, POST_NOTIFICATIONS (API 33+) |
 | `getLocalIp()` | Returns the device's LAN IP address |
-| `generateApiKey()` | Generates 32-char alphanumeric API key for the embedded HTTP server |
+| `generateApiKey()` | Generates 8-char alphanumeric API key for the embedded HTTP server (changed from 32 chars for easier copy-paste) |
 | `savePort()` | Saves embedded HTTP server port from UI |
 | `saveSrmcServer()` | Saves SRMC server IP + port |
 | `checkSrmcServerNow()` | Pings SRMC server and shows result |
@@ -560,3 +594,46 @@ _Note: The embedded HTTP server (SmsHttpServer / NanoHTTPD) has been removed._
 | `startPoller()` | Starts gateway health check poller |
 | `startStatsReporter()` | Starts central server stats reporter |
 | `SIGINT`/`SIGTERM` handlers | Graceful shutdown |
+
+## 7. Docker Deployment Files (`apps/web/`)
+
+### Standard Deployment (`docker-compose.yml`)
+
+| Service | Image | Port | Description |
+|---------|-------|------|-------------|
+| `srmc-nginx` | nginx:alpine | 8080 → 80 | Reverse proxy + static file serving |
+| `srmc-web` | (build) | 3001 (internal) | Express API + React frontend |
+
+Usage:
+```bash
+docker compose -f apps/web/docker-compose.yml up -d --build
+```
+
+### Internet Demo Deployment (`docker-compose.internet.yml`)
+
+Same as standard but configures `NGROK_AUTHTOKEN` so the web server auto-creates an
+ngrok tunnel on startup. The tunnel URL is registered in the database and served
+to Android phones via `/api/config`.
+
+| Service | Image | Port | Description |
+|---------|-------|------|-------------|
+| `srmc-nginx` | nginx:alpine | 8080 → 80 | Reverse proxy + static file serving |
+| `srmc-web` | (build) | 3001 (internal) | Express + React + auto ngrok tunnel |
+
+Usage:
+```bash
+cp apps/web/.env.example apps/web/.env
+# Edit .env with NGROK_AUTHTOKEN, ADMIN_PASSWORD
+docker compose -f apps/web/docker-compose.internet.yml up -d --build
+# Get URL: docker logs srmc-web --tail 10
+```
+
+### Environment Template (`apps/web/.env.example`)
+
+| Variable | Purpose |
+|----------|---------|
+| `NGROK_AUTHTOKEN` | ngrok authtoken for internet tunnel |
+| `ADMIN_USERNAME` | Admin login username (default: admin) |
+| `ADMIN_PASSWORD` | Admin login password (default: demo123) |
+| `JWT_SECRET` | JWT signing key (auto-generated if blank) |
+| `WEBHOOK_SECRET` | Webhook secret (auto-generated if blank) |

@@ -97,8 +97,8 @@
 56-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:37:9-54
 57        android:supportsRtl="true"
 57-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:39:9-35
-58        android:theme="@style/Theme.SRMCGateway"
-58-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:41:9-49
+58        android:theme="@style/Theme.SMSGateway"
+58-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:41:9-48
 59        android:usesCleartextTraffic="true" >
 59-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\src\main\AndroidManifest.xml:40:9-44
 60        <activity

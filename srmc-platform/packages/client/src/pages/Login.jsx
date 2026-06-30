@@ -31,14 +31,14 @@ export default function Login() {
         <div className="grid-overlay" />
         <div className="orb" />
         <div className="brand-inner">
-          <img src="/assets/LOGO.png" alt="SRMC" className="brand-logo" style={{ width: 80, marginBottom: 32 }} />
-          <div className="eyebrow">SRMC Credit Collection Services</div>
+          <img src="/assets/LOGO.svg" alt="SMS Platform" className="brand-logo" style={{ width: 80, marginBottom: 32 }} />
+          <div className="eyebrow">SMS Broadcast Platform</div>
           <h1>
             Broadcast.<br />
             <span className="grad-text">At scale.</span>
           </h1>
           <p className="brand-copy">
-            Send bulk SMS via Android gateways. Real-time delivery tracking, and multi-agent support built for Indian credit operations.
+            Send bulk SMS via Android gateways. Real-time delivery tracking, and multi-agent support.
           </p>
           <div className="stat-row">
             <div>
@@ -56,7 +56,7 @@ export default function Login() {
           </div>
           <div className="spacer" />
           <div className="brand-footer">
-            <span>© 2026 SRMC Credit Collection Services</span>
+            <span>© 2026 SMS Platform</span>
             <span>v1.0.0</span>
           </div>
         </div>

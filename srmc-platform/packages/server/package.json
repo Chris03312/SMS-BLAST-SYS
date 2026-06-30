@@ -1,7 +1,7 @@
 {
   "name": "@srmc/server",
   "version": "1.0.0",
-  "description": "SRMC Platform — shared Express server code",
+  "description": "SMS Platform — shared Express server code",
   "private": true,
   "type": "module",
   "main": "app.js",

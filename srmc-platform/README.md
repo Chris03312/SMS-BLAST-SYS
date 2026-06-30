@@ -68,6 +68,10 @@ cp .env.example .env
 docker compose -f apps/web/docker-compose.yml up -d
 ```
 
+## Dependencies
+
+- **`xlsx` (SheetJS)** — Used in `packages/client` for generating multi-sheet Excel exports (`.xlsx`) in the Analytics page
+
 ## Configuration
 
 Copy `.env.example` → `.env`. All values are optional:
