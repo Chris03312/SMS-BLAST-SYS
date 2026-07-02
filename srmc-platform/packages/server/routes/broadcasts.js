@@ -5,6 +5,8 @@ import { fixTimestamps } from '../fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { startBroadcast, cancelBroadcast, pauseBroadcast, resumeBroadcast, getRunningCount } from '../broadcast-engine.js';
 import { normalizePhone } from '../phone.js';
+// TODO: import your actual event emitter here, e.g.:
+// import { emitEvent } from '../sockets.js';
 
 const router = Router();
 
@@ -87,8 +89,10 @@ router.get('/running/list', (req, res) => {
   try {
     const running = db.prepare(
       `SELECT b.id, b.status, b.sent, b.failed, b.total, b.message, b.delay_ms, b.created_at,
+              u.display_name as agent_name,
               c.name as campaign_name, g.number as gateway_number
        FROM broadcasts b
+       LEFT JOIN users u ON b.agent_id = u.id
        LEFT JOIN campaigns c ON b.campaign_id = c.id
        LEFT JOIN gateways g ON b.gateway_id = g.id
        WHERE b.status IN ('pending', 'sending', 'paused')
@@ -188,8 +192,9 @@ router.get('/:id', (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution } = req.body;
+    const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution, sim_mode } = req.body;
     const distMode = distribution === 'linear' ? 'linear' : 'round-robin';
+    const resolvedSimMode = sim_mode === 'parallel' ? 'parallel' : sim_mode === 'sim1' ? 'sim1' : sim_mode === 'sim2' ? 'sim2' : 'round-robin';
 
     const rawGatewayIds = Array.isArray(gateway_ids) && gateway_ids.length > 0
       ? gateway_ids
@@ -266,7 +271,7 @@ router.post('/', async (req, res) => {
     const broadcastId = uuidv4();
     const primaryGwId = validGateways[0].id;
 
-    db.prepare(`INSERT INTO broadcasts (id, agent_id, campaign_id, template_id, gateway_id, gateway_ids, distribution, message, recipients, total, delay_ms, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`)
+    db.prepare(`INSERT INTO broadcasts (id, agent_id, campaign_id, template_id, gateway_id, gateway_ids, distribution, message, recipients, total, delay_ms, status, sim_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`)
       .run(
         broadcastId,
         req.user.id,
@@ -278,7 +283,8 @@ router.post('/', async (req, res) => {
         message,
         JSON.stringify(validRecipients),
         validRecipients.length,
-        resolvedDelay
+        resolvedDelay,
+        resolvedSimMode
       );
 
     const total = validRecipients.length;
@@ -316,27 +322,41 @@ router.get('/running/count', (req, res) => {
   return ok(res, { count: getRunningCount() });
 });
 
+// ── Delete a broadcast ──────────────────────────────────────────────────
+
 router.delete('/:id', (req, res) => {
   try {
-    const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id);
-    if (!broadcast) {
+    const bcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id);
+    if (!bcast) {
       return fail(res, 'Broadcast not found', 404);
     }
 
-    if (req.user.role === 'agent' && broadcast.agent_id !== req.user.id) {
+    if (req.user.role === 'agent' && bcast.agent_id !== req.user.id) {
       return fail(res, 'Access denied', 403);
     }
 
+    // Stop the engine if this broadcast is actively sending
     cancelBroadcast(req.params.id);
 
-    // Always update DB — this is the authoritative cancel.
-    // The engine's in-memory cancel flag is advisory; the DB status
-    // is what the system checks for completion. This ensures cancel
-    // always works even if the engine's cancel handler is mid-batch.
-    if (broadcast.status === 'pending' || broadcast.status === 'sending' || broadcast.status === 'paused') {
-      db.prepare(`UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?`).run(req.params.id);
-      broadcast({ type: 'broadcast:complete', broadcastId: req.params.id, status: 'cancelled', sent: broadcast.sent || 0, failed: broadcast.failed || 0, total: broadcast.total || 0 });
+    // Notify frontend before deleting so it can update UIs
+    const finalStatus = bcast.status === 'pending' || bcast.status === 'sending' || bcast.status === 'paused'
+      ? 'cancelled' : (bcast.status || 'done');
+
+    // TODO: replace with your real event emitter (e.g. emitEvent, io.emit, etc.)
+    if (typeof emitEvent === 'function') {
+      emitEvent({
+        type: 'broadcast:complete',
+        broadcastId: req.params.id,
+        status: finalStatus,
+        sent: bcast.sent || 0,
+        failed: bcast.failed || 0,
+        total: bcast.total || 0,
+      });
     }
+
+    // Delete associated messages first, then the broadcast itself
+    db.prepare('DELETE FROM messages WHERE broadcast_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM broadcasts WHERE id = ?').run(req.params.id);
 
     return ok(res, { success: true });
   } catch (e) {

@@ -67,12 +67,16 @@ router.get('/historical', authMiddleware, adminOnly, (req, res) => {
     const from        = req.query.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const campaignId  = req.query.campaign_id || null;
 
-    // Build the date-truncation expression based on the requested period
+    // Build the date-truncation expression based on the requested period.
+    // Use COALESCE(sent_at, created_at) so failed messages (no sent_at) are included.
     let dateExpr;
-    if (period === 'year')      dateExpr = "strftime('%Y', m.sent_at)";
-    else if (period === 'month') dateExpr = "strftime('%Y-%m', m.sent_at)";
-    else if (period === 'week')  dateExpr = "strftime('%Y-%W', m.sent_at)";
-    else                         dateExpr = "date(m.sent_at)";
+    if (period === 'year')      dateExpr = "strftime('%Y', COALESCE(m.sent_at, m.created_at))";
+    else if (period === 'month') dateExpr = "strftime('%Y-%m', COALESCE(m.sent_at, m.created_at))";
+    else if (period === 'week')  dateExpr = "strftime('%Y-%W', COALESCE(m.sent_at, m.created_at))";
+    else                         dateExpr = "date(COALESCE(m.sent_at, m.created_at))";
+
+    // Shared date filter (used by all sub-queries)
+    const dateFilter = "date(COALESCE(m.sent_at, m.created_at)) >= ? AND date(COALESCE(m.sent_at, m.created_at)) <= ?";
 
     // Build campaign filter clause
     const campFilter = campaignId ? "AND b.campaign_id = ?" : "";
@@ -80,13 +84,11 @@ router.get('/historical', authMiddleware, adminOnly, (req, res) => {
     // Time-series: messages sent/failed per period
     const seriesSql = `
       SELECT ${dateExpr} AS date,
-             COUNT(CASE WHEN m.status = 'sent' THEN 1 END)   AS sent,
-             COUNT(CASE WHEN m.status = 'failed' THEN 1 END) AS failed
+             COUNT(CASE WHEN m.status IN ('sent', 'delivered') THEN 1 END) AS sent,
+             COUNT(CASE WHEN m.status = 'failed' THEN 1 END)               AS failed
       FROM messages m
       JOIN broadcasts b ON b.id = m.broadcast_id
-      WHERE m.sent_at IS NOT NULL
-        AND date(m.sent_at) >= ?
-        AND date(m.sent_at) <= ?
+      WHERE ${dateFilter}
         ${campFilter}
       GROUP BY ${dateExpr}
       ORDER BY date ASC
@@ -100,14 +102,12 @@ router.get('/historical', authMiddleware, adminOnly, (req, res) => {
         u.id          AS agent_id,
         u.display_name,
         u.username,
-        COUNT(CASE WHEN m.status = 'sent'   THEN 1 END) AS sent,
-        COUNT(CASE WHEN m.status = 'failed' THEN 1 END) AS failed
+        COUNT(CASE WHEN m.status IN ('sent', 'delivered') THEN 1 END) AS sent,
+        COUNT(CASE WHEN m.status = 'failed' THEN 1 END)               AS failed
       FROM messages m
       JOIN broadcasts b ON b.id = m.broadcast_id
       JOIN users u      ON u.id = b.agent_id
-      WHERE m.sent_at IS NOT NULL
-        AND date(m.sent_at) >= ?
-        AND date(m.sent_at) <= ?
+      WHERE ${dateFilter}
         ${campFilter}
       GROUP BY u.id
       ORDER BY sent DESC
@@ -119,14 +119,12 @@ router.get('/historical', authMiddleware, adminOnly, (req, res) => {
       SELECT
         c.id   AS campaign_id,
         c.name AS campaign_name,
-        COUNT(CASE WHEN m.status = 'sent'   THEN 1 END) AS sent,
-        COUNT(CASE WHEN m.status = 'failed' THEN 1 END) AS failed
+        COUNT(CASE WHEN m.status IN ('sent', 'delivered') THEN 1 END) AS sent,
+        COUNT(CASE WHEN m.status = 'failed' THEN 1 END)               AS failed
       FROM messages m
       JOIN broadcasts b ON b.id = m.broadcast_id
       LEFT JOIN campaigns c ON c.id = b.campaign_id
-      WHERE m.sent_at IS NOT NULL
-        AND date(m.sent_at) >= ?
-        AND date(m.sent_at) <= ?
+      WHERE ${dateFilter}
         ${campFilter}
       GROUP BY c.id
       ORDER BY sent DESC
@@ -140,14 +138,12 @@ router.get('/historical', authMiddleware, adminOnly, (req, res) => {
         g.name AS gateway_name,
         g.number,
         g.number2,
-        COUNT(CASE WHEN m.status = 'sent'   THEN 1 END) AS sent,
-        COUNT(CASE WHEN m.status = 'failed' THEN 1 END) AS failed
+        COUNT(CASE WHEN m.status IN ('sent', 'delivered') THEN 1 END) AS sent,
+        COUNT(CASE WHEN m.status = 'failed' THEN 1 END)               AS failed
       FROM messages m
       JOIN broadcasts b ON b.id = m.broadcast_id
       JOIN gateways g ON g.id = m.gateway_id
-      WHERE m.sent_at IS NOT NULL
-        AND date(m.sent_at) >= ?
-        AND date(m.sent_at) <= ?
+      WHERE ${dateFilter}
         ${campFilter}
       GROUP BY g.id
       ORDER BY sent DESC
@@ -157,13 +153,11 @@ router.get('/historical', authMiddleware, adminOnly, (req, res) => {
     // Totals
     const totalsSql = `
       SELECT
-        COUNT(CASE WHEN m.status = 'sent'   THEN 1 END) AS sent,
-        COUNT(CASE WHEN m.status = 'failed' THEN 1 END) AS failed
+        COUNT(CASE WHEN m.status IN ('sent', 'delivered') THEN 1 END) AS sent,
+        COUNT(CASE WHEN m.status = 'failed' THEN 1 END)               AS failed
       FROM messages m
       JOIN broadcasts b ON b.id = m.broadcast_id
-      WHERE m.sent_at IS NOT NULL
-        AND date(m.sent_at) >= ?
-        AND date(m.sent_at) <= ?
+      WHERE ${dateFilter}
         ${campFilter}
     `;
     const totals = db.prepare(totalsSql).get(...seriesParams);

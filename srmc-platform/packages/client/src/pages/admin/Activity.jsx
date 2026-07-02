@@ -4,6 +4,7 @@ import Pill from '../../components/Pill.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatDate } from '../../lib/format.js';
+import { exportActivityXlsx } from '../../lib/export.js';
 
 const LEVELS = ['all', 'info', 'warn', 'error'];
 
@@ -51,6 +52,20 @@ export default function Activity() {
           <h1>Activity Log</h1>
           <div className="page-sub">Audit trail of all platform actions across agents and broadcasts.</div>
         </div>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => exportActivityXlsx({ level })}
+          style={{ fontSize: 12, padding: '7px 14px' }}
+          title="Export all activity as Excel"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: 'middle' }}>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Export Excel
+        </button>
       </div>
 
       <div className="toolbar">

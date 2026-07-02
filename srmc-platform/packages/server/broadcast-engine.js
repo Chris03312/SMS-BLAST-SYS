@@ -432,7 +432,7 @@ export function onMessageAcked(broadcastId) {
 
   let sent = 0, failed = 0, open = 0;
   for (const row of counts) {
-    if (row.status === 'sent') sent = row.c;
+    if (row.status === 'sent' || row.status === 'delivered') sent += row.c;
     else if (row.status === 'failed') failed = row.c;
     else if (row.status === 'queued' || row.status === 'pending' || row.status === 'sending') open += row.c;
   }

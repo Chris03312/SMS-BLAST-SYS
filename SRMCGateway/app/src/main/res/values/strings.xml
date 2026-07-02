@@ -73,10 +73,7 @@
     <string name="label_sim1_slot">SIM Slot 1</string>
     <string name="label_sim2_slot">SIM Slot 2</string>
     <string name="label_sim_not_detected">not detected</string>
-    <string name="label_dual_sim_mode">DUAL SIM MODE (concurrent sending)</string>
-    <string name="label_dual_sim_enabled">&#9679; Dual SIM active — SIMs send in parallel</string>
-    <string name="label_dual_sim_disabled">&#9675; Single SIM mode — tap to enable dual SIM</string>
-    <string name="label_dual_sim_toggle_off">&#10003; Dual SIM on — tap to disable</string>
+
 
     <!-- Inbound Webhook -->
     <string name="label_inbound_webhook">INBOUND WEBHOOK</string>

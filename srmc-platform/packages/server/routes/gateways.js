@@ -81,7 +81,7 @@ router.post('/', (req, res) => {
 
 router.put('/:id', (req, res) => {
   try {
-    const { name, url, token, sim_carrier, number, number2, active } = req.body;
+    const { name, url, token, sim_carrier, sim2_carrier, number, number2, active } = req.body;
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(req.params.id);
     if (!gateway) {
       return fail(res, 'Gateway not found', 404);
@@ -89,12 +89,13 @@ router.put('/:id', (req, res) => {
 
     const normalizedToken = token !== undefined ? (token || '').toLowerCase() : gateway.token;
 
-    db.prepare('UPDATE gateways SET name = ?, url = ?, token = ?, sim_carrier = ?, number = ?, number2 = ?, active = ? WHERE id = ?')
+    db.prepare('UPDATE gateways SET name = ?, url = ?, token = ?, sim_carrier = ?, sim2_carrier = ?, number = ?, number2 = ?, active = ? WHERE id = ?')
       .run(
         name ?? gateway.name,
         url ?? gateway.url,
         normalizedToken,
         sim_carrier !== undefined ? sim_carrier : gateway.sim_carrier,
+        sim2_carrier !== undefined ? sim2_carrier : gateway.sim2_carrier,
         number !== undefined ? number : gateway.number,
         number2 !== undefined ? number2 : gateway.number2,
         active !== undefined ? (active ? 1 : 0) : gateway.active,

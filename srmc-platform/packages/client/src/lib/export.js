@@ -87,3 +87,40 @@ export function exportAnalyticsXlsx(data, periodLabel) {
     downloadFile(blob, `sms-analytics-${dateStr}.xlsx`);
   }
 }
+
+/**
+ * Build and download an XLSX export of the activity log.
+ *
+ * Fetches all activity entries from the API (up to 10 000),
+ * then writes them to a single-sheet workbook.
+ *
+ * @param {object} filters - { level?, limit? } to pass to the API
+ */
+export async function exportActivityXlsx(filters = {}) {
+  const { default: api } = await import('./api.js');
+  const params = new URLSearchParams({ limit: 10000, ...(filters.level && filters.level !== 'all' ? { level: filters.level } : {}) });
+  const data = await api.get(`/activity?${params}`);
+  const activities = data.activities || [];
+
+  if (activities.length === 0) return;
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const wb = XLSX.utils.book_new();
+
+  const rows = activities.map(a => ({
+    Timestamp: a.created_at || '',
+    User: a.user_name || '—',
+    Campaign: a.campaign_name || '—',
+    Action: a.action || '',
+    Detail: a.detail || '',
+    Level: a.level || 'info',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Activity Log');
+
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  downloadFile(blob, `sms-activity-log-${dateStr}.xlsx`);
+}
+

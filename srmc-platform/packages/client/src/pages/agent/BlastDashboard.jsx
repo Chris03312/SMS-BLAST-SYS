@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
+import Modal from '../../components/Modal.jsx';
 import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -79,8 +80,12 @@ export default function BlastDashboard() {
   const [selectedGateways, setSelectedGateways] = useState(savedDraft.current?.selectedGateways ?? []);
   const [distribution, setDistribution] = useState(savedDraft.current?.distribution ?? 'round-robin');
   const [delayMs, setDelayMs] = useState(6000);
+  const [simMode, setSimMode] = useState('round-robin');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [showSummary, setShowSummary] = useState(false);
+  const [sentSummary, setSentSummary] = useState(null);
+  const [showReview, setShowReview] = useState(false);
 
   const [activeBroadcasts, setActiveBroadcasts] = useState({}); // { [id]: { sent, failed, total, status, message? } }
   const [failedMessages, setFailedMessages] = useState([]);
@@ -126,10 +131,13 @@ export default function BlastDashboard() {
     setInitialDataLoaded(true);
   }, []);
 
-  // Restore delay from draft after settings are loaded
+  // Restore delay and simMode from draft after settings are loaded
   useEffect(() => {
     if (initialDataLoaded && savedDraft.current?.delayMs) {
       setDelayMs(savedDraft.current.delayMs);
+    }
+    if (initialDataLoaded && savedDraft.current?.simMode) {
+      setSimMode(savedDraft.current.simMode);
     }
   }, [initialDataLoaded]);
 
@@ -144,8 +152,9 @@ export default function BlastDashboard() {
       selectedGateways,
       distribution,
       delayMs,
+      simMode,
     });
-  }, [selectedTemplate, selectedCampaign, message, recipients, selectedGateways, distribution, delayMs, initialDataLoaded]);
+  }, [selectedTemplate, selectedCampaign, message, recipients, selectedGateways, distribution, delayMs, simMode, initialDataLoaded]);
 
   useWS((event) => {
     if (event.type === 'broadcast:progress' && event.broadcastId) {
@@ -225,21 +234,7 @@ export default function BlastDashboard() {
   const isLowDelay = delayMs <= 2000 && !isTurbo;
   const isLargeBatch = recipientList.length > 200;
 
-  async function handleVerifyGateways() {
-    if (selectedGateways.length === 0) return;
-    const results = await Promise.allSettled(
-      selectedGateways.map(id => api.post(`/gateways/${id}/test`))
-    );
-    const lines = selectedGateways.map((id, i) => {
-      const gw = gateways.find(g => g.id === id);
-      const r = results[i];
-      return `${gw?.name}: ${r.status === 'fulfilled' ? r.value.status || 'ok' : 'unreachable'}`;
-    });
-    alert(lines.join('\n'));
-  }
-
-  async function handleSend(e) {
-    e.preventDefault();
+  async function handleSend() {
     if (broadcastsPaused) {
       setError('Broadcasting is paused by admin. No new broadcasts can be sent until it is resumed.');
       return;
@@ -259,6 +254,10 @@ export default function BlastDashboard() {
         message,
         recipients: recipientList,
         delay_ms: delayMs,
+        sim_mode: selectedGateways.some(id => {
+          const gw = gateways.find(g => g.id === id);
+          return gw && gw.sim_carrier && gw.sim2_carrier;
+        }) ? simMode : undefined,
       });
       const bid = result.broadcast.id;
       setActiveBroadcasts(prev => ({
@@ -267,6 +266,18 @@ export default function BlastDashboard() {
       }));
       setStatsTotal(result.broadcast.total);
       setSending(false);
+      // Capture summary data for post-send receipt
+      setSentSummary({
+        message: result.broadcast.message || message,
+        recipients: recipientList,
+        gateways: selectedGateways,
+        campaign: campaigns.find(c => c.id === selectedCampaign)?.name || null,
+        distribution,
+        delayMs,
+        simMode,
+        total: result.broadcast.total,
+      });
+      setShowSummary(true);
       // Clear draft after successful send
       clearDraft();
     } catch (e) {
@@ -322,10 +333,25 @@ export default function BlastDashboard() {
                       <div style={{ height: '100%', width: `${pct}%`, background: bc.status === 'paused' ? 'var(--warn)' : 'var(--ok)', borderRadius: 3, transition: 'width 0.4s' }} />
                     </div>
                     <button
-                      className="btn-danger"
-                      style={{ width: '100%', padding: '3px 8px', fontSize: 11 }}
-                      onClick={() => handleCancel(id)}
+                      style={{
+                        width: '100%', padding: '4px 10px', fontSize: 11,
+                        border: '1px solid var(--err-line)', borderRadius: 6,
+                        background: 'var(--err-bg)', color: 'var(--err)',
+                        cursor: 'pointer', fontWeight: 500,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                        transition: 'all 0.12s',
+                      }}
+                      onClick={() => {
+                        if (window.confirm(`Cancel this broadcast? ${bc.sent || 0}/${bc.total || 0} messages sent so far.`)) {
+                          handleCancel(id);
+                        }
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--err)'; e.currentTarget.style.color = '#fff'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
                     >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
                       Cancel
                     </button>
                   </div>
@@ -339,7 +365,7 @@ export default function BlastDashboard() {
             {[
               { label: 'Sent (7d)', val: statsSent },
               { label: 'Failed (7d)', val: statsFailed },
-              { label: 'Total msgs', val: statsTotal || progress.total },
+              { label: 'Total msgs', val: statsTotal || activeBcList.reduce((sum, [_, b]) => sum + (b.total || 0), 0) || 0 },
               { label: 'Queued', val: isSending ? activeBcList.reduce((sum, [_, b]) => sum + Math.max(0, b.total - b.sent), 0) : 0 },
             ].map(s => (
               <div key={s.label} className="card" style={{ padding: '12px 14px' }}>
@@ -384,7 +410,7 @@ export default function BlastDashboard() {
             <div className="card-head">
               <h3>Compose Broadcast</h3>
             </div>
-            <form style={{ padding: 18 }} onSubmit={handleSend}>
+            <form style={{ padding: 18 }} onSubmit={e => e.preventDefault()}>
               {/* Template pills */}
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
@@ -508,12 +534,30 @@ export default function BlastDashboard() {
                           <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: checked ? '#fff' : 'var(--ink-1)' }}>
                             {g.name}
                           </span>
-                          {/* SIM carrier */}
-                          {g.sim_carrier && (
-                            <span style={{ fontSize: 11, color: checked ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)' }}>
-                              {g.sim_carrier}
-                            </span>
-                          )}
+                          {/* SIM carriers */}
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            {g.sim_carrier && (
+                              <span style={{ fontSize: 10, color: checked ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
+                                📱1 {g.sim_carrier}
+                              </span>
+                            )}
+                            {g.sim2_carrier && (
+                              <span style={{ fontSize: 10, color: checked ? 'rgba(255,255,255,0.6)' : 'var(--brand-1)', fontFamily: 'var(--mono)' }}>
+                                📱2 {g.sim2_carrier}
+                              </span>
+                            )}
+                            {/* Dual SIM badge */}
+                            {g.sim_carrier && g.sim2_carrier && (
+                              <span style={{
+                                fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                                letterSpacing: '0.06em', padding: '1px 5px', borderRadius: 4,
+                                background: checked ? 'rgba(255,255,255,0.15)' : 'var(--ok-bg)',
+                                color: checked ? 'rgba(255,255,255,0.7)' : 'var(--ok)',
+                              }}>
+                                2× SIM
+                              </span>
+                            )}
+                          </div>
                           {/* Status dot */}
                           <span style={{
                             width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
@@ -630,6 +674,56 @@ export default function BlastDashboard() {
                 )}
               </div>
 
+              {/* ── Dual-SIM Mode Picker (only if any selected gateway has dual SIM) ── */}
+              {selectedGateways.some(id => {
+                const gw = gateways.find(g => g.id === id);
+                return gw && gw.sim_carrier && gw.sim2_carrier;
+              }) && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>
+                      Dual-SIM Mode
+                    </label>
+                    <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
+                      {simMode === 'sim1' ? '📱1 SIM 1 only'
+                        : simMode === 'sim2' ? '📱2 SIM 2 only'
+                        : simMode === 'parallel' ? '⚡ Parallel'
+                        : '↻ Round-robin'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {[
+                      { key: 'sim1', icon: '📱1', title: 'SIM 1 Only', desc: 'All messages via SIM 1 only' },
+                      { key: 'sim2', icon: '📱2', title: 'SIM 2 Only', desc: 'All messages via SIM 2 only' },
+                      { key: 'round-robin', icon: '↻', title: 'Round-robin', desc: 'Alternates SIM1 → SIM2 → SIM1 per message' },
+                      { key: 'parallel', icon: '⚡', title: 'Parallel', desc: 'Splits batch — half via each SIM concurrently' },
+                    ].map(opt => {
+                      const active = simMode === opt.key;
+                      return (
+                        <div
+                          key={opt.key}
+                          onClick={() => setSimMode(opt.key)}
+                          style={{
+                            padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                            border: `1.5px solid ${active ? 'var(--brand-1)' : 'var(--line)'}`,
+                            background: active ? 'var(--brand-1)' : '#fff',
+                            transition: 'all 0.12s',
+                          }}
+                        >
+                          <div style={{ fontSize: 13, marginBottom: 1 }}>{opt.icon}</div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#fff' : 'var(--ink-1)', marginBottom: 1 }}>
+                            {opt.title}
+                          </div>
+                          <div style={{ fontSize: 10, color: active ? 'rgba(255,255,255,0.7)' : 'var(--ink-3)', lineHeight: 1.3 }}>
+                            {opt.desc}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Large batch warning */}
               {isLargeBatch && (
                 <div style={{
@@ -644,25 +738,6 @@ export default function BlastDashboard() {
                   <span><strong>{recipientList.length} recipients</strong> — large batch. Estimated time may be significant. Consider splitting into smaller groups.</span>
                 </div>
               )}
-
-              {/* Summary row */}
-              {/* Summary row */}
-              <div style={{
-                padding: '10px 14px',
-                background: isTurbo ? 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(219,39,119,0.08))' : 'var(--bg-soft)',
-                border: isTurbo ? '1px solid rgba(124,58,237,0.2)' : 'none',
-                borderRadius: 8, marginBottom: 6,
-                display: 'flex', gap: 20, fontSize: 12, color: 'var(--ink-2)',
-                alignItems: 'center',
-              }}>
-                <span>Recipients: <strong className="num">{recipientList.length}</strong></span>
-                <span>Est. time: <strong>{isTurbo ? '⚡ Turbo' : estimateTime(recipientList.length, delayMs)}</strong></span>
-                {isTurbo && (
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#7c3aed', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    Concurrent sending
-                  </span>
-                )}
-              </div>
 
               {/* Global pause warning */}
               {broadcastsPaused && (
@@ -698,16 +773,310 @@ export default function BlastDashboard() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" className="btn-ghost" onClick={handleVerifyGateways} disabled={selectedGateways.length === 0}>
-                  Verify gateway
-                </button>
-                <button type="submit" className="btn-primary" disabled={sending || selectedGateways.length === 0} style={{ flex: 1 }}>
-                  {sending ? 'Sending...' : `Send broadcast (${recipientList.length})`}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={selectedGateways.length === 0 || !message || recipientList.length === 0}
+                style={{ width: '100%' }}
+                onClick={() => setShowReview(true)}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+                Review &amp; Send ({recipientList.length})
+              </button>
             </form>
           </div>
+
+          {/* ── Review & Confirm Modal ── */}
+          {showReview && (
+            <Modal title="Review Broadcast" onClose={() => setShowReview(false)} width={520}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Summary grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+                  {/* Message */}
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Message
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-1)', padding: '8px 10px', background: 'var(--bg-soft)', borderRadius: 6, lineHeight: 1.5 }}>
+                      {message.slice(0, 200)}{message.length > 200 ? '…' : ''}
+                    </div>
+                  </div>
+
+                  {/* Campaign */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Campaign
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-1)' }}>
+                      {campaigns.find(c => c.id === selectedCampaign)?.name || '—'}
+                    </div>
+                  </div>
+
+                  {/* Recipients */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Recipients
+                    </div>
+                    <div className="num" style={{ fontSize: 12, color: 'var(--ink-1)', fontWeight: 600 }}>
+                      {recipientList.length}
+                      <span style={{ fontWeight: 400, color: 'var(--ink-3)', marginLeft: 4 }}>
+                        numbers · est. {isTurbo ? '⚡ Turbo' : estimateTime(recipientList.length, delayMs)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Send delay */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Send delay
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-1)', fontFamily: 'var(--mono)' }}>
+                      {isTurbo ? '🚀 Turbo' : `${delayMs / 1000}s`}
+                    </div>
+                  </div>
+
+                  {/* Distribution */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Distribution
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-1)' }}>
+                      {selectedGateways.length > 1
+                        ? (distribution === 'linear' ? 'Linear (chunked)' : 'Round-robin')
+                        : 'Single gateway'}
+                    </div>
+                  </div>
+
+                  {/* Gateways */}
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Gateway{selectedGateways.length > 1 ? 's' : ''}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {selectedGateways.map(id => {
+                        const gw = gateways.find(g => g.id === id);
+                        if (!gw) return null;
+                        return (
+                          <span key={id} style={{
+                            padding: '3px 10px', borderRadius: 6,
+                            background: 'var(--bg-soft)', border: '1px solid var(--line-soft)',
+                            fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ink-2)',
+                          }}>
+                            {gw.name}: {gw.number || '—'}
+                            {gw.sim2_carrier && <span style={{ color: 'var(--brand-1)', marginLeft: 4 }}>+ {gw.number2 || 'SIM2'}</span>}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Dual-SIM mode */}
+                  {selectedGateways.some(id => {
+                    const gw = gateways.find(g => g.id === id);
+                    return gw && gw.sim_carrier && gw.sim2_carrier;
+                  }) && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                        Dual-SIM Mode
+                      </div>
+                      <span style={{
+                        padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600,
+                        background: simMode === 'parallel' ? 'rgba(124,58,237,0.12)'
+                          : simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
+                          : simMode === 'sim2' ? 'rgba(219,39,119,0.12)'
+                          : 'rgba(5,150,105,0.12)',
+                        color: simMode === 'parallel' ? '#7c3aed'
+                          : simMode === 'sim1' ? '#059669'
+                          : simMode === 'sim2' ? '#db2777'
+                          : '#059669',
+                        fontFamily: 'var(--mono)',
+                      }}>
+                        {simMode === 'parallel' ? '⚡ Parallel'
+                          : simMode === 'sim1' ? '📱1 SIM 1 Only'
+                          : simMode === 'sim2' ? '📱2 SIM 2 Only'
+                          : '↻ Round-robin'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Global pause warning */}
+                {broadcastsPaused && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 8,
+                    background: 'var(--err-bg)', border: '1px solid var(--err-line)',
+                    fontSize: 12, color: 'var(--err)',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+                    </svg>
+                    <span><strong>Broadcasting paused</strong> — an admin has paused all broadcasts. Sending is disabled.</span>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="btn-ghost" style={{ flex: 1 }} onClick={() => setShowReview(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={sending || broadcastsPaused}
+                    style={{ flex: 2 }}
+                    onClick={async () => {
+                      await handleSend();
+                      setShowReview(false);
+                    }}
+                  >
+                    {sending ? 'Sending...' : `Confirm & Send (${recipientList.length})`}
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          )}
+
+          {/* ── Post-Send Summary Modal ── */}
+          {showSummary && sentSummary && (
+            <Modal title="Broadcast Summary" onClose={() => setShowSummary(false)} width={520}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Success banner */}
+                <div style={{
+                  padding: '10px 14px', borderRadius: 8,
+                  background: 'var(--ok-bg)', border: '1px solid var(--ok-line)',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: 12, color: 'var(--ok)',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  <span><strong>Broadcast queued!</strong> {sentSummary.recipients.length} messages will be processed through {sentSummary.gateways.length} gateway(s).</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+                  {/* Task / Message preview */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Task
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {sentSummary.message.slice(0, 50)}{sentSummary.message.length > 50 ? '…' : ''}
+                    </div>
+                  </div>
+
+                  {/* Date */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Date
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-1)', fontFamily: 'var(--mono)' }}>
+                      {new Date().toLocaleDateString('en-PH', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+
+                  {/* Campaign */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Campaign
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-1)' }}>
+                      {sentSummary.campaign || '—'}
+                    </div>
+                  </div>
+
+                  {/* Recipients */}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Recipients
+                    </div>
+                    <div className="num" style={{ fontSize: 12, color: 'var(--ink-1)', fontWeight: 600 }}>
+                      {sentSummary.recipients.length}
+                      <span style={{ fontWeight: 400, color: 'var(--ink-3)', marginLeft: 4 }}>
+                        numbers · est. {sentSummary.delayMs < 1000 ? '⚡ Turbo' : estimateTime(sentSummary.recipients.length, sentSummary.delayMs)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sender numbers */}
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                      Sender{sentSummary.gateways.length > 1 ? 's' : ''}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {sentSummary.gateways.map(id => {
+                        const gw = gateways.find(g => g.id === id);
+                        if (!gw) return null;
+                        const hasDual = gw.sim_carrier && gw.sim2_carrier;
+                        return (
+                          <span key={id} style={{
+                            padding: '3px 10px', borderRadius: 6,
+                            background: 'var(--bg-soft)', border: '1px solid var(--line-soft)',
+                            fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ink-2)',
+                          }}>
+                            {gw.name}: {gw.number || '—'}
+                            {hasDual && <span style={{ color: 'var(--brand-1)', marginLeft: 4 }}>+ {gw.number2 || 'SIM2'}</span>}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* SIM Mode — read-only indicator */}
+                {sentSummary.gateways.some(id => {
+                  const gw = gateways.find(g => g.id === id);
+                  return gw && gw.sim_carrier && gw.sim2_carrier;
+                }) && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 8,
+                    background: 'var(--bg-soft)',
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
+                      Dual-SIM
+                    </div>
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 5,
+                      fontSize: 11, fontWeight: 600,
+                      background: sentSummary.simMode === 'parallel' ? 'rgba(124,58,237,0.12)'
+                        : sentSummary.simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
+                        : sentSummary.simMode === 'sim2' ? 'rgba(219,39,119,0.12)'
+                        : 'rgba(5,150,105,0.12)',
+                      color: sentSummary.simMode === 'parallel' ? '#7c3aed'
+                        : sentSummary.simMode === 'sim1' ? '#059669'
+                        : sentSummary.simMode === 'sim2' ? '#db2777'
+                        : '#059669',
+                      fontFamily: 'var(--mono)',
+                    }}>
+                      {sentSummary.simMode === 'parallel' ? '⚡ Parallel'
+                        : sentSummary.simMode === 'sim1' ? '📱1 SIM 1 Only'
+                        : sentSummary.simMode === 'sim2' ? '📱2 SIM 2 Only'
+                        : '↻ Round-robin'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                      {sentSummary.simMode === 'parallel'
+                        ? 'Split batch — half via SIM1, half via SIM2 concurrently'
+                        : sentSummary.simMode === 'sim1'
+                        ? 'All messages sent via SIM 1'
+                        : sentSummary.simMode === 'sim2'
+                        ? 'All messages sent via SIM 2'
+                        : 'Alternating SIM1 → SIM2 → SIM1 per message'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Distribution mode summary */}
+                {sentSummary.gateways.length > 1 && (
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                    Gateway distribution: <strong>{sentSummary.distribution === 'linear' ? 'Linear (chunked)' : 'Round-robin (interleaved)'}</strong>
+                  </div>
+                )}
+              </div>
+            </Modal>
+          )}
         </div>
 
         {/* RIGHT COL */}

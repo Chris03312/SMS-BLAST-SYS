@@ -127,9 +127,14 @@
 
 | Endpoint | Handler | Description |
 |----------|---------|-------------|
-| `GET /api/gateway/outbound?max=N` | `(req, res)` | Pull: claims pending messages for a gateway, marks as 'sending' with 120s timeout |
+| `GET /api/gateway/outbound?max=N` | `(req, res)` | Pull: claims pending, stale-sending, and stale-queued messages for a gateway. Marks as 'sending' with `CLAIM_TIMEOUT_S` (120s) timeout. Also reclaims messages stuck at `'queued'` for > `STALE_QUEUED_S` (15s) as safety net for engine crashes |
 | `POST /api/gateway/outbound/ack` | `(req, res)` | ACK sent/failed results for claimed messages, updates broadcast progress |
 | `POST /api/gateway/delivery-report` | `(req, res)` | Carrier delivery status: 'delivered' or 'delivery_failed'; tracks delivery_fails counter |
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `CLAIM_TIMEOUT_S` | 120 | Seconds before a 'sending' message can be reclaimed (phone crashed/lost connection) |
+| `STALE_QUEUED_S` | 15 | Seconds before a 'queued' message can be claimed directly by the gateway (safety net if engine never released it to 'pending') |
 
 ### 2.6 Gateway Routes (`routes/gateways.js`)
 
@@ -426,8 +431,9 @@ databases via ALTER TABLE.
 | `initStatsPoller()` | Creates ServerStatsPoller, wires callback to UI fields |
 | `toggleService()` | Starts/stops GatewayService foreground service |
 | `updateStatusUi()` | Updates gateway status text, start/stop button |
-| `toggleDualSim()` | Toggles dual SIM mode (round-robin SMS sending) |
-| `detectSims()` | Reads SubscriptionManager for SIM1/SIM2 carriers and subscription IDs, auto-enables dual SIM if both detected |
+| `showSimModePicker()` | Opens SIM mode picker dialog with 4 options: SIM 1 Only, SIM 2 Only, Round-robin, Parallel (shows only SIM 1 + Round-robin if no SIM 2 detected) |
+| `updateSimModeDisplay()` | Updates the SIM mode label color + text based on current mode |
+| `detectSims()` | Reads SubscriptionManager for SIM1/SIM2 carriers and subscription IDs |
 | `checkPermissions()` | Requests SEND_SMS, RECEIVE_SMS, READ_SMS, READ_PHONE_STATE, POST_NOTIFICATIONS (API 33+) |
 | `getLocalIp()` | Returns the device's LAN IP address |
 | `generateApiKey()` | Generates 8-char alphanumeric API key for the embedded HTTP server (changed from 32 chars for easier copy-paste) |
@@ -459,7 +465,7 @@ _Note: The embedded HTTP server (SmsHttpServer / NanoHTTPD) has been removed._
 |--------|-------------|
 | `start()` | Starts polling every 5s: registers SmsDeliveryReceiver, runs `pollOnce()` on executor |
 | `stop()` | Stops polling, unregisters receiver |
-| `pollOnce()` | One cycle: GET `/api/gateway/outbound?max=10` → claim messages → send each via SMS (SIM1 or SIM2 round-robin) with 1.2s gap → POST ACK results to `/api/gateway/outbound/ack` |
+| `pollOnce()` | One cycle: GET `/api/gateway/outbound?max=10` → claim messages → send each via SMS (respects current SIM mode: SIM 1 Only, SIM 2 Only, Round-robin, or Parallel) with 1.2s gap → POST ACK results to `/api/gateway/outbound/ack` |
 | `registerDeliveryReceiver()` | Registers SmsDeliveryReceiver for sent/delivery intents (RECEIVER_EXPORTED on API 33+) |
 | `unregisterDeliveryReceiver()` | Unregisters delivery receiver |
 
@@ -533,6 +539,9 @@ _Note: The embedded HTTP server (SmsHttpServer / NanoHTTPD) has been removed._
 | `getSim2SubId(ctx)` | Returns SIM 2 subscription ID from prefs |
 | `isDualSimEnabled(ctx)` | Checks dual SIM preference + SIM 2 availability |
 | `getAlternatingSubId(ctx)` | Round-robin between SIM 1 and SIM 2 |
+| `getSimMode(ctx)` | Returns current SIM mode: `"sim1"`, `"sim2"`, `"round-robin"`, or `"parallel"` (default: `"round-robin"`) |
+| | Constants: `SIM_MODE_SINGLE`, `SIM_MODE_SIM1_ONLY`, `SIM_MODE_SIM2_ONLY`, `SIM_MODE_ROUND_ROBIN`, `SIM_MODE_PARALLEL` |
+| | Preference key: `PREF_SIM_MODE` (stored in SharedPreferences) |
 
 #### MessageLog
 

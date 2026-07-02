@@ -12,21 +12,24 @@ import db from '../db.js';
  * @returns {object}  { sent_7d, delivery_rate, active_agents, failed_7d, sent_by_gateway, gateways_status, daily }
  */
 export function getGlobalStats() {
-  const sent7d = db.prepare(`
-    SELECT COALESCE(SUM(sent), 0) as total
-    FROM broadcasts
-    WHERE created_at >= datetime('now', '-7 days')
-      AND status = 'done'
+  // Count sent messages directly from the messages table (7 days)
+  const sentMsg = db.prepare(`
+    SELECT COUNT(*) as total
+    FROM messages
+    WHERE status IN ('sent', 'delivered')
+      AND sent_at >= datetime('now', '-7 days')
   `).get();
 
-  const failed7d = db.prepare(`
-    SELECT COALESCE(SUM(failed), 0) as total
-    FROM broadcasts
-    WHERE created_at >= datetime('now', '-7 days')
+  // Count failed messages directly from the messages table (7 days)
+  const failedMsg = db.prepare(`
+    SELECT COUNT(*) as total
+    FROM messages
+    WHERE status = 'failed'
+      AND created_at >= datetime('now', '-7 days')
   `).get();
 
-  const totalSent7d = sent7d ? sent7d.total : 0;
-  const totalFailed7d = failed7d ? failed7d.total : 0;
+  const totalSent7d = sentMsg ? sentMsg.total : 0;
+  const totalFailed7d = failedMsg ? failedMsg.total : 0;
   const deliveryRate = totalSent7d + totalFailed7d > 0
     ? Math.round((totalSent7d / (totalSent7d + totalFailed7d)) * 100)
     : 0;
@@ -42,13 +45,34 @@ export function getGlobalStats() {
     GROUP BY g.id
   `).all();
 
-  const daily = db.prepare(`
-    SELECT date(created_at) as day, COALESCE(SUM(sent), 0) as sent, COALESCE(SUM(failed), 0) as failed
-    FROM broadcasts
-    WHERE created_at >= datetime('now', '-7 days')
+  // Daily sent counts from messages table (by sent_at)
+  const sentDaily = db.prepare(`
+    SELECT date(sent_at) as day, COUNT(*) as sent
+    FROM messages
+    WHERE status IN ('sent', 'delivered')
+      AND sent_at >= datetime('now', '-7 days')
+    GROUP BY date(sent_at)
+    ORDER BY day ASC
+  `).all();
+
+  // Daily failed counts from messages table (by created_at)
+  const failedDaily = db.prepare(`
+    SELECT date(created_at) as day, COUNT(*) as failed
+    FROM messages
+    WHERE status = 'failed'
+      AND created_at >= datetime('now', '-7 days')
     GROUP BY date(created_at)
     ORDER BY day ASC
   `).all();
+
+  // Merge sent and failed by day
+  const dayMap = {};
+  for (const r of sentDaily) dayMap[r.day] = { day: r.day, sent: r.sent, failed: 0 };
+  for (const r of failedDaily) {
+    if (dayMap[r.day]) dayMap[r.day].failed = r.failed;
+    else dayMap[r.day] = { day: r.day, sent: 0, failed: r.failed };
+  }
+  const daily = Object.values(dayMap).sort((a, b) => a.day.localeCompare(b.day));
 
   const gatewaysStatus = db.prepare(`
     SELECT id, name, status, last_beat, last_online, device_info, sent_today, sim_carrier, url
@@ -70,37 +94,42 @@ export function getGlobalStats() {
 /**
  * Per-user stats (what the Android gateway polls).
  *
+ * Counts from the **messages** table directly so that in-progress
+ * broadcasts are reflected in real time, not just completed ones.
+ *
  * @param {string} userId  - The user / gateway ID
  * @returns {object}  { sentToday, failedToday, queuedToday, phone }
  */
 export function getUserStats(userId) {
-  const today = new Date().toISOString().slice(0, 10);
-
-  // Sent today for this user
+  // Sent today for this user — count messages with status 'sent' or 'delivered'
   const sentToday = db.prepare(`
-    SELECT COALESCE(SUM(sent), 0) as total
-    FROM broadcasts
-    WHERE agent_id = ?
-      AND created_at >= ?
-      AND status = 'done'
-  `).get(userId, today);
+    SELECT COUNT(*) as total
+    FROM messages m
+    JOIN broadcasts b ON b.id = m.broadcast_id
+    WHERE b.agent_id = ?
+      AND m.status IN ('sent', 'delivered')
+      AND date(m.sent_at) = date('now')
+  `).get(userId);
 
   // Failed today
   const failedToday = db.prepare(`
-    SELECT COALESCE(SUM(failed), 0) as total
-    FROM broadcasts
-    WHERE agent_id = ?
-      AND created_at >= ?
-  `).get(userId, today);
+    SELECT COUNT(*) as total
+    FROM messages m
+    JOIN broadcasts b ON b.id = m.broadcast_id
+    WHERE b.agent_id = ?
+      AND m.status = 'failed'
+      AND date(m.created_at) = date('now')
+  `).get(userId);
 
-  // Queued (pending) broadcasts
+  // Queued (not yet sent) — pending, queued, or sending
   const queuedToday = db.prepare(`
     SELECT COUNT(*) as total
-    FROM broadcasts
-    WHERE agent_id = ?
-      AND created_at >= ?
-      AND status = 'pending'
-  `).get(userId, today);
+    FROM messages m
+    JOIN broadcasts b ON b.id = m.broadcast_id
+    WHERE b.agent_id = ?
+      AND m.status IN ('queued', 'pending', 'sending')
+      AND date(m.created_at) = date('now')
+  `).get(userId);
 
   // Get user's active phone / gateway info
   const gateway = db.prepare(`

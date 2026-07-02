@@ -609,6 +609,22 @@
                             android:textColor="#1A73C8"
                             android:textSize="12sp"/>
                     </LinearLayout>
+
+                    <!-- SIM Mode (tap to pick) -->
+                    <TextView
+                        android:id="@+id/tvSimMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:text="↻ Round-robin — tap to change"
+                        android:textColor="#4CAF50"
+                        android:textSize="12sp"
+                        android:gravity="center_vertical"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:background="#F0FDF4"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginTop="6dp"/>
                 </LinearLayout>
 
             </LinearLayout>

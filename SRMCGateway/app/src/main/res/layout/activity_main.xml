@@ -936,13 +936,13 @@
 
                         </LinearLayout>
 
-                        <!-- Dual SIM status indicator / toggle -->
+                        <!-- SIM mode indicator / picker -->
                         <TextView
                             android:id="@+id/tvDualSimStatus"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/label_dual_sim_disabled"
-                            android:textColor="@color/text_tertiary"
+                            android:text="↻ Round-robin — tap to change"
+                            android:textColor="#4CAF50"
                             android:textSize="11sp"
                             android:paddingStart="4dp"
                             android:paddingTop="4dp"
