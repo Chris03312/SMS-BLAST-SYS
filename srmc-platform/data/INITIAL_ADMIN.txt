@@ -1,7 +1,7 @@
-SRMC Platform — initial admin credentials
-Generated: 2026-06-04T12:24:47.319Z
+SMS Platform — initial admin credentials
+Generated: 2026-07-01T03:36:19.524Z
 
   Username: admin
-  Password: LxsNJhOWuAdi
+  Password: 65TlDFnEPbkM
 
 Log in with these, then change the password (Agents page). Delete this file afterwards.

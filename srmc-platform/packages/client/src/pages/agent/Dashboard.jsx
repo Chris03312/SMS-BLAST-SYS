@@ -24,7 +24,7 @@ function BroadcastDetail({ broadcast, onClose }) {
       const data = await api.get(`/broadcasts/${broadcast.id}/messages?${params}`);
       setMessages(data.messages || []);
       setTotal(data.total || 0);
-    } catch (_) {}
+    } catch (_) { }
     setLoading(false);
   }, [broadcast.id, filter, page]);
 
@@ -182,7 +182,7 @@ export default function Dashboard() {
         active: list.filter(b => b.status === 'sending').length,
         paused: list.filter(b => b.status === 'paused').length,
       });
-    } catch (e) {}
+    } catch (e) { }
     setLoading(false);
   }
 
@@ -310,7 +310,7 @@ export default function Dashboard() {
           <LiveBadge label="Live" />
           <button className="btn-primary" onClick={() => navigate('/compose')}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Compose Broadcast
           </button>
@@ -385,7 +385,7 @@ export default function Dashboard() {
               <th style={{ minWidth: 180 }}>Broadcast</th>
               <th>Campaign</th>
               <th style={{ textAlign: 'right' }}>Sender</th>
-              <th style={{ textAlign: 'right' }}>To</th>
+              <th style={{ textAlign: 'right' }}>Recipients</th>
               <th style={{ minWidth: 180 }}>Progress</th>
               <th style={{ textAlign: 'right' }}>Sent</th>
               <th style={{ textAlign: 'right' }}>Delivered</th>
@@ -416,7 +416,7 @@ export default function Dashboard() {
               </td></tr>
             )}
             {broadcasts.map(b => {
-              const progress = pct(b.sent, b.total);
+              const progress = pct(b.sent, b.delivered, b.total);
               const color = progressColor(progress);
               const isSending = b.status === 'sending';
               const isPaused = b.status === 'paused';
@@ -523,7 +523,7 @@ export default function Dashboard() {
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ink-3)'; }}
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10"/><polyline points="12 16 12 12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                          <circle cx="12" cy="12" r="10" /><polyline points="12 16 12 12" /><line x1="12" y1="8" x2="12.01" y2="8" />
                         </svg>
                       </button>
                       {isSending && (
@@ -543,7 +543,7 @@ export default function Dashboard() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'var(--warn-bg)'; e.currentTarget.style.color = 'var(--warn)'; }}
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                              <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+                              <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
                             </svg>
                           </button>
                           <button
@@ -561,7 +561,7 @@ export default function Dashboard() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                             </svg>
                           </button>
                         </>
@@ -583,7 +583,7 @@ export default function Dashboard() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'var(--ok-bg)'; e.currentTarget.style.color = 'var(--ok)'; }}
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                              <polygon points="5,3 19,12 5,21"/>
+                              <polygon points="5,3 19,12 5,21" />
                             </svg>
                           </button>
                           <button
@@ -601,7 +601,7 @@ export default function Dashboard() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                             </svg>
                           </button>
                         </>

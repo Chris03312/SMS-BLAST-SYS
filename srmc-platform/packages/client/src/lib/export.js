@@ -2,7 +2,7 @@
  * export.js — Data export utilities (XLSX multi-sheet download).
  */
 
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 /**
  * Trigger a browser download of a blob/file.

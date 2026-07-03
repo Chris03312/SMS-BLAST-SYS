@@ -37,7 +37,7 @@ function estimateTime(count, delay) {
 function saveDraft(state) {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function loadDraft() {
@@ -52,7 +52,7 @@ function loadDraft() {
 function clearDraft() {
   try {
     sessionStorage.removeItem(STORAGE_KEY);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 export default function BlastDashboard() {
@@ -91,11 +91,11 @@ export default function BlastDashboard() {
   const [broadcastsPaused, setBroadcastsPaused] = useState(false);
 
   useEffect(() => {
-    api.get('/templates').then(d => setTemplates(d.templates || [])).catch(() => {});
-    api.get('/gateways').then(d => setGateways(d.gateways || [])).catch(() => {});
-    api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(() => {});
-    api.get('/activity?limit=20').then(d => setActivities(d.activities || [])).catch(() => {});
-    api.get('/inbound?limit=5').then(d => setInboundRecent(d.messages || [])).catch(() => {});
+    api.get('/templates').then(d => setTemplates(d.templates || [])).catch(() => { });
+    api.get('/gateways').then(d => setGateways(d.gateways || [])).catch(() => { });
+    api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(() => { });
+    api.get('/activity?limit=20').then(d => setActivities(d.activities || [])).catch(() => { });
+    api.get('/inbound?limit=5').then(d => setInboundRecent(d.messages || [])).catch(() => { });
     api.get('/broadcasts?status=sending&limit=10').then(d => {
       if (d.broadcasts && d.broadcasts.length > 0) {
         const map = {};
@@ -104,7 +104,7 @@ export default function BlastDashboard() {
         }
         setActiveBroadcasts(map);
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Load admin settings (delay default, time window, daily cap, turbo delay, global pause)
     api.get('/settings').then(d => {
@@ -115,13 +115,13 @@ export default function BlastDashboard() {
       setDelayOptions(buildDelayOptions(td));
       // Only set delay from settings if no saved draft
       if (d.delay && !savedDraft.current) setDelayMs(parseInt(d.delay));
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Load stats
     api.get('/stats').then(d => {
       setStatsSent(d.sent_7d || 0);
       setStatsFailed(d.failed_7d || 0);
-    }).catch(() => {});
+    }).catch(() => { });
 
     setInitialDataLoaded(true);
   }, []);
@@ -167,7 +167,7 @@ export default function BlastDashboard() {
         if (d.messages && d.messages.length > 0) {
           setFailedMessages(prev => [...prev, ...d.messages]);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
     if (event.type === 'inbound:new') {
       // Agents only see messages belonging to their own broadcasts
@@ -204,10 +204,10 @@ export default function BlastDashboard() {
 
   function normalizePhone(raw) {
     const n = String(raw).trim().replace(/[\s\-().]/g, '');
-    if (n.startsWith('+'))                    return n;
-    if (n.startsWith('09'))                   return '+63' + n.slice(1);
+    if (n.startsWith('+')) return n;
+    if (n.startsWith('09')) return '+63' + n.slice(1);
     if (n.startsWith('9') && n.length === 10) return '+63' + n;
-    if (n.startsWith('63'))                   return '+' + n;
+    if (n.startsWith('63')) return '+' + n;
     return n;
   }
 
@@ -284,7 +284,7 @@ export default function BlastDashboard() {
         delete next[broadcastId];
         return next;
       });
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const activeBcList = Object.entries(activeBroadcasts).filter(([_, b]) => b.status === 'sending' || b.status === 'paused');
@@ -339,7 +339,7 @@ export default function BlastDashboard() {
             {[
               { label: 'Sent (7d)', val: statsSent },
               { label: 'Failed (7d)', val: statsFailed },
-              { label: 'Total msgs', val: statsTotal || progress.total },
+              { label: 'Total msgs', val: statsTotal },
               { label: 'Queued', val: isSending ? activeBcList.reduce((sum, [_, b]) => sum + Math.max(0, b.total - b.sent), 0) : 0 },
             ].map(s => (
               <div key={s.label} className="card" style={{ padding: '12px 14px' }}>
@@ -500,7 +500,7 @@ export default function BlastDashboard() {
                           }}>
                             {checked && (
                               <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                                <polyline points="2,6 5,9 10,3" stroke="var(--ink-1)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                <polyline points="2,6 5,9 10,3" stroke="var(--ink-1)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                               </svg>
                             )}
                           </div>
@@ -623,7 +623,7 @@ export default function BlastDashboard() {
                     display: 'flex', alignItems: 'center', gap: 6,
                   }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                      <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                     </svg>
                     <span><strong>Fast delay ({delayMs / 1000}s)</strong> — may cause carrier throttling or SIM bans. Use 3s+ for reliable delivery.</span>
                   </div>
@@ -639,7 +639,7 @@ export default function BlastDashboard() {
                   display: 'flex', alignItems: 'center', gap: 6,
                 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
-                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                   </svg>
                   <span><strong>{recipientList.length} recipients</strong> — large batch. Estimated time may be significant. Consider splitting into smaller groups.</span>
                 </div>
@@ -673,8 +673,8 @@ export default function BlastDashboard() {
                   display: 'flex', alignItems: 'center', gap: 8,
                 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
-                    <rect x="6" y="4" width="4" height="16"/>
-                    <rect x="14" y="4" width="4" height="16"/>
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
                   </svg>
                   <span><strong>Broadcasting paused</strong> — an admin has paused all broadcasts. Sending is disabled until resumed.</span>
                 </div>
@@ -759,8 +759,8 @@ export default function BlastDashboard() {
                   {m.linked_broadcast && (
                     <div style={{ marginTop: 3, display: 'flex', gap: 4, alignItems: 'flex-start' }}>
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2" style={{ marginTop: 2, flexShrink: 0 }}>
-                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                       </svg>
                       <span style={{ fontSize: 10.5, color: 'var(--ink-4)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                         Re: {m.linked_broadcast.outbound_message || m.linked_broadcast.broadcast_message}
