@@ -651,8 +651,8 @@ public class MainActivity extends AppCompatActivity {
 
         btnCheckServer.setOnClickListener(v -> checkSrmcServerNow());
 
-        // Dual SIM toggle
-        tvDualSimStatus.setOnClickListener(v -> toggleDualSim());
+        // SIM mode picker
+        tvDualSimStatus.setOnClickListener(v -> showSimModePicker());
     }
 
     // ── Gateway toggle ────────────────────────────────────────────────
@@ -778,35 +778,66 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Toggle dual SIM mode on/off manually.
-     * Only works if both SIMs are detected (have stored subscription IDs).
+     * Show SIM mode picker with 3 options:
+     *   Single SIM — uses only SIM 1
+     *   Round-robin — alternates SIM1 → SIM2 → SIM1 per message
+     *   Parallel — splits each batch across both SIMs concurrently
      */
-    private void toggleDualSim() {
+    private void showSimModePicker() {
+        int sim2 = SmsSender.getSim2SubId(this);
+        String[] modes;
+        int checkedItem;
+        String currentMode = SmsSender.getSimMode(this);
+
+        if (sim2 < 0) {
+            // Only one SIM detected — offer only Single SIM
+            modes = new String[]{"📱 Single SIM"};
+            checkedItem = 0;
+        } else {
+            modes = new String[]{"📱 Single SIM", "↻ Round-robin", "⚡ Parallel"};
+            checkedItem = currentMode.equals(SmsSender.SIM_MODE_SINGLE) ? 0
+                    : currentMode.equals(SmsSender.SIM_MODE_PARALLEL) ? 2
+                    : 1; // default round-robin
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("SIM Mode")
+                .setSingleChoiceItems(modes, checkedItem, (d, w) -> {
+                    String mode;
+                    if (sim2 < 0) {
+                        mode = SmsSender.SIM_MODE_SINGLE;
+                    } else {
+                        mode = w == 0 ? SmsSender.SIM_MODE_SINGLE
+                                : w == 2 ? SmsSender.SIM_MODE_PARALLEL
+                                : SmsSender.SIM_MODE_ROUND_ROBIN;
+                    }
+                    prefs.edit().putString(SmsSender.PREF_SIM_MODE, mode).apply();
+                    updateSimModeDisplay(mode);
+                    d.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Update the SIM mode label in the settings UI. */
+    private void updateSimModeDisplay(String mode) {
         int sim2 = SmsSender.getSim2SubId(this);
         if (sim2 < 0) {
-            android.widget.Toast.makeText(this,
-                    "SIM 2 not detected — can't enable dual SIM",
-                    android.widget.Toast.LENGTH_SHORT).show();
+            tvDualSimStatus.setText("📱 Single SIM only — no SIM 2 detected");
+            tvDualSimStatus.setTextColor(0xFF94A3B8);
             return;
         }
 
-        boolean currentlyEnabled = prefs.getBoolean(SmsSender.PREF_DUAL_SIM_ENABLED, false);
-        boolean newState = !currentlyEnabled;
-        prefs.edit().putBoolean(SmsSender.PREF_DUAL_SIM_ENABLED, newState).apply();
-
-        if (tvDualSimStatus != null) {
-            if (newState) {
-                tvDualSimStatus.setText(R.string.label_dual_sim_toggle_off);
-                tvDualSimStatus.setTextColor(0xFF4CAF50);
-            } else {
-                tvDualSimStatus.setText(R.string.label_dual_sim_disabled);
-                tvDualSimStatus.setTextColor(0xFF94A3B8);
-            }
+        if (SmsSender.SIM_MODE_SINGLE.equals(mode)) {
+            tvDualSimStatus.setText("📱 Single SIM — using SIM 1 only");
+            tvDualSimStatus.setTextColor(0xFF94A3B8);
+        } else if (SmsSender.SIM_MODE_PARALLEL.equals(mode)) {
+            tvDualSimStatus.setText("⚡ Parallel — both SIMs send concurrently");
+            tvDualSimStatus.setTextColor(0xFF7C3AED);
+        } else {
+            tvDualSimStatus.setText("↻ Round-robin — alternating SIM1 → SIM2");
+            tvDualSimStatus.setTextColor(0xFF4CAF50);
         }
-
-        android.widget.Toast.makeText(this,
-                newState ? "Dual SIM enabled — messages will be sent in parallel" : "Dual SIM disabled",
-                android.widget.Toast.LENGTH_SHORT).show();
     }
 
     @SuppressLint("MissingPermission")
@@ -851,18 +882,10 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
 
-            // Auto-enable dual SIM if both SIMs are detected
-            if (foundSim1 && foundSim2) {
-                edit.putBoolean(SmsSender.PREF_DUAL_SIM_ENABLED, true);
-                if (tvDualSimStatus != null) {
-                    tvDualSimStatus.setText(R.string.label_dual_sim_toggle_off);
-                    tvDualSimStatus.setTextColor(0xFF4CAF50);
-                }
-            } else {
-                if (tvDualSimStatus != null) {
-                    tvDualSimStatus.setText(R.string.label_dual_sim_disabled);
-                    tvDualSimStatus.setTextColor(0xFF94A3B8);
-                }
+            // Show current SIM mode (don't auto-enable — let user choose)
+            if (tvDualSimStatus != null) {
+                String mode = SmsSender.getSimMode(this);
+                updateSimModeDisplay(mode);
             }
 
             edit.apply();

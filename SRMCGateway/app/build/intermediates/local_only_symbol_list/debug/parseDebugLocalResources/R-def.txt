@@ -150,10 +150,6 @@ string label_copyright
 string label_default_sim
 string label_default_value
 string label_device_ip
-string label_dual_sim_disabled
-string label_dual_sim_enabled
-string label_dual_sim_mode
-string label_dual_sim_toggle_off
 string label_failed
 string label_gateway_status
 string label_inactive

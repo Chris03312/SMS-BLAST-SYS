@@ -46,20 +46,23 @@ export default function AdminDashboard() {
   const [campaigns, setCampaigns] = useState([]);
   const [agents, setAgents] = useState([]);
   const [inbound, setInbound] = useState([]);
+  const [runningBroadcasts, setRunningBroadcasts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   async function loadData() {
     try {
-      const [s, c, a, i] = await Promise.all([
+      const [s, c, a, i, r] = await Promise.all([
         api.get('/stats'),
         api.get('/campaigns'),
         api.get('/agents'),
         api.get('/inbound?limit=5'),
+        api.get('/broadcasts/running/list'),
       ]);
       setStats(s);
       setCampaigns((c.campaigns || []).slice(0, 5));
       setAgents((a.agents || []).slice(0, 5));
       setInbound(i.messages || []);
+      setRunningBroadcasts(r.broadcasts || []);
     } catch (e) {}
     setLoading(false);
   }
@@ -180,28 +183,125 @@ export default function AdminDashboard() {
         ))}
       </div>
 
+      {/* Active Broadcasts */}
+      {runningBroadcasts.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">
+            <h3>
+              Active Broadcasts
+              <span style={{ marginLeft: 10 }}><LiveBadge label={`${runningBroadcasts.length} running`} /></span>
+            </h3>
+          </div>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th style={{ minWidth: 180 }}>Message</th>
+                  <th style={{ textAlign: 'right' }}>Recipients</th>
+                  <th style={{ minWidth: 140 }}>Progress</th>
+                  <th style={{ textAlign: 'right' }}>Sent</th>
+                  <th style={{ textAlign: 'right' }}>Failed</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runningBroadcasts.map(b => {
+                  const pct = b.total > 0 ? Math.round((b.sent / b.total) * 100) : 0;
+                  const isPaused = b.status === 'paused';
+                  return (
+                    <tr key={b.id}>
+                      <td>
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>{b.agent_name || b.campaign_name || '—'}</span>
+                      </td>
+                      <td>
+                        <div style={{
+                          fontSize: 13, color: 'var(--ink-1)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          maxWidth: 220,
+                        }} title={b.message}>
+                          {b.message?.slice(0, 50)}{b.message?.length > 50 ? '…' : ''}
+                        </div>
+                      </td>
+                      <td className="num" style={{ fontSize: 13 }}>{b.total || 0}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{
+                            flex: 1, height: 7, background: 'var(--bg-soft)',
+                            borderRadius: 4, overflow: 'hidden',
+                          }}>
+                            <div style={{
+                              height: '100%', width: `${Math.max(pct, 2)}%`,
+                              background: isPaused ? 'var(--warn)' : 'var(--ok)',
+                              borderRadius: 4,
+                              transition: 'width 0.5s ease',
+                              minWidth: 4,
+                            }} />
+                          </div>
+                          <span className="num" style={{ fontSize: 11, fontWeight: 600, minWidth: 32, textAlign: 'right' }}>{pct}%</span>
+                        </div>
+                      </td>
+                      <td className="num" style={{ fontSize: 13, color: 'var(--ok)' }}>{b.sent || 0}</td>
+                      <td className="num" style={{ fontSize: 13, color: (b.failed || 0) > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{b.failed || 0}</td>
+                      <td><Pill status={b.status} label={isPaused ? 'Paused' : 'Sending'} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, marginBottom: 16 }}>
-        {/* Throughput chart */}
+        {/* Throughput chart — line graph */}
         <div className="card">
           <div className="card-head">
             <h3>Throughput (7 days)</h3>
           </div>
           <div style={{ padding: '18px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 80 }}>
-              {(stats?.daily || []).map((d, i) => {
-                const max = Math.max(...(stats?.daily || []).map(x => x.sent), 1);
-                const h = Math.round((d.sent / max) * 72);
-                return (
-                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                    <div style={{ width: '100%', height: h || 4, background: 'var(--brand-1)', borderRadius: '3px 3px 0 0', minHeight: 4 }} />
-                    <div style={{ fontSize: 9, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>{d.day?.slice(5)}</div>
-                  </div>
-                );
-              })}
-              {(!stats?.daily || stats.daily.length === 0) && (
-                <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>No data for the last 7 days.</div>
-              )}
-            </div>
+            {stats?.daily && stats.daily.length > 0 ? (() => {
+              const w = 660, h = 180, pad = 28;
+              const data = stats.daily;
+              const max = Math.max(...data.map(d => d.sent), 1);
+              const stepX = (w - pad * 2) / (data.length - 1 || 1);
+              const pts = data.map((d, i) => {
+                const x = pad + i * stepX;
+                const y = h - pad - (d.sent / max) * (h - pad * 2);
+                return `${x},${y}`;
+              });
+              const area = `0,${h - pad} ${pts.join(' ')} ${pad + (data.length - 1) * stepX},${h - pad}`;
+              return (
+                <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 180 }}>
+                  {/* Grid lines */}
+                  <line x1={pad} y1={h - pad} x2={w - pad} y2={h - pad} stroke="var(--line-soft)" strokeWidth="1" />
+                  <line x1={pad} y1={pad} x2={w - pad} y2={pad} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4 4" />
+                  <line x1={pad} y1={pad + (h - pad * 2) / 2} x2={w - pad} y2={pad + (h - pad * 2) / 2} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4 4" />
+                  {/* Area fill */}
+                  <polygon points={area} fill="var(--brand-1)" fillOpacity={0.08} />
+                  {/* Line */}
+                  <polyline points={pts.join(' ')} fill="none" stroke="var(--brand-1)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                  {/* Dots */}
+                  {data.map((d, i) => {
+                    const cx = pad + i * stepX;
+                    const cy = h - pad - (d.sent / max) * (h - pad * 2);
+                    return (
+                      <g key={i}>
+                        <circle cx={cx} cy={cy} r={3} fill="var(--brand-1)" />
+                        <text x={cx} y={h - pad + 16} textAnchor="middle" fill="var(--ink-4)" fontSize={10} fontFamily="var(--mono)">
+                          {d.day?.slice(5)}
+                        </text>
+                        <text x={cx} y={cy - 10} textAnchor="middle" fill="var(--ink-2)" fontSize={11} fontWeight={600}>
+                          {d.sent}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              );
+            })() : (
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>No data for the last 7 days.</div>
+            )}
           </div>
         </div>
 

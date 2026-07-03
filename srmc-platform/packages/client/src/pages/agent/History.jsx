@@ -58,6 +58,17 @@ function BroadcastDetail({ broadcast, onClose }) {
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
             </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)' }}>
+              {broadcast.started_at && (
+                <span style={{ color: 'var(--ok)' }}>▶ Started {formatDate(broadcast.started_at)}</span>
+              )}
+              {broadcast.completed_at && (
+                <span style={{ color: 'var(--ink-3)' }}>✓ Ended {formatDate(broadcast.completed_at)}</span>
+              )}
+              {!broadcast.completed_at && broadcast.started_at && (
+                <span style={{ color: 'var(--info)' }}>⟳ In progress</span>
+              )}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <div className="seg" style={{ fontSize: 11 }}>
@@ -259,6 +270,14 @@ export default function History() {
               <tr key={b.id}>
                 <td>
                   <div style={{ fontSize: 12, color: 'var(--ink-1)' }}>{formatTime(b.created_at)}</div>
+                  <div style={{ fontSize: 10, fontFamily: 'var(--mono)', marginTop: 1, lineHeight: 1.4 }}>
+                    {b.started_at && (
+                      <span style={{ color: 'var(--ok)' }}>▶ {formatTime(b.started_at)}</span>
+                    )}
+                    {b.completed_at && (
+                      <span style={{ color: 'var(--ink-4)', marginLeft: 4 }}>✓ {formatTime(b.completed_at)}</span>
+                    )}
+                  </div>
                   <div className="cell-id">{b.template_name || '—'}</div>
                 </td>
                 <td>
@@ -276,6 +295,31 @@ export default function History() {
                 <td className="num" style={{ color: 'var(--info)' }}>{b.delivered || 0}</td>
                 <td className="num" style={{ color: b.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{b.failed}</td>
                 <td>
+                <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                  {/* Cancel button — only for active broadcasts */}
+                  {(b.status === 'sending' || b.status === 'paused') && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Cancel this broadcast? ${b.sent || 0}/${b.total || 0} messages sent so far.`)) {
+                          api.del(`/broadcasts/${b.id}`).then(() => load()).catch(() => {});
+                        }
+                      }}
+                      title="Cancel"
+                      style={{
+                        width: 28, height: 28, padding: 0,
+                        border: '1px solid var(--err-line)',
+                        borderRadius: 6, background: 'var(--err-bg)',
+                        color: 'var(--err)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--err)'; e.currentTarget.style.color = '#fff'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  )}
                   <button
                     onClick={() => setDetailBroadcast(b)}
                     title="View details"
@@ -293,7 +337,8 @@ export default function History() {
                       <circle cx="12" cy="12" r="10"/><polyline points="12 16 12 12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
                     </svg>
                   </button>
-                </td>
+                </div>
+              </td>
               </tr>
             ))}
           </tbody>

@@ -67,6 +67,17 @@ function BroadcastDetail({ broadcast, onClose }) {
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
             </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)' }}>
+              {broadcast.started_at && (
+                <span style={{ color: 'var(--ok)' }}>▶ Started {formatTime(broadcast.started_at)}</span>
+              )}
+              {broadcast.completed_at && (
+                <span style={{ color: 'var(--ink-3)' }}>✓ Ended {formatTime(broadcast.completed_at)}</span>
+              )}
+              {!broadcast.completed_at && broadcast.started_at && (
+                <span style={{ color: 'var(--info)' }}>⟳ In progress</span>
+              )}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <div className="seg" style={{ fontSize: 11 }}>
@@ -416,7 +427,8 @@ export default function Dashboard() {
               </td></tr>
             )}
             {broadcasts.map(b => {
-              const progress = pct(b.sent, b.delivered, b.total);
+              // Count both sent and delivered as progress (engine stores both in b.sent)
+              const progress = pct(b.sent, b.total);
               const color = progressColor(progress);
               const isSending = b.status === 'sending';
               const isPaused = b.status === 'paused';
@@ -436,6 +448,17 @@ export default function Dashboard() {
                     </div>
                     <div style={{ fontSize: 10.5, color: 'var(--ink-4)', fontFamily: 'var(--mono)', marginTop: 2 }}>
                       {formatTime(b.created_at)}
+                    </div>
+                    <div style={{ fontSize: 10, fontFamily: 'var(--mono)', marginTop: 1, lineHeight: 1.4 }}>
+                      {b.started_at && (
+                        <span style={{ color: 'var(--ok)' }}>▶ {formatTime(b.started_at)}</span>
+                      )}
+                      {b.completed_at && (
+                        <span style={{ color: 'var(--ink-4)', marginLeft: 4 }}>✓ {formatTime(b.completed_at)}</span>
+                      )}
+                      {b.status === 'sending' && b.started_at && (
+                        <span style={{ color: 'var(--info)', marginLeft: 4 }}>⟳</span>
+                      )}
                     </div>
                   </td>
 
@@ -547,7 +570,11 @@ export default function Dashboard() {
                             </svg>
                           </button>
                           <button
-                            onClick={() => handleCancel(b)}
+                            onClick={() => {
+                              if (window.confirm(`Cancel this broadcast? ${b.sent || 0}/${b.total || 0} messages have been sent.`)) {
+                                handleCancel(b);
+                              }
+                            }}
                             title="Cancel"
                             style={{
                               width: 28, height: 28, padding: 0,
@@ -587,7 +614,11 @@ export default function Dashboard() {
                             </svg>
                           </button>
                           <button
-                            onClick={() => handleCancel(b)}
+                            onClick={() => {
+                              if (window.confirm(`Cancel this paused broadcast? ${b.sent || 0}/${b.total || 0} messages have been sent.`)) {
+                                handleCancel(b);
+                              }
+                            }}
                             title="Cancel"
                             style={{
                               width: 28, height: 28, padding: 0,
@@ -607,9 +638,28 @@ export default function Dashboard() {
                         </>
                       )}
                       {isTerminal && (
-                        <span style={{ fontSize: 11, color: 'var(--ink-4)', padding: '4px 4px' }}>
-                          {b.status === 'done' ? '✓' : b.status === 'cancelled' ? '✕' : '✗'}
-                        </span>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete this broadcast? This will remove it from your history. (${b.sent || 0}/${b.total || 0} messages)`)) {
+                              api.del(`/broadcasts/${b.id}`).then(() => loadBroadcasts()).catch(() => { });
+                            }
+                          }}
+                          title="Delete"
+                          style={{
+                            width: 28, height: 28, padding: 0,
+                            border: '1px solid var(--line)',
+                            borderRadius: 6, background: 'transparent',
+                            color: 'var(--ink-3)', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.12s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; e.currentTarget.style.borderColor = 'var(--err-line)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ink-3)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />
+                          </svg>
+                        </button>
                       )}
                       {b.status === 'pending' && (
                         <span style={{ fontSize: 10, color: 'var(--ink-4)', padding: '4px 4px' }}>

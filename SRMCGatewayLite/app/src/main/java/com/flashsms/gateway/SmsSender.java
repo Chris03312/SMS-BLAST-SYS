@@ -28,6 +28,14 @@ public class SmsSender {
     public static final String PREF_SIM2_CARRIER = "sim2_carrier";
     public static final String PREF_SIM_ALTERNATE_INDEX = "sim_alternate_index";
     public static final String PREF_DUAL_SIM_ENABLED = "dual_sim_enabled";
+    public static final String PREF_SIM_MODE = "sim_mode";
+
+    // SIM mode values
+    public static final String SIM_MODE_SINGLE = "single";
+    public static final String SIM_MODE_SIM1_ONLY = "sim1";
+    public static final String SIM_MODE_SIM2_ONLY = "sim2";
+    public static final String SIM_MODE_ROUND_ROBIN = "round-robin";
+    public static final String SIM_MODE_PARALLEL = "parallel";
 
     // ── Public entry points ───────────────────────────────────────────
 
@@ -199,6 +207,11 @@ public class SmsSender {
     public static boolean isDualSimEnabled(Context ctx) {
         return getPrefs(ctx).getBoolean(PREF_DUAL_SIM_ENABLED, false)
                 && getSim2SubId(ctx) >= 0;
+    }
+
+    /** Get the current SIM mode: single, sim1, sim2, round-robin, or parallel. Defaults to round-robin. */
+    public static String getSimMode(Context ctx) {
+        return getPrefs(ctx).getString(PREF_SIM_MODE, SIM_MODE_ROUND_ROBIN);
     }
 
     /**

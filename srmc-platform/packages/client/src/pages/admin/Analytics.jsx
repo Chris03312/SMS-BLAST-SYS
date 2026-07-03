@@ -12,26 +12,42 @@ const PERIODS = [
   { key: 'year',  label: 'Yearly' },
 ];
 
-function MiniBar({ data, color = 'var(--brand-1)', height = 28 }) {
+function MiniLine({ data, color = 'var(--brand-1)', labels }) {
   if (!data || data.length === 0) return null;
+  const w = 300, h = 100, pad = 4;
   const max = Math.max(...data, 1);
+  const stepX = (w - pad * 2) / (data.length - 1 || 1);
+  const pts = data.map((v, i) => {
+    const x = pad + i * stepX;
+    const y = h - pad - (v / max) * (h - pad * 2);
+    return `${x},${y}`;
+  });
+  const area = `${pad},${h - pad} ${pts.join(' ')} ${pad + (data.length - 1) * stepX},${h - pad}`;
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height }}>
-      {data.map((v, i) => (
-        <div
-          key={i}
-          title={String(v)}
-          style={{
-            flex: 1,
-            height: `${(v / max) * 100}%`,
-            minHeight: v > 0 ? 3 : 0,
-            background: color,
-            borderRadius: '2px 2px 0 0',
-            transition: 'height 0.3s',
-          }}
-        />
-      ))}
-    </div>
+    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%' }}>
+      {/* Area fill */}
+      <polygon points={area} fill={color} fillOpacity={0.08} />
+      {/* Line */}
+      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+      {/* Dots */}
+      {data.map((v, i) => {
+        const cx = pad + i * stepX;
+        const cy = h - pad - (v / max) * (h - pad * 2);
+        return (
+          <g key={i}>
+            <circle cx={cx} cy={cy} r={2.5} fill={color} />
+            <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--ink-2)" fontSize={10} fontWeight={600}>{v}</text>
+          </g>
+        );
+      })}
+      {/* Date labels */}
+      {labels && labels.length > 0 && (
+        <g>
+          <text x={pad} y={h + 10} textAnchor="start" fill="var(--ink-4)" fontSize={9} fontFamily="var(--mono)">{labels[0]}</text>
+          <text x={pad + (labels.length - 1) * stepX} y={h + 10} textAnchor="end" fill="var(--ink-4)" fontSize={9} fontFamily="var(--mono)">{labels[labels.length - 1]}</text>
+        </g>
+      )}
+    </svg>
   );
 }
 
@@ -179,31 +195,21 @@ export default function AdminAnalytics() {
 
           {/* Main chart area */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-            {/* Sent chart */}
+            {/* Sent chart — line graph */}
             <div className="card">
               <div className="card-head">
                 <h3>Sent</h3>
-                {series.length > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                    {series[0]?.date} — {series[series.length - 1]?.date}
-                  </span>
-                )}
               </div>
-              <div style={{ padding: '16px 18px' }}>
-                <MiniBar data={sentSeries} color="var(--brand-1)" height={100} />
-                {series.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 9, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
-                    <span>{series[0]?.date}</span>
-                    <span>{series[series.length - 1]?.date}</span>
-                  </div>
-                )}
-                {series.length === 0 && (
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '20px 0', textAlign: 'center' }}>No data for this period.</div>
+              <div style={{ padding: '16px 18px', minHeight: 130 }}>
+                {series.length > 0 ? (
+                  <MiniLine data={sentSeries} color="var(--brand-1)" labels={series.map(s => s.date)} />
+                ) : (
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
                 )}
               </div>
             </div>
 
-            {/* Failed chart */}
+            {/* Failed chart — line graph */}
             <div className="card">
               <div className="card-head">
                 <h3>Failed</h3>
@@ -213,16 +219,11 @@ export default function AdminAnalytics() {
                   </span>
                 )}
               </div>
-              <div style={{ padding: '16px 18px' }}>
-                <MiniBar data={failedSeries} color="var(--err)" height={100} />
-                {series.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 9, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
-                    <span>{series[0]?.date}</span>
-                    <span>{series[series.length - 1]?.date}</span>
-                  </div>
-                )}
-                {series.length === 0 && (
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '20px 0', textAlign: 'center' }}>No data for this period.</div>
+              <div style={{ padding: '16px 18px', minHeight: 130 }}>
+                {series.length > 0 ? (
+                  <MiniLine data={failedSeries} color="var(--err)" labels={series.map(s => s.date)} />
+                ) : (
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
                 )}
               </div>
             </div>

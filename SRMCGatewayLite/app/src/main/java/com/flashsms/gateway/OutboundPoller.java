@@ -145,83 +145,201 @@ public class OutboundPoller {
         if (messages == null || messages.length() == 0) return;
 
         JSONArray results = new JSONArray();
-        for (int i = 0; i < messages.length() && running; i++) {
-            JSONObject m = messages.optJSONObject(i);
-            if (m == null) continue;
-            String id  = m.optString("id", "");
-            String to  = m.optString("to", "");
-            String msg = m.optString("message", "");
-            if (id.isEmpty() || to.isEmpty()) continue;
+        String simMode = SmsSender.getSimMode(context);
+        boolean dualSim = SmsSender.getSim2SubId(context) >= 0;
 
-            String status = "sent";
-            String error  = "";
+        if (SmsSender.SIM_MODE_PARALLEL.equals(simMode) && dualSim && messages.length() > 1) {
+            // ── PARALLEL MODE: split messages into two halves, send concurrently ──
+            int mid = messages.length() / 2;
+            final JSONArray parallelResults = new JSONArray();
+            final java.util.concurrent.atomic.AtomicInteger threadsDone = new java.util.concurrent.atomic.AtomicInteger(0);
 
-            // Determine which SIM slot to use
-            int simSlot;
-            int subId;
-            boolean dualSim = SmsSender.isDualSimEnabled(context);
-            if (dualSim) {
-                // Alternate between SIM 1 and SIM 2 round-robin
-                simAlternateIndex = 1 - simAlternateIndex;
-                if (simAlternateIndex == 0) {
-                    subId = SmsSender.getSim1SubId(context);
-                    simSlot = 1;
-                } else {
+            // Thread 1: SIM 1 handles [0..mid)
+            new Thread(() -> {
+                for (int i = 0; i < mid && running; i++) {
+                    JSONObject m = messages.optJSONObject(i);
+                    if (m == null) continue;
+                    String id  = m.optString("id", "");
+                    String to  = m.optString("to", "");
+                    String msg = m.optString("message", "");
+                    if (id.isEmpty() || to.isEmpty()) continue;
+
+                    int rc = SmsSender.sendViaSubId(context, to, msg, SmsSender.getSim1SubId(context));
+                    String status = (rc == SmsSender.RESULT_OK) ? "sent" : "failed";
+                    String error  = (rc != SmsSender.RESULT_OK) ? "SMS send error" : "";
+
+                    try {
+                        JSONObject r = new JSONObject();
+                        r.put("id", id); r.put("status", status); r.put("sim_slot", 1);
+                        if (!error.isEmpty()) r.put("error", error);
+                        synchronized (parallelResults) { parallelResults.put(r); }
+                    } catch (Exception ignored) {}
+
+                    MessageLog.add(context, new MessageLog.Entry(
+                            to, msg, status.equals("sent") ? "ok" : "error",
+                            status.equals("sent") ? "Sent (parallel-SIM1)" : ("Failed: " + error)));
+                    context.sendBroadcast(new Intent("com.flashsms.LOG_UPDATED"));
+                    try { Thread.sleep(SEND_GAP_MS); } catch (InterruptedException ie) { break; }
+                }
+                threadsDone.incrementAndGet();
+            }).start();
+
+            // Thread 2: SIM 2 handles [mid..end)
+            new Thread(() -> {
+                for (int i = mid; i < messages.length() && running; i++) {
+                    JSONObject m = messages.optJSONObject(i);
+                    if (m == null) continue;
+                    String id  = m.optString("id", "");
+                    String to  = m.optString("to", "");
+                    String msg = m.optString("message", "");
+                    if (id.isEmpty() || to.isEmpty()) continue;
+
+                    int rc = SmsSender.sendViaSubId(context, to, msg, SmsSender.getSim2SubId(context));
+                    String status = (rc == SmsSender.RESULT_OK) ? "sent" : "failed";
+                    String error  = (rc != SmsSender.RESULT_OK) ? "SMS send error" : "";
+
+                    try {
+                        JSONObject r = new JSONObject();
+                        r.put("id", id); r.put("status", status); r.put("sim_slot", 2);
+                        if (!error.isEmpty()) r.put("error", error);
+                        synchronized (parallelResults) { parallelResults.put(r); }
+                    } catch (Exception ignored) {}
+
+                    MessageLog.add(context, new MessageLog.Entry(
+                            to, msg, status.equals("sent") ? "ok" : "error",
+                            status.equals("sent") ? "Sent (parallel-SIM2)" : ("Failed: " + error)));
+                    context.sendBroadcast(new Intent("com.flashsms.LOG_UPDATED"));
+                    try { Thread.sleep(SEND_GAP_MS); } catch (InterruptedException ie) { break; }
+                }
+                threadsDone.incrementAndGet();
+            }).start();
+
+            // Wait for both threads to finish (max 30s)
+            try {
+                for (int i = 0; i < 60 && threadsDone.get() < 2; i++) Thread.sleep(500);
+            } catch (InterruptedException ignored) {}
+
+            results = parallelResults;
+        } else if (SmsSender.SIM_MODE_SIM2_ONLY.equals(simMode) && dualSim) {
+            // ── SIM 2 ONLY MODE: all messages via SIM 2 ──
+            int subId = SmsSender.getSim2SubId(context);
+            for (int i = 0; i < messages.length() && running; i++) {
+                JSONObject m = messages.optJSONObject(i);
+                if (m == null) continue;
+                String id  = m.optString("id", "");
+                String to  = m.optString("to", "");
+                String msg = m.optString("message", "");
+                if (id.isEmpty() || to.isEmpty()) continue;
+
+                String status = "sent";
+                String error  = "";
+
+                try {
+                    int rc = SmsSender.sendViaSubId(context, to, msg, subId);
+                    if (rc != SmsSender.RESULT_OK) { status = "failed"; error = "SMS send error"; }
+                } catch (Exception e) {
+                    status = "failed";
+                    error  = e.getMessage() != null ? e.getMessage() : "send exception";
+                }
+
+                try {
+                    JSONObject r = new JSONObject();
+                    r.put("id", id); r.put("status", status); r.put("sim_slot", 2);
+                    if (!error.isEmpty()) r.put("error", error);
+                    results.put(r);
+                } catch (Exception ignored) {}
+
+                MessageLog.add(context, new MessageLog.Entry(
+                        to, msg, status.equals("sent") ? "ok" : "error",
+                        status.equals("sent") ? "Sent (SIM2 only)" : ("Failed: " + error)));
+                context.sendBroadcast(new Intent("com.flashsms.LOG_UPDATED"));
+                try { Thread.sleep(SEND_GAP_MS); } catch (InterruptedException ie) { return; }
+            }
+        } else {
+            // ── SIM 1 / ROUND-ROBIN MODE: sequential sending with tracking ──
+            for (int i = 0; i < messages.length() && running; i++) {
+                JSONObject m = messages.optJSONObject(i);
+                if (m == null) continue;
+                String id  = m.optString("id", "");
+                String to  = m.optString("to", "");
+                String msg = m.optString("message", "");
+                if (id.isEmpty() || to.isEmpty()) continue;
+
+                String status = "sent";
+                String error  = "";
+
+                // Determine which SIM slot to use
+                int simSlot;
+                int subId;
+
+                if (SmsSender.SIM_MODE_ROUND_ROBIN.equals(simMode) && dualSim) {
+                    // Round-robin: alternate SIM1 → SIM2 → SIM1
+                    simAlternateIndex = 1 - simAlternateIndex;
+                    if (simAlternateIndex == 0) {
+                        subId = SmsSender.getSim1SubId(context);
+                        simSlot = 1;
+                    } else {
+                        subId = SmsSender.getSim2SubId(context);
+                        simSlot = 2;
+                    }
+                } else if (SmsSender.SIM_MODE_SIM2_ONLY.equals(simMode)) {
+                    // SIM 2 only (fallback single SIM path)
                     subId = SmsSender.getSim2SubId(context);
                     simSlot = 2;
-                }
-            } else {
-                subId = SmsSender.getSim1SubId(context);
-                simSlot = 1;
-            }
-
-            try {
-                int reqCode = requestCodeSeq.incrementAndGet();
-
-                Intent sentIntent = new Intent(SmsDeliveryReceiver.ACTION_SENT);
-                sentIntent.putExtra("message_id", id);
-                sentIntent.putExtra("to_number", to);
-                sentIntent.putExtra("sim_slot", simSlot);
-
-                Intent deliveryIntent = new Intent(SmsDeliveryReceiver.ACTION_DELIVERY);
-                deliveryIntent.putExtra("message_id", id);
-                deliveryIntent.putExtra("to_number", to);
-                deliveryIntent.putExtra("sim_slot", simSlot);
-
-                int piFlags = PendingIntent.FLAG_UPDATE_CURRENT |
-                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
-
-                PendingIntent sPi = PendingIntent.getBroadcast(context, reqCode, sentIntent, piFlags);
-                PendingIntent dPi = PendingIntent.getBroadcast(context, reqCode + 10000, deliveryIntent, piFlags);
-
-                int rc;
-                if (dualSim && subId >= 0) {
-                    rc = SmsSender.sendViaSubIdWithTracking(context, to, msg, subId, sPi, dPi);
                 } else {
-                    rc = SmsSender.sendWithTracking(context, to, msg, sPi, dPi);
+                    // SIM 1 only (single/sim1/default)
+                    subId = SmsSender.getSim1SubId(context);
+                    simSlot = 1;
                 }
-                if (rc != SmsSender.RESULT_OK) { status = "failed"; error = "SMS send error"; }
-            } catch (Exception e) {
-                status = "failed";
-                error  = e.getMessage() != null ? e.getMessage() : "send exception";
+
+                try {
+                    int reqCode = requestCodeSeq.incrementAndGet();
+
+                    Intent sentIntent = new Intent(SmsDeliveryReceiver.ACTION_SENT);
+                    sentIntent.putExtra("message_id", id);
+                    sentIntent.putExtra("to_number", to);
+                    sentIntent.putExtra("sim_slot", simSlot);
+
+                    Intent deliveryIntent = new Intent(SmsDeliveryReceiver.ACTION_DELIVERY);
+                    deliveryIntent.putExtra("message_id", id);
+                    deliveryIntent.putExtra("to_number", to);
+                    deliveryIntent.putExtra("sim_slot", simSlot);
+
+                    int piFlags = PendingIntent.FLAG_UPDATE_CURRENT |
+                            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+
+                    PendingIntent sPi = PendingIntent.getBroadcast(context, reqCode, sentIntent, piFlags);
+                    PendingIntent dPi = PendingIntent.getBroadcast(context, reqCode + 10000, deliveryIntent, piFlags);
+
+                    int rc;
+                    if (subId >= 0) {
+                        rc = SmsSender.sendViaSubIdWithTracking(context, to, msg, subId, sPi, dPi);
+                    } else {
+                        rc = SmsSender.sendWithTracking(context, to, msg, sPi, dPi);
+                    }
+                    if (rc != SmsSender.RESULT_OK) { status = "failed"; error = "SMS send error"; }
+                } catch (Exception e) {
+                    status = "failed";
+                    error  = e.getMessage() != null ? e.getMessage() : "send exception";
+                }
+
+                try {
+                    JSONObject r = new JSONObject();
+                    r.put("id", id);
+                    r.put("status", status);
+                    r.put("sim_slot", simSlot);
+                    if (!error.isEmpty()) r.put("error", error);
+                    results.put(r);
+                } catch (Exception ignored) {}
+
+                // Log on the phone UI.
+                MessageLog.add(context, new MessageLog.Entry(
+                        to, msg, status.equals("sent") ? "ok" : "error",
+                        status.equals("sent") ? "Sent (pulled)" : ("Failed: " + error)));
+                context.sendBroadcast(new Intent("com.flashsms.LOG_UPDATED"));
+
+                try { Thread.sleep(SEND_GAP_MS); } catch (InterruptedException ie) { return; }
             }
-
-            try {
-                JSONObject r = new JSONObject();
-                r.put("id", id);
-                r.put("status", status);
-                r.put("sim_slot", simSlot);
-                if (!error.isEmpty()) r.put("error", error);
-                results.put(r);
-            } catch (Exception ignored) {}
-
-            // Log on the phone UI.
-            MessageLog.add(context, new MessageLog.Entry(
-                    to, msg, status.equals("sent") ? "ok" : "error",
-                    status.equals("sent") ? "Sent (pulled)" : ("Failed: " + error)));
-            context.sendBroadcast(new Intent("com.flashsms.LOG_UPDATED"));
-
-            try { Thread.sleep(SEND_GAP_MS); } catch (InterruptedException ie) { return; }
         }
 
         // ACK everything we attempted.

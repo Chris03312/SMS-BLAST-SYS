@@ -39,6 +39,7 @@ function logActivity(userId, action, detail, level = 'info') {
 const router = Router();
 
 const CLAIM_TIMEOUT_S = 120; // re-deliver a claimed message if not ACKed in time
+const STALE_QUEUED_S = 15;     // claim queued messages after this many seconds
 
 function authGateway(req, res) {
   const h = req.headers.authorization;
@@ -73,10 +74,11 @@ router.get('/gateway/outbound', (req, res) => {
       `SELECT id, to_number, message FROM messages
          WHERE gateway_id = ?
            AND ( status = 'pending'
-                 OR (status = 'sending' AND (sent_at IS NULL OR sent_at < datetime('now', ?))) )
+                 OR (status = 'sending' AND (sent_at IS NULL OR sent_at < datetime('now', ?)))
+                 OR (status = 'queued' AND created_at < datetime('now', ?)) )
          ORDER BY created_at ASC
          LIMIT ?`
-    ).all(gatewayId, `-${CLAIM_TIMEOUT_S} seconds`, max);
+    ).all(gatewayId, `-${CLAIM_TIMEOUT_S} seconds`, `-${STALE_QUEUED_S} seconds`, max);
 
     const claim = db.prepare("UPDATE messages SET status = 'sending', sent_at = ? WHERE id = ?");
     const claimAll = db.transaction(() => { for (const r of rows) claim.run(now, r.id); });
@@ -137,6 +139,12 @@ router.post('/gateway/delivery-report', (req, res) => {
       logActivity(null, 'sms:delivered',
         `Delivery confirmed for ${message_id} → ${to_number} via ${gwName}`,
         'info');
+
+      // Trigger progress recalculation so the broadcast's sent count updates
+      const msg = db.prepare('SELECT broadcast_id FROM messages WHERE id = ?').get(message_id);
+      if (msg && msg.broadcast_id) {
+        onMessageAcked(msg.broadcast_id);
+      }
     }
 
     return res.json({ success: true });

@@ -69,10 +69,6 @@
     <string name="label_default_sim">DEFAULT SIM  (tap to change)</string>
     <string name="label_default_value">—</string>
     <string name="label_device_ip">DEVICE IP</string>
-    <string name="label_dual_sim_disabled">○ Single SIM mode — tap to enable dual SIM</string>
-    <string name="label_dual_sim_enabled">● Dual SIM active — SIMs send in parallel</string>
-    <string name="label_dual_sim_mode">DUAL SIM MODE (concurrent sending)</string>
-    <string name="label_dual_sim_toggle_off">✓ Dual SIM on — tap to disable</string>
     <string name="label_failed">FAILED</string>
     <string name="label_gateway_status">GATEWAY STATUS</string>
     <string name="label_inactive">○ INACTIVE</string>

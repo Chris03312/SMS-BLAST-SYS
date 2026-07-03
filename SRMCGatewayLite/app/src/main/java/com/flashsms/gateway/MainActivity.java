@@ -61,7 +61,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvSrmcStatus;
 
     // Settings — local gateway
-    private TextView tvIpAddress, tvApiKey, tvSimCarrier, tvSim2Carrier;
+    private TextView tvIpAddress, tvApiKey, tvSimCarrier, tvSim2Carrier, tvSimMode;
     private EditText etPort;
 
     private SharedPreferences prefs;
@@ -159,6 +159,7 @@ public class MainActivity extends AppCompatActivity {
 
         listeners();
         detectSims();
+        updateSimModeDisplay();
         updateStatusUi();
         refreshLog();
         checkPermissions();
@@ -323,6 +324,7 @@ public class MainActivity extends AppCompatActivity {
         tvApiKey      = findViewById(R.id.tvApiKey);
         tvSimCarrier  = findViewById(R.id.tvSimCarrier);
         tvSim2Carrier = findViewById(R.id.tvSim2Carrier);
+        tvSimMode     = findViewById(R.id.tvSimMode);
         etPort        = findViewById(R.id.etPort);
 
         etSrmcIp       = findViewById(R.id.etSrmcIp);
@@ -398,6 +400,9 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnCheckServer.setOnClickListener(v -> checkSrmcServerNow());
+
+        // SIM mode picker
+        tvSimMode.setOnClickListener(v -> showSimModePicker());
     }
 
     // ── Gateway toggle ────────────────────────────────────────────────
@@ -515,6 +520,84 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Show SIM mode picker with 4 options:
+     *   SIM 1 Only, SIM 2 Only, Round-robin, Parallel
+     */
+    private void showSimModePicker() {
+        int sim2 = SmsSender.getSim2SubId(this);
+        String[] modes;
+        int checkedItem;
+        String currentMode = SmsSender.getSimMode(this);
+
+        if (sim2 < 0) {
+            modes = new String[]{"📱 SIM 1 Only", "↻ Round-robin"};
+            checkedItem = currentMode.equals(SmsSender.SIM_MODE_SIM2_ONLY) || currentMode.equals(SmsSender.SIM_MODE_PARALLEL)
+                    ? 1 : 0;
+        } else {
+            modes = new String[]{"📱 SIM 1 Only", "📱 SIM 2 Only", "↻ Round-robin", "⚡ Parallel"};
+            if (currentMode.equals(SmsSender.SIM_MODE_SIM1_ONLY)) checkedItem = 0;
+            else if (currentMode.equals(SmsSender.SIM_MODE_SIM2_ONLY)) checkedItem = 1;
+            else if (currentMode.equals(SmsSender.SIM_MODE_PARALLEL)) checkedItem = 3;
+            else checkedItem = 2; // round-robin default
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("SIM Mode")
+                .setSingleChoiceItems(modes, checkedItem, (d, w) -> {
+                    String mode;
+                    if (sim2 < 0) {
+                        mode = w == 0 ? SmsSender.SIM_MODE_SIM1_ONLY : SmsSender.SIM_MODE_ROUND_ROBIN;
+                    } else {
+                        mode = w == 0 ? SmsSender.SIM_MODE_SIM1_ONLY
+                                : w == 1 ? SmsSender.SIM_MODE_SIM2_ONLY
+                                : w == 3 ? SmsSender.SIM_MODE_PARALLEL
+                                : SmsSender.SIM_MODE_ROUND_ROBIN;
+                    }
+                    prefs.edit().putString(SmsSender.PREF_SIM_MODE, mode).apply();
+                    updateSimModeDisplay();
+                    d.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Update the SIM mode label in the settings UI. */
+    private void updateSimModeDisplay() {
+        String mode = SmsSender.getSimMode(this);
+        int sim2 = SmsSender.getSim2SubId(this);
+
+        if (sim2 < 0) {
+            tvSimMode.setText("📱 SIM 1 Only — no SIM 2 detected");
+            tvSimMode.setTextColor(0xFF94A3B8);
+            tvSimMode.setBackgroundColor(0xFFF8FAFC);
+            return;
+        }
+
+        switch (mode) {
+            case "sim1":
+                tvSimMode.setText("📱 SIM 1 Only — all messages via SIM 1");
+                tvSimMode.setTextColor(0xFF059669);
+                tvSimMode.setBackgroundColor(0xFFF0FDF4);
+                break;
+            case "sim2":
+                tvSimMode.setText("📱 SIM 2 Only — all messages via SIM 2");
+                tvSimMode.setTextColor(0xFFDB2777);
+                tvSimMode.setBackgroundColor(0xFFFDF2F8);
+                break;
+            case "parallel":
+                tvSimMode.setText("⚡ Parallel — both SIMs send concurrently");
+                tvSimMode.setTextColor(0xFF7C3AED);
+                tvSimMode.setBackgroundColor(0xFFF5F3FF);
+                break;
+            default:
+                tvSimMode.setText("↻ Round-robin — alternating SIM1 → SIM2");
+                tvSimMode.setTextColor(0xFF4CAF50);
+                tvSimMode.setBackgroundColor(0xFFF0FDF4);
+                break;
+        }
+    }
+
     private void detectSims() {
         tvSimCarrier.setText(R.string.label_sim_not_detected);
         tvSim2Carrier.setText(R.string.label_sim_not_detected);
@@ -573,6 +656,7 @@ public class MainActivity extends AppCompatActivity {
                 new IntentFilter(GatewayService.ACTION_GATEWAY_STARTED), 0);
         updateStatusUi();
         detectSims();
+        updateSimModeDisplay();
         refreshLog();
         if (GatewayService.isRunning) statsPoller.pollNow();
     }
