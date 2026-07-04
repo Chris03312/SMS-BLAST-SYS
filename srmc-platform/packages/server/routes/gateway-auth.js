@@ -72,11 +72,11 @@ router.post('/auth/gateway/login', async (req, res) => {
 
 router.post('/auth/gateway/online', (req, res) => {
   try {
-    const { userId, deviceInfo, number, sim_carrier, number2, sim2_carrier } = req.body;
+    const { userId, deviceId, deviceInfo, number, sim_carrier, number2, sim2_carrier } = req.body;
     if (!userId) {
       return fail(res, 'userId is required', 400);
     }
-    gatewayOnline(userId, deviceInfo, number, sim_carrier, number2, sim2_carrier);
+    gatewayOnline(userId, deviceId, deviceInfo, number, sim_carrier, number2, sim2_carrier);
     return ok(res, { message: 'Gateway marked online' });
   } catch (e) {
     console.error('[gateway-auth] Online error:', e);
@@ -88,11 +88,11 @@ router.post('/auth/gateway/online', (req, res) => {
 
 router.post('/auth/gateway/offline', (req, res) => {
   try {
-    const { userId } = req.body;
+    const { userId, deviceId } = req.body;
     if (!userId) {
       return fail(res, 'userId is required', 400);
     }
-    gatewayOffline(userId);
+    gatewayOffline(userId, deviceId);
     return ok(res, { message: 'Gateway marked offline' });
   } catch (e) {
     console.error('[gateway-auth] Offline error:', e);
@@ -104,11 +104,11 @@ router.post('/auth/gateway/offline', (req, res) => {
 
 router.post('/auth/gateway/heartbeat', (req, res) => {
   try {
-    const { userId, sim_carrier, number2, sim2_carrier, number } = req.body;
+    const { userId, deviceId, sim_carrier, number2, sim2_carrier, number } = req.body;
     if (!userId) {
       return fail(res, 'userId is required', 400);
     }
-    const found = gatewayHeartbeat(userId, { simCarrier: sim_carrier, number2, sim2Carrier: sim2_carrier, number });
+    const found = gatewayHeartbeat(userId, deviceId, { simCarrier: sim_carrier, number2, sim2Carrier: sim2_carrier, number });
     if (!found) {
       return fail(res, 'Gateway not found', 404);
     }
@@ -116,7 +116,7 @@ router.post('/auth/gateway/heartbeat', (req, res) => {
     // Return the gateway-specific inbound webhook URL
     // Each gateway gets its own URL: .../api/webhook/inbound/{gatewayId}
     // This way multiple gateways can share a single ngrok tunnel
-    const webhookUrl = getInboundWebhookUrl(userId);
+    const webhookUrl = getInboundWebhookUrl(deviceId || userId);
     return ok(res, {
       message: 'Heartbeat received',
       inbound_webhook_url: webhookUrl,
@@ -131,9 +131,9 @@ router.post('/auth/gateway/heartbeat', (req, res) => {
 
 router.post('/auth/logout', (req, res) => {
   try {
-    const { userId } = req.body;
+    const { userId, deviceId } = req.body;
     if (userId) {
-      gatewayLogout(userId);
+      gatewayLogout(userId, deviceId);
     }
     return ok(res, { message: 'Logged out successfully' });
   } catch (e) {

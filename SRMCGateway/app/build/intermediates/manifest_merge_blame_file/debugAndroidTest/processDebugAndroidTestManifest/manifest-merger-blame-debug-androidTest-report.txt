@@ -3,32 +3,32 @@
 3    package="com.flashsms.gateway.test" >
 4
 5    <uses-sdk
-5-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:5:5-74
+5-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:5:5-74
 6        android:minSdkVersion="21"
-6-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:5:15-41
+6-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:5:15-41
 7        android:targetSdkVersion="34" />
-7-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:5:42-71
+7-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:5:42-71
 8
 9    <instrumentation
-9-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:11:5-15:70
+9-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:11:5-15:70
 10        android:name="android.test.InstrumentationTestRunner"
-10-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:11:22-75
+10-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:11:22-75
 11        android:functionalTest="false"
-11-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:14:22-52
+11-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:14:22-52
 12        android:handleProfiling="false"
-12-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:13:22-53
+12-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:13:22-53
 13        android:label="Tests for com.flashsms.gateway"
-13-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:15:22-68
+13-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:15:22-68
 14        android:targetPackage="com.flashsms.gateway" />
-14-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:12:22-66
+14-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:12:22-66
 15
 16    <application
-16-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:7:5-9:19
+16-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:7:5-9:19
 17        android:debuggable="true"
 18        android:extractNativeLibs="true" >
 19        <uses-library android:name="android.test.runner" />
-19-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:8:9-60
-19-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest3934848659349285299.xml:8:23-57
+19-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:8:9-60
+19-->C:\Users\Chrxs0331\Desktop\WEBDEV\SMS-BLAST-SYS\SRMCGateway\app\build\intermediates\tmp\manifest\androidTest\debug\tempFile1ProcessTestManifest8129435655552362793.xml:8:23-57
 20    </application>
 21
 22</manifest>

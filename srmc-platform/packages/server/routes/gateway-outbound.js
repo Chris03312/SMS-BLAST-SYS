@@ -70,13 +70,16 @@ router.get('/gateway/outbound', (req, res) => {
 
     // Claim 'pending' messages, plus any 'sending' ones whose claim went stale
     // (phone crashed/lost connection before ACKing).
+    // Also include sim_mode from the broadcast so the phone knows which SIM to use.
     const rows = db.prepare(
-      `SELECT id, to_number, message FROM messages
-         WHERE gateway_id = ?
-           AND ( status = 'pending'
-                 OR (status = 'sending' AND (sent_at IS NULL OR sent_at < datetime('now', ?)))
-                 OR (status = 'queued' AND created_at < datetime('now', ?)) )
-         ORDER BY created_at ASC
+      `SELECT m.id, m.to_number, m.message, COALESCE(b.sim_mode, 'sim1') as sim_mode
+         FROM messages m
+         LEFT JOIN broadcasts b ON m.broadcast_id = b.id
+         WHERE m.gateway_id = ?
+           AND ( m.status = 'pending'
+                 OR (m.status = 'sending' AND (m.sent_at IS NULL OR m.sent_at < datetime('now', ?)))
+                 OR (m.status = 'queued' AND m.created_at < datetime('now', ?)) )
+         ORDER BY m.created_at ASC
          LIMIT ?`
     ).all(gatewayId, `-${CLAIM_TIMEOUT_S} seconds`, `-${STALE_QUEUED_S} seconds`, max);
 
@@ -86,7 +89,7 @@ router.get('/gateway/outbound', (req, res) => {
 
     return res.json({
       success: true,
-      messages: rows.map(r => ({ id: r.id, to: r.to_number, message: r.message })),
+      messages: rows.map(r => ({ id: r.id, to: r.to_number, message: r.message, sim_mode: r.sim_mode })),
     });
   } catch (e) {
     console.error('[gateway-outbound] claim error:', e);

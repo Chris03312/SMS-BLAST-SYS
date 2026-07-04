@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { setTimezone } from '../../lib/format.js';
 
@@ -26,6 +27,7 @@ export default function Settings() {
   const [active, setActive]     = useState('account');
   const [ngrok, setNgrok]       = useState({ running: false, url: null, webhookUrl: null });
   const [ngrokBusy, setNgrokBusy] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
 
   // One ref per section
   const sectionRefs = useRef({});
@@ -626,45 +628,70 @@ export default function Settings() {
                   label="Purge activity log"
                   desc="Delete all activity log entries permanently."
                   btnLabel="Purge…"
-                  onAction={async () => {
-                    if (!window.confirm('Purge all activity logs? This cannot be undone.')) return;
-                    try {
-                      await api.post('/settings/purge-activity');
-                      alert('Activity log purged.');
-                    } catch (e) { alert('Failed: ' + e.message); }
-                  }}
+                  onAction={() => setConfirmAction({
+                    title: 'Purge Activity Log',
+                    message: 'Purge all activity logs? This cannot be undone.',
+                    confirmLabel: 'Purge',
+                    onConfirm: async () => {
+                      try {
+                        await api.post('/settings/purge-activity');
+                        alert('Activity log purged.');
+                      } catch (e) { alert('Failed: ' + e.message); }
+                      setConfirmAction(null);
+                    },
+                  })}
                 />
                 <DangerAction
                   label="Reset all settings"
                   desc="Restore every setting to its factory default."
                   btnLabel="Reset…"
-                  onAction={async () => {
-                    if (!window.confirm('Reset all settings to factory defaults? This cannot be undone.')) return;
-                    try {
-                      const res = await api.post('/settings/reset');
-                      if (res.settings) {
-                        setSettings(res.settings);
-                        setForm(res.settings);
-                        if (res.settings.timezone) setTimezone(res.settings.timezone);
-                      }
-                      alert('Settings reset to factory defaults.');
-                    } catch (e) { alert('Failed: ' + e.message); }
-                  }}
+                  onAction={() => setConfirmAction({
+                    title: 'Reset Settings',
+                    message: 'Reset all settings to factory defaults? This cannot be undone.',
+                    confirmLabel: 'Reset',
+                    onConfirm: async () => {
+                      try {
+                        const res = await api.post('/settings/reset');
+                        if (res.settings) {
+                          setSettings(res.settings);
+                          setForm(res.settings);
+                          if (res.settings.timezone) setTimezone(res.settings.timezone);
+                        }
+                        alert('Settings reset to factory defaults.');
+                      } catch (e) { alert('Failed: ' + e.message); }
+                      setConfirmAction(null);
+                    },
+                  })}
                 />
                 <DangerAction
                   label="Revoke all sessions"
                   desc="Force all agents and gateways to log in again."
                   btnLabel="Revoke…"
-                  onAction={async () => {
-                    if (!window.confirm('Revoke all active sessions? Everyone will be logged out.')) return;
-                    try {
-                      await api.post('/settings/revoke-sessions');
-                      alert('All sessions revoked. Gateways must log in again.');
-                    } catch (e) { alert('Failed: ' + e.message); }
-                  }}
+                  onAction={() => setConfirmAction({
+                    title: 'Revoke Sessions',
+                    message: 'Revoke all active sessions? Everyone will be logged out.',
+                    confirmLabel: 'Revoke',
+                    onConfirm: async () => {
+                      try {
+                        await api.post('/settings/revoke-sessions');
+                        alert('All sessions revoked. Gateways must log in again.');
+                      } catch (e) { alert('Failed: ' + e.message); }
+                      setConfirmAction(null);
+                    },
+                  })}
                 />
               </div>
             </SectionBlock>
+
+          {confirmAction && (
+            <ConfirmModal
+              title={confirmAction.title}
+              message={confirmAction.message}
+              confirmLabel={confirmAction.confirmLabel}
+              onConfirm={confirmAction.onConfirm}
+              onCancel={() => setConfirmAction(null)}
+            />
+          )}
 
           </div>
         </div>

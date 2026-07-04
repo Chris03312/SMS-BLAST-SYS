@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../db.js';
 import { authMiddleware, JWT_SECRET } from '../middleware/auth.js';
+import { fixTimestamps } from '../fix-timestamps.js';
 
 const router = Router();
 
@@ -58,7 +59,7 @@ router.get('/me', authMiddleware, (req, res) => {
     if (!user) {
       return fail(res, 'User not found', 404);
     }
-    return ok(res, { user });
+    return ok(res, { user: fixTimestamps(user) });
   } catch (e) {
     console.error('[auth] Me error:', e);
     return fail(res, 'Internal server error', 500);

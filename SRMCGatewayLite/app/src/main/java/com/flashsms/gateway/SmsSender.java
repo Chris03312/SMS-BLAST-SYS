@@ -12,7 +12,7 @@ import java.util.ArrayList;
  * SmsSender
  *
  * Sends regular SMS via the Android SmsManager with
- * single-SIM, dual-SIM, and round-robin SIM alternation support.
+ * single-SIM and dual-SIM support (SIM 1 Only or SIM 2 Only).
  */
 public class SmsSender {
 
@@ -26,16 +26,12 @@ public class SmsSender {
     public static final String PREF_SIM2_SUB_ID = "sim2_subscription_id";
     public static final String PREF_SIM1_CARRIER = "sim1_carrier";
     public static final String PREF_SIM2_CARRIER = "sim2_carrier";
-    public static final String PREF_SIM_ALTERNATE_INDEX = "sim_alternate_index";
-    public static final String PREF_DUAL_SIM_ENABLED = "dual_sim_enabled";
+
     public static final String PREF_SIM_MODE = "sim_mode";
 
     // SIM mode values
-    public static final String SIM_MODE_SINGLE = "single";
     public static final String SIM_MODE_SIM1_ONLY = "sim1";
     public static final String SIM_MODE_SIM2_ONLY = "sim2";
-    public static final String SIM_MODE_ROUND_ROBIN = "round-robin";
-    public static final String SIM_MODE_PARALLEL = "parallel";
 
     // ── Public entry points ───────────────────────────────────────────
 
@@ -72,35 +68,6 @@ public class SmsSender {
      */
     public static int sendViaSubId(Context ctx, String toNumber, String message, int subId) {
         return sendRegular(ctx, toNumber, message, subId, null, null);
-    }
-
-    /**
-     * Automatically alternate between SIM 1 and SIM 2 for each call.
-     */
-    public static int sendAlternating(Context ctx, String toNumber, String message) {
-        int subId = getAlternatingSubId(ctx);
-        return sendRegular(ctx, toNumber, message, subId, null, null);
-    }
-
-    /**
-     * Send two messages concurrently — one via SIM 1, one via SIM 2.
-     * Returns results array: [sim1Result, sim2Result]
-     */
-    public static int[] sendBothSims(Context ctx, String to1, String msg1, String to2, String msg2) {
-        final int[] results = new int[2];
-        final Thread t1 = new Thread(() -> {
-            int subId1 = getSim1SubId(ctx);
-            results[0] = sendRegular(ctx, to1, msg1, subId1, null, null);
-        });
-        final Thread t2 = new Thread(() -> {
-            int subId2 = getSim2SubId(ctx);
-            results[1] = sendRegular(ctx, to2, msg2, subId2, null, null);
-        });
-        t1.start();
-        t2.start();
-        try { t1.join(30000); } catch (InterruptedException e) { results[0] = RESULT_ERROR_GENERIC; }
-        try { t2.join(30000); } catch (InterruptedException e) { results[1] = RESULT_ERROR_GENERIC; }
-        return results;
     }
 
     // ── Regular SMS (Class 1) ────────────────────────────────────────
@@ -203,33 +170,9 @@ public class SmsSender {
         return getPrefs(ctx).getInt(PREF_SIM2_SUB_ID, -1);
     }
 
-    /** Check if dual SIM is enabled in prefs. */
-    public static boolean isDualSimEnabled(Context ctx) {
-        return getPrefs(ctx).getBoolean(PREF_DUAL_SIM_ENABLED, false)
-                && getSim2SubId(ctx) >= 0;
-    }
-
-    /** Get the current SIM mode: single, sim1, sim2, round-robin, or parallel. Defaults to round-robin. */
+    /** Get the current SIM mode: sim1 or sim2. Defaults to sim1. */
     public static String getSimMode(Context ctx) {
-        return getPrefs(ctx).getString(PREF_SIM_MODE, SIM_MODE_ROUND_ROBIN);
-    }
-
-    /**
-     * Get the next alternating subscription ID (round-robin).
-     * Every call returns the opposite SIM from the previous call.
-     */
-    public static int getAlternatingSubId(Context ctx) {
-        SharedPreferences prefs = getPrefs(ctx);
-        int sim1 = prefs.getInt(PREF_SIM1_SUB_ID, -1);
-        int sim2 = prefs.getInt(PREF_SIM2_SUB_ID, -1);
-
-        if (sim2 < 0) return sim1; // No SIM 2 configured
-        if (sim1 < 0) return sim2; // No SIM 1 configured
-
-        int idx = prefs.getInt(PREF_SIM_ALTERNATE_INDEX, 0);
-        int next = (idx % 2 == 0) ? sim1 : sim2;
-        prefs.edit().putInt(PREF_SIM_ALTERNATE_INDEX, idx + 1).apply();
-        return next;
+        return getPrefs(ctx).getString(PREF_SIM_MODE, SIM_MODE_SIM1_ONLY);
     }
 
 }

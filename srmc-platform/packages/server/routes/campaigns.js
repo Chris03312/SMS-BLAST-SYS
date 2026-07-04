@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { fixTimestamps } from '../fix-timestamps.js';
 
 const router = Router();
 
@@ -25,7 +26,7 @@ router.get('/', (req, res) => {
       LEFT JOIN users u ON c.owner_id = u.id
       ORDER BY c.created_at DESC
     `).all();
-    return ok(res, { campaigns });
+    return ok(res, { campaigns: fixTimestamps(campaigns) });
   } catch (e) {
     console.error('[campaigns] GET error:', e);
     return fail(res, 'Internal server error', 500);

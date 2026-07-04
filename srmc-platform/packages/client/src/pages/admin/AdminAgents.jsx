@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Modal from '../../components/Modal.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
 import { formatDateShort } from '../../lib/format.js';
@@ -13,6 +14,7 @@ export default function AdminAgents() {
   const [form, setForm] = useState({ username: '', password: '', display_name: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -58,23 +60,14 @@ export default function AdminAgents() {
     setSaving(false);
   }
 
-  async function handleToggle(item) {
-    try {
-      const updated = await api.put(`/agents/${item.id}`, { active: item.active ? 0 : 1 });
-      setItems(prev => prev.map(x => x.id === item.id ? updated.agent : x));
-    } catch (e) {
-      alert(e.message);
-    }
-  }
-
   async function handleDelete(item) {
-    if (!confirm(`Deactivate ${item.display_name}?`)) return;
     try {
       await api.del(`/agents/${item.id}`);
-      setItems(prev => prev.map(x => x.id === item.id ? { ...x, active: 0 } : x));
+      setItems(prev => prev.filter(x => x.id !== item.id));
     } catch (e) {
       alert(e.message);
     }
+    setConfirmDelete(null);
   }
 
   const activeItems = items.filter(a => a.active).length;
@@ -150,10 +143,7 @@ export default function AdminAgents() {
                 <td>
                   <div className="row-actions">
                     <button className="iconlink" onClick={() => openEdit(a)} title="Edit">✎</button>
-                    <button className="iconlink" onClick={() => handleToggle(a)} title="Toggle active" style={{ color: 'var(--warn)' }}>
-                      {a.active ? '⊘' : '⊙'}
-                    </button>
-                    <button className="iconlink" onClick={() => handleDelete(a)} title="Remove" style={{ color: 'var(--err)' }}>✕</button>
+                    <button className="iconlink" onClick={() => setConfirmDelete(a)} title="Delete" style={{ color: 'var(--err)' }}>✕</button>
                   </div>
                 </td>
               </tr>
@@ -164,6 +154,16 @@ export default function AdminAgents() {
           <span>{items.length} agents</span>
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Agent"
+          message={`Permanently delete "${confirmDelete.display_name}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={() => handleDelete(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
 
       {showModal && (
         <Modal title={editItem ? 'Edit Agent' : 'Invite Agent'} onClose={() => setShowModal(false)}>

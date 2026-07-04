@@ -935,21 +935,6 @@
                                 android:textSize="12sp"/>
 
                         </LinearLayout>
-
-                        <!-- SIM mode indicator / picker -->
-                        <TextView
-                            android:id="@+id/tvDualSimStatus"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="↻ Round-robin — tap to change"
-                            android:textColor="#4CAF50"
-                            android:textSize="11sp"
-                            android:paddingStart="4dp"
-                            android:paddingTop="4dp"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:background="?attr/selectableItemBackground"/>
-
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 

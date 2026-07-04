@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AgentShell from '../../components/AgentShell.jsx';
 import Modal from '../../components/Modal.jsx';
 import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
@@ -28,6 +30,20 @@ function buildDelayOptions(turboDelay) {
 }
 
 const STORAGE_KEY = 'srmc_compose_draft';
+
+/** Check if a gateway has dual-SIM capability (either carriers detected OR both numbers entered). */
+function hasDualSim(gw) {
+  return gw && ((gw.sim_carrier && gw.sim2_carrier) || (gw.number && gw.number2));
+}
+
+function toAmPm(hhmm) {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return hhmm;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
 
 function estimateTime(count, delay) {
   const secs = Math.ceil((count * delay) / 1000);
@@ -58,6 +74,7 @@ function clearDraft() {
 
 export default function BlastDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [templates, setTemplates] = useState([]);
   const [gateways, setGateways] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -80,7 +97,7 @@ export default function BlastDashboard() {
   const [selectedGateways, setSelectedGateways] = useState(savedDraft.current?.selectedGateways ?? []);
   const [distribution, setDistribution] = useState(savedDraft.current?.distribution ?? 'round-robin');
   const [delayMs, setDelayMs] = useState(6000);
-  const [simMode, setSimMode] = useState('round-robin');
+  const [simMode, setSimMode] = useState('sim1');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [showSummary, setShowSummary] = useState(false);
@@ -89,6 +106,7 @@ export default function BlastDashboard() {
 
   const [activeBroadcasts, setActiveBroadcasts] = useState({}); // { [id]: { sent, failed, total, status, message? } }
   const [failedMessages, setFailedMessages] = useState([]);
+  const [confirmCancel, setConfirmCancel] = useState(null);
 
   const [statsSent, setStatsSent] = useState(0);
   const [statsFailed, setStatsFailed] = useState(0);
@@ -105,7 +123,7 @@ export default function BlastDashboard() {
       if (d.broadcasts && d.broadcasts.length > 0) {
         const map = {};
         for (const b of d.broadcasts) {
-          map[b.id] = { sent: b.sent || 0, failed: b.failed || 0, total: b.total || 0, status: b.status, message: b.message };
+          map[b.id] = { sent: b.sent || 0, failed: b.failed || 0, total: b.total || 0, status: b.status, message: b.message, started_at: b.started_at, completed_at: b.completed_at };
         }
         setActiveBroadcasts(map);
       }
@@ -160,14 +178,14 @@ export default function BlastDashboard() {
     if (event.type === 'broadcast:progress' && event.broadcastId) {
       setActiveBroadcasts(prev => ({
         ...prev,
-        [event.broadcastId]: { sent: event.sent, failed: event.failed, total: event.total, status: event.status, message: prev[event.broadcastId]?.message },
+        [event.broadcastId]: { sent: event.sent, failed: event.failed, total: event.total, status: event.status, message: prev[event.broadcastId]?.message, started_at: event.started_at || prev[event.broadcastId]?.started_at },
       }));
     }
     if (event.type === 'broadcast:complete' && event.broadcastId) {
       setActiveBroadcasts(prev => {
         const next = { ...prev };
         if (next[event.broadcastId]) {
-          next[event.broadcastId] = { ...next[event.broadcastId], status: event.status, sent: event.sent, failed: event.failed };
+          next[event.broadcastId] = { ...next[event.broadcastId], status: event.status, sent: event.sent, failed: event.failed, completed_at: event.completed_at };
         }
         return next;
       });
@@ -254,10 +272,7 @@ export default function BlastDashboard() {
         message,
         recipients: recipientList,
         delay_ms: delayMs,
-        sim_mode: selectedGateways.some(id => {
-          const gw = gateways.find(g => g.id === id);
-          return gw && gw.sim_carrier && gw.sim2_carrier;
-        }) ? simMode : undefined,
+        sim_mode: selectedGateways.some(id => hasDualSim(gateways.find(g => g.id === id))) ? simMode : undefined,
       });
       const bid = result.broadcast.id;
       setActiveBroadcasts(prev => ({
@@ -332,6 +347,10 @@ export default function BlastDashboard() {
                     <div style={{ height: 5, background: 'var(--bg-soft)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
                       <div style={{ height: '100%', width: `${pct}%`, background: bc.status === 'paused' ? 'var(--warn)' : 'var(--ok)', borderRadius: 3, transition: 'width 0.4s' }} />
                     </div>
+                    <div style={{ fontSize: 9.5, color: 'var(--ink-4)', fontFamily: 'var(--mono)', marginBottom: 4, display: 'flex', gap: 8 }}>
+                      {bc.started_at && <span style={{ color: 'var(--ok)' }}>▶ {formatTime(bc.started_at)}</span>}
+                      {bc.completed_at && <span style={{ color: 'var(--ink-3)' }}>✓ {formatTime(bc.completed_at)}</span>}
+                    </div>
                     <button
                       style={{
                         width: '100%', padding: '4px 10px', fontSize: 11,
@@ -341,11 +360,7 @@ export default function BlastDashboard() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
                         transition: 'all 0.12s',
                       }}
-                      onClick={() => {
-                        if (window.confirm(`Cancel this broadcast? ${bc.sent || 0}/${bc.total || 0} messages sent so far.`)) {
-                          handleCancel(id);
-                        }
-                      }}
+                      onClick={() => setConfirmCancel({ id, sent: bc.sent, total: bc.total })}
                       onMouseEnter={e => { e.currentTarget.style.background = 'var(--err)'; e.currentTarget.style.color = '#fff'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
                     >
@@ -375,6 +390,18 @@ export default function BlastDashboard() {
             ))}
           </div>
 
+          {/* ── Broadcast Time (from admin settings) ── */}
+          <div className="card">
+            <div className="card-head">
+              <h3>Broadcast Time</h3>
+            </div>
+            <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--ink-1)' }}>
+              Start: <strong>{toAmPm(adminSettings.window_start || '00:00')}</strong>
+              &nbsp;→&nbsp;
+              End: <strong>{toAmPm(adminSettings.window_end || '23:59')}</strong>
+            </div>
+          </div>
+
           {/* Failed messages */}
           {failedMessages.length > 0 && (
             <div className="card">
@@ -390,6 +417,16 @@ export default function BlastDashboard() {
             </div>
           )}
         </div>
+
+      {confirmCancel && (
+        <ConfirmModal
+          title="Cancel Broadcast"
+          message={`Cancel this broadcast? ${confirmCancel.sent || 0}/${confirmCancel.total || 0} messages sent so far.`}
+          confirmLabel="Cancel Broadcast"
+          onConfirm={() => { handleCancel(confirmCancel.id); setConfirmCancel(null); }}
+          onCancel={() => setConfirmCancel(null)}
+        />
+      )}
 
         {/* CENTER COL */}
         <div>
@@ -534,29 +571,15 @@ export default function BlastDashboard() {
                           <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: checked ? '#fff' : 'var(--ink-1)' }}>
                             {g.name}
                           </span>
-                          {/* SIM carriers */}
-                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            {g.sim_carrier && (
-                              <span style={{ fontSize: 10, color: checked ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
-                                📱1 {g.sim_carrier}
-                              </span>
-                            )}
-                            {g.sim2_carrier && (
-                              <span style={{ fontSize: 10, color: checked ? 'rgba(255,255,255,0.6)' : 'var(--brand-1)', fontFamily: 'var(--mono)' }}>
-                                📱2 {g.sim2_carrier}
-                              </span>
-                            )}
-                            {/* Dual SIM badge */}
-                            {g.sim_carrier && g.sim2_carrier && (
-                              <span style={{
-                                fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
-                                letterSpacing: '0.06em', padding: '1px 5px', borderRadius: 4,
-                                background: checked ? 'rgba(255,255,255,0.15)' : 'var(--ok-bg)',
-                                color: checked ? 'rgba(255,255,255,0.7)' : 'var(--ok)',
-                              }}>
-                                2× SIM
-                              </span>
-                            )}
+                          {/* SIM numbers + carriers */}
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 10 }}>
+                            <span style={{ color: checked ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)' }}>
+                              📱1 {g.sim_carrier || 'SIM 1'} {g.number ? `(${g.number})` : '—'}
+                            </span>
+                            <span style={{ color: checked ? 'rgba(255,255,255,0.35)' : 'var(--ink-4)' }}>|</span>
+                            <span style={{ color: checked ? 'rgba(255,255,255,0.6)' : 'var(--brand-1)' }}>
+                              📱2 {g.sim2_carrier || 'SIM 2'} {g.number2 ? `(${g.number2})` : '—'}
+                            </span>
                           </div>
                           {/* Status dot */}
                           <span style={{
@@ -675,28 +698,20 @@ export default function BlastDashboard() {
               </div>
 
               {/* ── Dual-SIM Mode Picker (only if any selected gateway has dual SIM) ── */}
-              {selectedGateways.some(id => {
-                const gw = gateways.find(g => g.id === id);
-                return gw && gw.sim_carrier && gw.sim2_carrier;
-              }) && (
+              {selectedGateways.some(id => hasDualSim(gateways.find(g => g.id === id))) && (
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>
                         Dual-SIM Mode
                       </label>
                       <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
-                        {simMode === 'sim1' ? '📱1 SIM 1 only'
-                          : simMode === 'sim2' ? '📱2 SIM 2 only'
-                            : simMode === 'parallel' ? '⚡ Parallel'
-                              : '↻ Round-robin'}
+                        {simMode === 'sim2' ? '📱2 SIM 2 only' : '📱1 SIM 1 only'}
                       </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                       {[
                         { key: 'sim1', icon: '📱1', title: 'SIM 1 Only', desc: 'All messages via SIM 1 only' },
                         { key: 'sim2', icon: '📱2', title: 'SIM 2 Only', desc: 'All messages via SIM 2 only' },
-                        { key: 'round-robin', icon: '↻', title: 'Round-robin', desc: 'Alternates SIM1 → SIM2 → SIM1 per message' },
-                        { key: 'parallel', icon: '⚡', title: 'Parallel', desc: 'Splits batch — half via each SIM concurrently' },
                       ].map(opt => {
                         const active = simMode === opt.key;
                         return (
@@ -865,7 +880,7 @@ export default function BlastDashboard() {
                             fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ink-2)',
                           }}>
                             {gw.name}: {gw.number || '—'}
-                            {gw.sim2_carrier && <span style={{ color: 'var(--brand-1)', marginLeft: 4 }}>+ {gw.number2 || 'SIM2'}</span>}
+                            {hasDualSim(gw) && <span style={{ color: 'var(--brand-1)', marginLeft: 4 }}>+ {gw.number2 || 'SIM2'}</span>}
                           </span>
                         );
                       })}
@@ -873,33 +888,23 @@ export default function BlastDashboard() {
                   </div>
 
                   {/* Dual-SIM mode */}
-                  {selectedGateways.some(id => {
-                    const gw = gateways.find(g => g.id === id);
-                    return gw && gw.sim_carrier && gw.sim2_carrier;
-                  }) && (
+                  {selectedGateways.some(id => hasDualSim(gateways.find(g => g.id === id))) && (
                       <div style={{ gridColumn: '1 / -1' }}>
                         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
                           Dual-SIM Mode
                         </div>
                         <span style={{
                           padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600,
-                          background: simMode === 'parallel' ? 'rgba(124,58,237,0.12)'
-                            : simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
-                              : simMode === 'sim2' ? 'rgba(219,39,119,0.12)'
-                                : 'rgba(5,150,105,0.12)',
-                          color: simMode === 'parallel' ? '#7c3aed'
-                            : simMode === 'sim1' ? '#059669'
-                              : simMode === 'sim2' ? '#db2777'
-                                : '#059669',
-                          fontFamily: 'var(--mono)',
-                        }}>
-                          {simMode === 'parallel' ? '⚡ Parallel'
-                            : simMode === 'sim1' ? '📱1 SIM 1 Only'
-                              : simMode === 'sim2' ? '📱2 SIM 2 Only'
-                                : '↻ Round-robin'}
+                        background: simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
+                          : 'rgba(219,39,119,0.12)',
+                        color: simMode === 'sim1' ? '#059669' : '#db2777',
+                        fontFamily: 'var(--mono)',
+                      }}>
+                        {simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only'}
                         </span>
                       </div>
                     )}
+
                 </div>
 
                 {/* Global pause warning */}
@@ -930,6 +935,8 @@ export default function BlastDashboard() {
                     onClick={async () => {
                       await handleSend();
                       setShowReview(false);
+                      setShowSummary(false);
+                      navigate('/dashboard');
                     }}
                   >
                     {sending ? 'Sending...' : `Confirm & Send (${recipientList.length})`}
@@ -1009,7 +1016,7 @@ export default function BlastDashboard() {
                       {sentSummary.gateways.map(id => {
                         const gw = gateways.find(g => g.id === id);
                         if (!gw) return null;
-                        const hasDual = gw.sim_carrier && gw.sim2_carrier;
+                        const hasDual = hasDualSim(gw);
                         return (
                           <span key={id} style={{
                             padding: '3px 10px', borderRadius: 6,
@@ -1026,10 +1033,7 @@ export default function BlastDashboard() {
                 </div>
 
                 {/* SIM Mode — read-only indicator */}
-                {sentSummary.gateways.some(id => {
-                  const gw = gateways.find(g => g.id === id);
-                  return gw && gw.sim_carrier && gw.sim2_carrier;
-                }) && (
+                {sentSummary.gateways.some(id => hasDualSim(gateways.find(g => g.id === id))) && (
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 12px', borderRadius: 8,
@@ -1041,29 +1045,17 @@ export default function BlastDashboard() {
                       <span style={{
                         padding: '3px 10px', borderRadius: 5,
                         fontSize: 11, fontWeight: 600,
-                        background: sentSummary.simMode === 'parallel' ? 'rgba(124,58,237,0.12)'
-                          : sentSummary.simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
-                            : sentSummary.simMode === 'sim2' ? 'rgba(219,39,119,0.12)'
-                              : 'rgba(5,150,105,0.12)',
-                        color: sentSummary.simMode === 'parallel' ? '#7c3aed'
-                          : sentSummary.simMode === 'sim1' ? '#059669'
-                            : sentSummary.simMode === 'sim2' ? '#db2777'
-                              : '#059669',
+                        background: sentSummary.simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
+                          : 'rgba(219,39,119,0.12)',
+                        color: sentSummary.simMode === 'sim1' ? '#059669' : '#db2777',
                         fontFamily: 'var(--mono)',
                       }}>
-                        {sentSummary.simMode === 'parallel' ? '⚡ Parallel'
-                          : sentSummary.simMode === 'sim1' ? '📱1 SIM 1 Only'
-                            : sentSummary.simMode === 'sim2' ? '📱2 SIM 2 Only'
-                              : '↻ Round-robin'}
+                        {sentSummary.simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only'}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                        {sentSummary.simMode === 'parallel'
-                          ? 'Split batch — half via SIM1, half via SIM2 concurrently'
-                          : sentSummary.simMode === 'sim1'
-                            ? 'All messages sent via SIM 1'
-                            : sentSummary.simMode === 'sim2'
-                              ? 'All messages sent via SIM 2'
-                              : 'Alternating SIM1 → SIM2 → SIM1 per message'}
+                        {sentSummary.simMode === 'sim2'
+                          ? 'All messages sent via SIM 2'
+                          : 'All messages sent via SIM 1'}
                       </span>
                     </div>
                   )}

@@ -72,7 +72,6 @@ id tilPassword
 id tilUserId
 id topBar
 id tvApiKey
-id tvDualSimStatus
 id tvError
 id tvFailCount
 id tvIpAddress

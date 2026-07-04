@@ -37,6 +37,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQ_PERMISSIONS = 100;
+    private static final String PREF_DEVICE_ID = "device_id";
     /** Default port for the embedded HTTP gateway server. */
     private static final int GATEWAY_DEFAULT_PORT = 8088;
 
@@ -60,7 +61,7 @@ public class MainActivity extends AppCompatActivity {
 
     // Settings — gateway
     private TextView tvIpAddress, tvApiKey, tvSimSlot, tvSimCarrier;
-    private TextView tvSim2Slot, tvSim2Carrier, tvDualSimStatus;
+    private TextView tvSim2Slot, tvSim2Carrier;
     private EditText etPort;
 
     // Settings — SMS server
@@ -131,16 +132,21 @@ public class MainActivity extends AppCompatActivity {
         loggedInUserRole   = prefs.getString(LoginActivity.PREF_USER_ROLE,   "user");
         loggedInUserStatus = prefs.getString(LoginActivity.PREF_USER_STATUS, "Active");
 
-        new Thread(() -> sendHeartbeat(loggedInUserId)).start();
-
         setContentView(R.layout.activity_main);
 
         bindViews();
         initRecycler();
         initTabs();
+
+        // Detect SIMs FIRST so heartbeat has the data
+        detectSims();
+
         initStatsPoller();
         startGatewayHeartbeat();
         setupUserHeader();
+
+        // Now send immediate heartbeat — detectSims() has already run
+        new Thread(() -> sendHeartbeat(loggedInUserId)).start();
 
         tvIpAddress.setText(getLocalIp());
         int savedPort = prefs.getInt("port", GATEWAY_DEFAULT_PORT);
@@ -435,12 +441,24 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    /** Get this device's persistent unique ID. */
+    private String getGatewayDeviceId() {
+        String deviceId = prefs.getString(PREF_DEVICE_ID, "");
+        if (deviceId.isEmpty()) {
+            deviceId = java.util.UUID.randomUUID().toString();
+            prefs.edit().putString(PREF_DEVICE_ID, deviceId).apply();
+        }
+        return deviceId;
+    }
+
     private void sendHeartbeat(String userId) {
         if (userId == null || userId.isEmpty()) return;
         String url = ServerConfig.getBaseUrl(this) + "/api/auth/gateway/heartbeat";
+        String deviceId = getGatewayDeviceId();
         try {
             org.json.JSONObject body = new org.json.JSONObject();
             body.put("userId", userId);
+            body.put("deviceId", deviceId);
 
             // Include SIM carrier info from prefs
             String sim1 = prefs.getString(SmsSender.PREF_SIM1_CARRIER, "");
@@ -547,26 +565,13 @@ public class MainActivity extends AppCompatActivity {
         tvSimCarrier = findViewById(R.id.tvSimCarrier);
         tvSim2Slot    = findViewById(R.id.tvSim2Slot);
         tvSim2Carrier = findViewById(R.id.tvSim2Carrier);
-        tvDualSimStatus = findViewById(R.id.tvDualSimStatus);
         etPort        = findViewById(R.id.etPort);
 
         etSrmcIp       = findViewById(R.id.etSrmcIp);
         etSrmcPort     = findViewById(R.id.etSrmcPort);
         btnCheckServer = findViewById(R.id.btnCheckServer);
         tvSrmcStatus   = findViewById(R.id.tvSrmcStatus);
-
-        // Settings webhook card
-        tvWebhookUrl       = findViewById(R.id.tvWebhookUrl);
-        btnRegisterWebhook = findViewById(R.id.btnRegisterWebhook);
-        tvWebhookStatus    = findViewById(R.id.tvWebhookStatus);
-
         // Populate webhook URL from stored prefs
-        String stored = prefs.getString(InboundSmsReceiver.PREF_INBOUND_WEBHOOK, "");
-        tvWebhookUrl.setText(stored.isEmpty()
-                ? getString(R.string.label_webhook_url_placeholder)
-                : stored);
-
-        btnRegisterWebhook.setOnClickListener(v -> performWebhookTest());
     }
 
     private void initRecycler() {
@@ -650,9 +655,6 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnCheckServer.setOnClickListener(v -> checkSrmcServerNow());
-
-        // SIM mode picker
-        tvDualSimStatus.setOnClickListener(v -> showSimModePicker());
     }
 
     // ── Gateway toggle ────────────────────────────────────────────────
@@ -777,69 +779,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /**
-     * Show SIM mode picker with 3 options:
-     *   Single SIM — uses only SIM 1
-     *   Round-robin — alternates SIM1 → SIM2 → SIM1 per message
-     *   Parallel — splits each batch across both SIMs concurrently
-     */
-    private void showSimModePicker() {
-        int sim2 = SmsSender.getSim2SubId(this);
-        String[] modes;
-        int checkedItem;
-        String currentMode = SmsSender.getSimMode(this);
-
-        if (sim2 < 0) {
-            // Only one SIM detected — offer only Single SIM
-            modes = new String[]{"📱 Single SIM"};
-            checkedItem = 0;
-        } else {
-            modes = new String[]{"📱 Single SIM", "↻ Round-robin", "⚡ Parallel"};
-            checkedItem = currentMode.equals(SmsSender.SIM_MODE_SINGLE) ? 0
-                    : currentMode.equals(SmsSender.SIM_MODE_PARALLEL) ? 2
-                    : 1; // default round-robin
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle("SIM Mode")
-                .setSingleChoiceItems(modes, checkedItem, (d, w) -> {
-                    String mode;
-                    if (sim2 < 0) {
-                        mode = SmsSender.SIM_MODE_SINGLE;
-                    } else {
-                        mode = w == 0 ? SmsSender.SIM_MODE_SINGLE
-                                : w == 2 ? SmsSender.SIM_MODE_PARALLEL
-                                : SmsSender.SIM_MODE_ROUND_ROBIN;
-                    }
-                    prefs.edit().putString(SmsSender.PREF_SIM_MODE, mode).apply();
-                    updateSimModeDisplay(mode);
-                    d.dismiss();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    /** Update the SIM mode label in the settings UI. */
-    private void updateSimModeDisplay(String mode) {
-        int sim2 = SmsSender.getSim2SubId(this);
-        if (sim2 < 0) {
-            tvDualSimStatus.setText("📱 Single SIM only — no SIM 2 detected");
-            tvDualSimStatus.setTextColor(0xFF94A3B8);
-            return;
-        }
-
-        if (SmsSender.SIM_MODE_SINGLE.equals(mode)) {
-            tvDualSimStatus.setText("📱 Single SIM — using SIM 1 only");
-            tvDualSimStatus.setTextColor(0xFF94A3B8);
-        } else if (SmsSender.SIM_MODE_PARALLEL.equals(mode)) {
-            tvDualSimStatus.setText("⚡ Parallel — both SIMs send concurrently");
-            tvDualSimStatus.setTextColor(0xFF7C3AED);
-        } else {
-            tvDualSimStatus.setText("↻ Round-robin — alternating SIM1 → SIM2");
-            tvDualSimStatus.setTextColor(0xFF4CAF50);
-        }
-    }
-
     @SuppressLint("MissingPermission")
     private void detectSims() {
         tvSimCarrier.setText(R.string.label_sim_not_detected);
@@ -874,18 +813,13 @@ public class MainActivity extends AppCompatActivity {
                     edit.putInt(SmsSender.PREF_SIM1_SUB_ID, subId);
                     edit.putString(SmsSender.PREF_SIM1_CARRIER, carrier);
                     foundSim1 = true;
-                } else if (slot == 1) {
+                } else if (slot > 0) {
+                    // Some devices (iQOO, Xiaomi, etc.) use slot 2 or 3 for SIM 2
                     tvSim2Carrier.setText(carrier);
                     edit.putInt(SmsSender.PREF_SIM2_SUB_ID, subId);
                     edit.putString(SmsSender.PREF_SIM2_CARRIER, carrier);
                     foundSim2 = true;
                 }
-            }
-
-            // Show current SIM mode (don't auto-enable — let user choose)
-            if (tvDualSimStatus != null) {
-                String mode = SmsSender.getSimMode(this);
-                updateSimModeDisplay(mode);
             }
 
             edit.apply();

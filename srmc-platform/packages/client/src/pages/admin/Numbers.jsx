@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import Modal from '../../components/Modal.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
@@ -16,6 +17,7 @@ export default function Numbers() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [testing, setTesting] = useState({});
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -77,13 +79,13 @@ export default function Numbers() {
   }
 
   async function handleDelete(g) {
-    if (!confirm(`Remove ${g.name}?`)) return;
     try {
       await api.del(`/gateways/${g.id}`);
       setGateways(prev => prev.filter(x => x.id !== g.id));
     } catch (e) {
       alert(e.message);
     }
+    setConfirmDelete(null);
   }
 
   async function handleTest(g) {
@@ -175,7 +177,7 @@ export default function Numbers() {
                       {testing[g.id] ? '…' : '⟳'}
                     </button>
                     <button className="iconlink" onClick={() => openEdit(g)} title="Edit">✎</button>
-                    <button className="iconlink" onClick={() => handleDelete(g)} title="Remove" style={{ color: 'var(--err)' }}>✕</button>
+                    <button className="iconlink" onClick={() => setConfirmDelete(g)} title="Delete" style={{ color: 'var(--err)' }}>✕</button>
                   </div>
                 </td>
               </tr>
@@ -186,6 +188,15 @@ export default function Numbers() {
           <span>{gateways.length} gateways</span>
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Gateway"
+          message={`Permanently delete gateway "${confirmDelete.name}"? This cannot be undone.`}
+          onConfirm={() => handleDelete(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
 
       {showModal && (
         <Modal title={editGateway ? 'Edit Gateway' : 'Add Gateway'} onClose={() => setShowModal(false)}>

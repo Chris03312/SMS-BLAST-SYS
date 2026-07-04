@@ -1,13 +1,9 @@
 package com.flashsms.gateway;
 
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
-import android.telephony.SubscriptionInfo;
-import android.telephony.SubscriptionManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -50,7 +46,6 @@ public class LoginActivity extends AppCompatActivity {
     public static final String PREF_USER_ROLE   = "auth_user_role";
     public static final String PREF_USER_STATUS = "auth_user_status";
     public static final String PREF_LOGGED_IN   = "auth_logged_in";
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -265,55 +260,7 @@ public class LoginActivity extends AppCompatActivity {
 
         Toast.makeText(this, getString(R.string.toast_welcome, name), Toast.LENGTH_SHORT).show();
 
-        notifyGatewayOnline(userId);
         startMainActivity();
-    }
-
-    private void notifyGatewayOnline(String userId) {
-        String url = ServerConfig.getBaseUrl(this) + "/api/auth/gateway/online";
-        executor.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("userId", userId);
-                body.put("deviceInfo", android.os.Build.MODEL
-                        + " (Android " + android.os.Build.VERSION.RELEASE + ")");
-
-                // Auto-report SIM info
-                String sim1Carrier = "";
-                String sim2Carrier = "";
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                    try {
-                        SubscriptionManager sm = (SubscriptionManager) getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
-                        if (sm != null) {
-                            java.util.List<SubscriptionInfo> list = sm.getActiveSubscriptionInfoList();
-                            if (list != null) {
-                                for (SubscriptionInfo info : list) {
-                                    String carrier = info.getCarrierName() == null ? "" : info.getCarrierName().toString();
-                                    int slot = info.getSimSlotIndex();
-                                    if (slot == 0) sim1Carrier = carrier;
-                                    else if (slot == 1) sim2Carrier = carrier;
-                                }
-                            }
-                        }
-                    } catch (SecurityException ignored) {
-                        // READ_PHONE_STATE permission not granted — SIM detection unavailable
-                    } catch (Exception ignored) {}
-                }
-
-                if (!sim1Carrier.isEmpty()) body.put("sim_carrier", sim1Carrier);
-                if (!sim2Carrier.isEmpty()) body.put("sim2_carrier", sim2Carrier);
-
-                HttpURLConnection conn = openPost(url, body);
-                conn.getResponseCode();
-                conn.disconnect();
-
-                android.util.Log.d(TAG, "Reported SIMs on online: "
-                        + (sim1Carrier.isEmpty() ? "-" : sim1Carrier)
-                        + " / " + (sim2Carrier.isEmpty() ? "-" : sim2Carrier));
-            } catch (Exception e) {
-                android.util.Log.w(TAG, "Could not notify gateway online: " + e.getMessage());
-            }
-        });
     }
 
     // ── Helpers ───────────────────────────────────────────────────────

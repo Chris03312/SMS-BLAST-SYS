@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Modal from '../../components/Modal.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 
 export default function AdminTemplates() {
@@ -11,6 +12,7 @@ export default function AdminTemplates() {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -56,13 +58,13 @@ export default function AdminTemplates() {
   }
 
   async function handleDelete(t) {
-    if (!confirm(`Delete "${t.name}"?`)) return;
     try {
       await api.del(`/templates/${t.id}`);
       setTemplates(prev => prev.filter(x => x.id !== t.id));
     } catch (e) {
       alert(e.message);
     }
+    setConfirmDelete(null);
   }
 
   const filtered = templates.filter(t =>
@@ -124,7 +126,7 @@ export default function AdminTemplates() {
                 <td>
                   <div className="row-actions">
                     <button className="iconlink" onClick={() => openEdit(t)} title="Edit">✎</button>
-                    <button className="iconlink" onClick={() => handleDelete(t)} title="Delete" style={{ color: 'var(--err)' }}>✕</button>
+                    <button className="iconlink" onClick={() => setConfirmDelete(t)} title="Delete" style={{ color: 'var(--err)' }}>✕</button>
                   </div>
                 </td>
               </tr>
@@ -135,6 +137,15 @@ export default function AdminTemplates() {
           <span>{filtered.length} templates</span>
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Template"
+          message={`Permanently delete template "${confirmDelete.name}"? This cannot be undone.`}
+          onConfirm={() => handleDelete(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
 
       {showModal && editing && (
         <Modal title={selected ? 'Edit Template' : 'New Template'} onClose={() => setShowModal(false)} width={560}>

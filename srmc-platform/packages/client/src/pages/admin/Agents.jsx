@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Modal from '../../components/Modal.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
 import { formatDateShort } from '../../lib/format.js';
@@ -13,6 +14,7 @@ export default function Admins() {
   const [form, setForm] = useState({ username: '', password: '', display_name: '', role: 'admin' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -59,23 +61,14 @@ export default function Admins() {
     setSaving(false);
   }
 
-  async function handleToggle(item) {
-    try {
-      const updated = await api.put(`/agents/admins/${item.id}`, { active: item.active ? 0 : 1 });
-      setItems(prev => prev.map(x => x.id === item.id ? updated.admin : x));
-    } catch (e) {
-      alert(e.message);
-    }
-  }
-
   async function handleDelete(item) {
-    if (!confirm(`Deactivate ${item.display_name}?`)) return;
     try {
       await api.del(`/agents/admins/${item.id}`);
-      setItems(prev => prev.map(x => x.id === item.id ? { ...x, active: 0 } : x));
+      setItems(prev => prev.filter(x => x.id !== item.id));
     } catch (e) {
       alert(e.message);
     }
+    setConfirmDelete(null);
   }
 
   const activeItems = items.filter(a => a.active).length;
@@ -157,10 +150,7 @@ export default function Admins() {
                 <td>
                   <div className="row-actions">
                     <button className="iconlink" onClick={() => openEdit(a)} title="Edit">✎</button>
-                    <button className="iconlink" onClick={() => handleToggle(a)} title="Toggle active" style={{ color: a.role === 'super_admin' ? 'var(--ink-5)' : 'var(--warn)' }} disabled={a.role === 'super_admin'}>
-                      {a.active ? '⊘' : '⊙'}
-                    </button>
-                    <button className="iconlink" onClick={() => handleDelete(a)} title="Remove" style={{ color: a.role === 'super_admin' ? 'var(--ink-5)' : 'var(--err)' }} disabled={a.role === 'super_admin'}>✕</button>
+                    <button className="iconlink" onClick={() => setConfirmDelete(a)} title="Delete" style={{ color: a.role === 'super_admin' ? 'var(--ink-5)' : 'var(--err)' }} disabled={a.role === 'super_admin'}>✕</button>
                   </div>
                 </td>
               </tr>
@@ -171,6 +161,16 @@ export default function Admins() {
           <span>{items.length} admins</span>
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Admin"
+          message={`Permanently delete "${confirmDelete.display_name}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={() => handleDelete(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
 
       {showModal && (
         <Modal title={editItem ? 'Edit Admin' : 'Create Admin'} onClose={() => setShowModal(false)}>

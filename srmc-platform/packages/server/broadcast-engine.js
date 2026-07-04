@@ -32,12 +32,12 @@ export async function startBroadcast(broadcastId) {
   const maxSetting = db.prepare("SELECT value FROM settings WHERE key = 'max_concurrent_broadcasts'").get();
   const maxConcurrent = parseInt(maxSetting?.value) || 0;
   if (maxConcurrent > 0 && running.size >= maxConcurrent) {
-    db.prepare("UPDATE broadcasts SET status = 'failed', completed_at = datetime('now') WHERE id = ?")
-      .run(broadcastId);
+    db.prepare("UPDATE broadcasts SET status = 'failed', completed_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), broadcastId);
     logActivity(broadcastRecord.agent_id, 'broadcast:failed',
       `Broadcast ${broadcastId} queued but not started — at max concurrent limit (${maxConcurrent}). Cancel another broadcast first or increase the limit in Settings.`,
       'error', broadcastRecord.campaign_id);
-    broadcast({ type: 'broadcast:complete', broadcastId, status: 'failed', sent: 0, failed: 0, total: broadcastRecord.total });
+    broadcast({ type: 'broadcast:complete', broadcastId, status: 'failed', sent: 0, failed: 0, total: broadcastRecord.total, completed_at: new Date().toISOString() });
     return;
   }
 
@@ -55,7 +55,7 @@ export async function startBroadcast(broadcastId) {
     .filter(Boolean);
 
   if (gateways.length === 0) {
-    db.prepare("UPDATE broadcasts SET status = 'failed', completed_at = datetime('now') WHERE id = ?").run(broadcastId);
+    db.prepare("UPDATE broadcasts SET status = 'failed', completed_at = ? WHERE id = ?").run(new Date().toISOString(), broadcastId);
     logActivity(broadcastRecord.agent_id, 'broadcast:failed', `No active gateways available for broadcast ${broadcastId}`, 'error', broadcastRecord.campaign_id);
     return;
   }
@@ -79,7 +79,7 @@ export async function startBroadcast(broadcastId) {
   let failed = 0;
   const total = broadcastRecord.total;
 
-  broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending',
+  broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt,
     gateways: gateways.map(g => ({ id: g.id, name: g.name })) });
 
   const distMode = broadcastRecord.distribution || 'round-robin';
@@ -120,6 +120,11 @@ export async function startBroadcast(broadcastId) {
     // Fix: some locales return "24:xx" for midnight (00:xx-00:xx)
     return time.replace(/^24:/, '00:');
   }
+
+  // ── Per-broadcast scheduled time window (optional) ─────────────────
+  // These are stored as HH:MM (e.g. '14:30') in Asia/Manila timezone
+  const scheduleStart = broadcastRecord.send_start_at;
+  const scheduleEnd = broadcastRecord.send_end_at;
 
   let config = readConfig();
 
@@ -181,15 +186,20 @@ export async function startBroadcast(broadcastId) {
           broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
         }
 
-        // Time window check
+        // ── Time window check (global admin window + per-broadcast schedule) ──
         while (true) {
           config = readConfig();
           const now = nowHHMM();
-          if (now >= config.window_start && now <= config.window_end) break;
+          const withinGlobal = now >= config.window_start && now <= config.window_end;
+          const withinSchedule = (!scheduleStart || now >= scheduleStart) && (!scheduleEnd || now <= scheduleEnd);
+          if (withinGlobal && withinSchedule) break;
           if (state.cancel) break;
           const phTimeDisplay = new Date().toLocaleTimeString('en-PH', { timeZone: getTimezone(), hour: '2-digit', minute: '2-digit', hour12: true });
+          const windowLabel = scheduleStart
+            ? `${scheduleStart}–${scheduleEnd || config.window_end} (scheduled)`
+            : `${config.window_start}–${config.window_end}`;
           logActivity(broadcastRecord.agent_id, 'broadcast:paused',
-            `Broadcast paused — outside sending window (${config.window_start}–${config.window_end}). Current time: ${phTimeDisplay}`,
+            `Broadcast paused — outside sending window (${windowLabel}). Current time: ${phTimeDisplay}`,
             'info', broadcastRecord.campaign_id);
           await sleep(60000);
         }
@@ -235,11 +245,11 @@ export async function startBroadcast(broadcastId) {
                   'Content-Type': 'application/json',
                   ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
                 },
-                body: JSON.stringify({ to: num, message: msgRecord.message }),
+                body: JSON.stringify({ to: num, message: msgRecord.message, sim_mode: broadcastRecord.sim_mode || 'sim1' }),
                 signal: controller.signal,
               });
               clearTimeout(t);
-              db.prepare("UPDATE messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(msgRecord.id);
+              db.prepare("UPDATE messages SET status = 'sent', sent_at = ? WHERE id = ?").run(new Date().toISOString(), msgRecord.id);
               sent++;
             } catch (pushErr) {
               failed++;
@@ -263,9 +273,9 @@ export async function startBroadcast(broadcastId) {
 
     wasCancelled = wasCancelled || state.cancel;
     if (wasCancelled) {
-      db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now'), sent = ?, failed = ? WHERE id = ?")
-        .run(sent, failed, broadcastId);
-      broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total });
+      db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
+        .run(new Date().toISOString(), sent, failed, broadcastId);
+      broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total, completed_at: new Date().toISOString() });
       logActivity(broadcastRecord.agent_id, 'broadcast:cancel',
         `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent [Turbo]`,
         'warn', broadcastRecord.campaign_id);
@@ -277,9 +287,9 @@ export async function startBroadcast(broadcastId) {
     // ── Normal mode: one-at-a-time with delay ────────────────────────
     for (const number of recipients) {
       if (state.cancel) {
-        db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now'), sent = ?, failed = ? WHERE id = ?")
-          .run(sent, failed, broadcastId);
-        broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total });
+        db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
+          .run(new Date().toISOString(), sent, failed, broadcastId);
+        broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total, completed_at: new Date().toISOString() });
         logActivity(broadcastRecord.agent_id, 'broadcast:cancel', `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent`, 'warn', broadcastRecord.campaign_id);
         running.delete(broadcastId);
         return;
@@ -310,18 +320,23 @@ export async function startBroadcast(broadcastId) {
         }
       }
 
-      // ── Time window check ────────────────────────────────────────────
+      // ── Time window check (global admin window + per-broadcast schedule) ──
       while (true) {
         config = readConfig();
         const now = nowHHMM();
-        if (now >= config.window_start && now <= config.window_end) break;
+        const withinGlobal = now >= config.window_start && now <= config.window_end;
+        const withinSchedule = (!scheduleStart || now >= scheduleStart) && (!scheduleEnd || now <= scheduleEnd);
+        if (withinGlobal && withinSchedule) break;
         if (state.cancel) break;
-        const phTimeDisplay = new Date().toLocaleTimeString('en-PH', { timeZone: getTimezone(), hour: '2-digit', minute: '2-digit', hour12: true });
-        logActivity(broadcastRecord.agent_id, 'broadcast:paused',
-          `Broadcast paused — outside sending window (${config.window_start}–${config.window_end}). Current time: ${phTimeDisplay}`,
-          'info', broadcastRecord.campaign_id);
-        await sleep(60000);
-      }
+          const phTimeDisplay = new Date().toLocaleTimeString('en-PH', { timeZone: getTimezone(), hour: '2-digit', minute: '2-digit', hour12: true });
+          const windowLabel = scheduleStart
+            ? `${scheduleStart}–${scheduleEnd || config.window_end} (scheduled)`
+            : `${config.window_start}–${config.window_end}`;
+          logActivity(broadcastRecord.agent_id, 'broadcast:paused',
+            `Broadcast paused — outside sending window (${windowLabel}). Current time: ${phTimeDisplay}`,
+            'info', broadcastRecord.campaign_id);
+          await sleep(60000);
+        }
       if (state.cancel) continue;
 
       // ── Pause check ────────────────────────────────────────────────────
@@ -375,13 +390,12 @@ export async function startBroadcast(broadcastId) {
             headers: {
               'Content-Type': 'application/json',
               ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
-            },
-            body: JSON.stringify({ to: number, message: msgRecord.message }),
+            },                body: JSON.stringify({ to: number, message: msgRecord.message, sim_mode: broadcastRecord.sim_mode || 'sim1' }),
             signal: controller.signal,
           });
           clearTimeout(t);
           if (response.ok) {
-            db.prepare("UPDATE messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(msgRecord.id);
+            db.prepare("UPDATE messages SET status = 'sent', sent_at = ? WHERE id = ?").run(new Date().toISOString(), msgRecord.id);
             sent++;
           } else {
             failed++;
@@ -442,9 +456,10 @@ export function onMessageAcked(broadcastId) {
   broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: b.status });
 
   if (open === 0) {
-    db.prepare("UPDATE broadcasts SET status = 'done', completed_at = datetime('now'), sent = ?, failed = ? WHERE id = ?")
-      .run(sent, failed, broadcastId);
-    broadcast({ type: 'broadcast:complete', broadcastId, status: 'done', sent, failed, total });
+    const completedAt = new Date().toISOString();
+    db.prepare("UPDATE broadcasts SET status = 'done', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
+      .run(completedAt, sent, failed, broadcastId);
+    broadcast({ type: 'broadcast:complete', broadcastId, status: 'done', sent, failed, total, completed_at: completedAt });
     logActivity(b.agent_id, 'broadcast:done',
       `Broadcast ${broadcastId} done — ${sent}/${total} sent, ${failed} failed`, 'info', b.campaign_id);
   }

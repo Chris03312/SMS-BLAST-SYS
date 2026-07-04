@@ -40,12 +40,12 @@
         "source": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-main-33:\\drawable\\bg_hero_gradient.xml"
     },
     {
-        "merged": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-debug-31:\\drawable_ic_launcher_foreground.xml.flat",
-        "source": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-main-33:\\drawable\\ic_launcher_foreground.xml"
-    },
-    {
         "merged": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-debug-31:\\color_til_stroke.xml.flat",
         "source": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-main-33:\\color\\til_stroke.xml"
+    },
+    {
+        "merged": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-debug-31:\\drawable_ic_launcher_foreground.xml.flat",
+        "source": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-main-33:\\drawable\\ic_launcher_foreground.xml"
     },
     {
         "merged": "C:\\Users\\Chrxs0331\\.gradle\\daemon\\8.4\\com.flashsms.gateway.app-debug-31:\\layout_item_log.xml.flat",

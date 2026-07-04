@@ -3,6 +3,7 @@ import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber } from '../../lib/format.js';
@@ -208,7 +209,7 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, onTestInline, sav
 }
 
 // ── Gateway card ─────────────────────────────────────────────────────────────
-function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim }) {
+function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim, onRemoveClick }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [showToken, setShowToken] = useState(false);
@@ -395,7 +396,7 @@ function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim }) {
         <button
           className="btn-ghost"
           style={{ flex: 1, justifyContent: 'center', color: 'var(--err)', borderColor: 'var(--err-line)' }}
-          onClick={() => onDelete(gw)}
+          onClick={() => onRemoveClick(gw)}
         >
           Remove
         </button>
@@ -443,6 +444,7 @@ export default function Gateway() {
   const [formError, setFormError] = useState('');
   const [serverInfo, setServerInfo] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => {
     api.get('/gateways')
@@ -509,13 +511,13 @@ export default function Gateway() {
   }
 
   async function handleDelete(gw) {
-    if (!window.confirm(`Remove "${gw.name}"? It will no longer be available for broadcasts.`)) return;
     try {
       await api.del(`/gateways/${gw.id}`);
       setGateways(prev => prev.filter(g => g.id !== gw.id));
     } catch (e) {
       alert('Failed to remove: ' + e.message);
     }
+    setConfirmDelete(null);
   }
 
   async function handleTest(gw) {
@@ -703,11 +705,21 @@ export default function Gateway() {
               onDelete={handleDelete}
               onTest={handleTest}
               onTestSim={handleTestSim}
+              onRemoveClick={setConfirmDelete}
             />
           ))}
         </div>
       )}
 
+      {confirmDelete && (
+        <ConfirmModal
+          title="Remove Gateway"
+          message={`Remove "${confirmDelete.name}"? It will no longer be available for broadcasts.`}
+          confirmLabel="Remove"
+          onConfirm={() => handleDelete(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </AgentShell>
   );
 }

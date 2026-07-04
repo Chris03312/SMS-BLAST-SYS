@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatTime } from '../../lib/format.js';
@@ -67,7 +68,7 @@ function BroadcastDetail({ broadcast, onClose }) {
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
             </div>
-            <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)' }}>
+            <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)', alignItems: 'center' }}>
               {broadcast.started_at && (
                 <span style={{ color: 'var(--ok)' }}>▶ Started {formatTime(broadcast.started_at)}</span>
               )}
@@ -76,6 +77,16 @@ function BroadcastDetail({ broadcast, onClose }) {
               )}
               {!broadcast.completed_at && broadcast.started_at && (
                 <span style={{ color: 'var(--info)' }}>⟳ In progress</span>
+              )}
+              {broadcast.sim_mode && (
+                <span style={{
+                  padding: '1px 7px', borderRadius: 4,
+                  background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)' : 'rgba(5,150,105,0.12)',
+                  color: broadcast.sim_mode === 'sim2' ? '#db2777' : '#059669',
+                  fontWeight: 600,
+                }}>
+                  {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}
+                </span>
               )}
             </div>
           </div>
@@ -299,11 +310,24 @@ export default function Dashboard() {
   }
 
   const [detailBroadcast, setDetailBroadcast] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
 
   const pages = Math.ceil(total / limit);
 
   return (
-    <AgentShell>
+    <>
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel || 'Confirm'}
+          danger={confirmAction.danger !== false}
+          onConfirm={confirmAction.onConfirm}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      <AgentShell>
 
       {detailBroadcast && (
         <BroadcastDetail broadcast={detailBroadcast} onClose={() => setDetailBroadcast(null)} />
@@ -469,9 +493,21 @@ export default function Dashboard() {
                     </span>
                   </td>
 
-                  {/* Sender # */}
+                  {/* Sender # — show correct number based on sim_mode */}
                   <td className="num" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
-                    {b.gateway_number || '—'}
+                    {b.sim_mode === 'sim2' && b.gateway_number2
+                      ? b.gateway_number2
+                      : (b.gateway_number || '—')
+                    }
+                    {b.sim_mode && (
+                      <span style={{
+                        marginLeft: 4, fontSize: 9, fontWeight: 600,
+                        padding: '1px 4px', borderRadius: 3,
+                        background: b.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)' : 'rgba(5,150,105,0.12)',
+                        color: b.sim_mode === 'sim2' ? '#db2777' : '#059669',
+                        verticalAlign: 'middle',
+                      }}>{b.sim_mode === 'sim2' ? '📱2' : '📱1'}</span>
+                    )}
                   </td>
 
                   {/* Recipients count */}
@@ -570,11 +606,12 @@ export default function Dashboard() {
                             </svg>
                           </button>
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Cancel this broadcast? ${b.sent || 0}/${b.total || 0} messages have been sent.`)) {
-                                handleCancel(b);
-                              }
-                            }}
+                            onClick={() => setConfirmAction({
+                              title: 'Cancel Broadcast',
+                              message: `Cancel this broadcast? ${b.sent || 0}/${b.total || 0} messages have been sent.`,
+                              confirmLabel: 'Cancel Broadcast',
+                              onConfirm: () => { handleCancel(b); setConfirmAction(null); },
+                            })}
                             title="Cancel"
                             style={{
                               width: 28, height: 28, padding: 0,
@@ -614,11 +651,12 @@ export default function Dashboard() {
                             </svg>
                           </button>
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Cancel this paused broadcast? ${b.sent || 0}/${b.total || 0} messages have been sent.`)) {
-                                handleCancel(b);
-                              }
-                            }}
+                            onClick={() => setConfirmAction({
+                              title: 'Cancel Broadcast',
+                              message: `Cancel this paused broadcast? ${b.sent || 0}/${b.total || 0} messages have been sent.`,
+                              confirmLabel: 'Cancel Broadcast',
+                              onConfirm: () => { handleCancel(b); setConfirmAction(null); },
+                            })}
                             title="Cancel"
                             style={{
                               width: 28, height: 28, padding: 0,
@@ -639,11 +677,12 @@ export default function Dashboard() {
                       )}
                       {isTerminal && (
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Delete this broadcast? This will remove it from your history. (${b.sent || 0}/${b.total || 0} messages)`)) {
-                              api.del(`/broadcasts/${b.id}`).then(() => loadBroadcasts()).catch(() => { });
-                            }
-                          }}
+                          onClick={() => setConfirmAction({
+                            title: 'Delete Broadcast',
+                            message: `Delete this broadcast? This will remove it from your history. (${b.sent || 0}/${b.total || 0} messages)`,
+                            confirmLabel: 'Delete',
+                            onConfirm: () => { api.del(`/broadcasts/${b.id}`).then(() => loadBroadcasts()).catch(() => {}); setConfirmAction(null); },
+                          })}
                           title="Delete"
                           style={{
                             width: 28, height: 28, padding: 0,
@@ -688,6 +727,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    </AgentShell>
+      </AgentShell>
+    </>
   );
 }

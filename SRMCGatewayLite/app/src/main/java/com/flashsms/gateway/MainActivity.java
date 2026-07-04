@@ -36,6 +36,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQ_PERMISSIONS = 100;
+    private static final String PREF_DEVICE_ID = "device_id";
 
     // Tabs
     private LinearLayout btnTabDashboard, btnTabSettings;
@@ -61,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvSrmcStatus;
 
     // Settings — local gateway
-    private TextView tvIpAddress, tvApiKey, tvSimCarrier, tvSim2Carrier, tvSimMode;
+    private TextView tvIpAddress, tvApiKey, tvSimCarrier, tvSim2Carrier;
     private EditText etPort;
 
     private SharedPreferences prefs;
@@ -119,16 +120,21 @@ public class MainActivity extends AppCompatActivity {
         loggedInUserRole   = prefs.getString(LoginActivity.PREF_USER_ROLE,   "user");
         loggedInUserStatus = prefs.getString(LoginActivity.PREF_USER_STATUS, "Active");
 
-        new Thread(() -> sendHeartbeat(loggedInUserId)).start();
-
         setContentView(R.layout.activity_main);
 
         bindViews();
         initRecycler();
         initTabs();
+
+        // Detect SIMs FIRST so heartbeat has the data
+        detectSims();
+
         initStatsPoller();
         startGatewayHeartbeat();
         setupUserHeader();
+
+        // Now send immediate heartbeat — detectSims() has already run
+        new Thread(() -> sendHeartbeat(loggedInUserId)).start();
 
         tvIpAddress.setText(getLocalIp());
         int savedPort = prefs.getInt("port", 8088);
@@ -158,8 +164,6 @@ public class MainActivity extends AppCompatActivity {
         });
 
         listeners();
-        detectSims();
-        updateSimModeDisplay();
         updateStatusUi();
         refreshLog();
         checkPermissions();
@@ -230,12 +234,31 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /** Get this device's persistent unique ID. */
+    private String getGatewayDeviceId() {
+        String deviceId = prefs.getString(PREF_DEVICE_ID, "");
+        if (deviceId.isEmpty()) {
+            deviceId = java.util.UUID.randomUUID().toString();
+            prefs.edit().putString(PREF_DEVICE_ID, deviceId).apply();
+        }
+        return deviceId;
+    }
+
     private void sendHeartbeat(String userId) {
         if (userId == null || userId.isEmpty()) return;
         String url = ServerConfig.getBaseUrl(this) + "/api/auth/gateway/heartbeat";
+        String deviceId = getGatewayDeviceId();
         try {
             org.json.JSONObject body = new org.json.JSONObject();
             body.put("userId", userId);
+            body.put("deviceId", deviceId);
+
+            // Include SIM carrier info from prefs so server always has latest
+            String sim1 = prefs.getString(SmsSender.PREF_SIM1_CARRIER, "");
+            String sim2 = prefs.getString(SmsSender.PREF_SIM2_CARRIER, "");
+            if (!sim1.isEmpty()) body.put("sim_carrier", sim1);
+            if (!sim2.isEmpty()) body.put("sim2_carrier", sim2);
+
             java.net.HttpURLConnection conn =
                     (java.net.HttpURLConnection) new java.net.URI(url).toURL().openConnection();
             conn.setRequestMethod("POST");
@@ -324,7 +347,6 @@ public class MainActivity extends AppCompatActivity {
         tvApiKey      = findViewById(R.id.tvApiKey);
         tvSimCarrier  = findViewById(R.id.tvSimCarrier);
         tvSim2Carrier = findViewById(R.id.tvSim2Carrier);
-        tvSimMode     = findViewById(R.id.tvSimMode);
         etPort        = findViewById(R.id.etPort);
 
         etSrmcIp       = findViewById(R.id.etSrmcIp);
@@ -401,8 +423,6 @@ public class MainActivity extends AppCompatActivity {
 
         btnCheckServer.setOnClickListener(v -> checkSrmcServerNow());
 
-        // SIM mode picker
-        tvSimMode.setOnClickListener(v -> showSimModePicker());
     }
 
     // ── Gateway toggle ────────────────────────────────────────────────
@@ -520,87 +540,16 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /**
-     * Show SIM mode picker with 4 options:
-     *   SIM 1 Only, SIM 2 Only, Round-robin, Parallel
-     */
-    private void showSimModePicker() {
-        int sim2 = SmsSender.getSim2SubId(this);
-        String[] modes;
-        int checkedItem;
-        String currentMode = SmsSender.getSimMode(this);
-
-        if (sim2 < 0) {
-            modes = new String[]{"📱 SIM 1 Only", "↻ Round-robin"};
-            checkedItem = currentMode.equals(SmsSender.SIM_MODE_SIM2_ONLY) || currentMode.equals(SmsSender.SIM_MODE_PARALLEL)
-                    ? 1 : 0;
-        } else {
-            modes = new String[]{"📱 SIM 1 Only", "📱 SIM 2 Only", "↻ Round-robin", "⚡ Parallel"};
-            if (currentMode.equals(SmsSender.SIM_MODE_SIM1_ONLY)) checkedItem = 0;
-            else if (currentMode.equals(SmsSender.SIM_MODE_SIM2_ONLY)) checkedItem = 1;
-            else if (currentMode.equals(SmsSender.SIM_MODE_PARALLEL)) checkedItem = 3;
-            else checkedItem = 2; // round-robin default
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle("SIM Mode")
-                .setSingleChoiceItems(modes, checkedItem, (d, w) -> {
-                    String mode;
-                    if (sim2 < 0) {
-                        mode = w == 0 ? SmsSender.SIM_MODE_SIM1_ONLY : SmsSender.SIM_MODE_ROUND_ROBIN;
-                    } else {
-                        mode = w == 0 ? SmsSender.SIM_MODE_SIM1_ONLY
-                                : w == 1 ? SmsSender.SIM_MODE_SIM2_ONLY
-                                : w == 3 ? SmsSender.SIM_MODE_PARALLEL
-                                : SmsSender.SIM_MODE_ROUND_ROBIN;
-                    }
-                    prefs.edit().putString(SmsSender.PREF_SIM_MODE, mode).apply();
-                    updateSimModeDisplay();
-                    d.dismiss();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    /** Update the SIM mode label in the settings UI. */
-    private void updateSimModeDisplay() {
-        String mode = SmsSender.getSimMode(this);
-        int sim2 = SmsSender.getSim2SubId(this);
-
-        if (sim2 < 0) {
-            tvSimMode.setText("📱 SIM 1 Only — no SIM 2 detected");
-            tvSimMode.setTextColor(0xFF94A3B8);
-            tvSimMode.setBackgroundColor(0xFFF8FAFC);
-            return;
-        }
-
-        switch (mode) {
-            case "sim1":
-                tvSimMode.setText("📱 SIM 1 Only — all messages via SIM 1");
-                tvSimMode.setTextColor(0xFF059669);
-                tvSimMode.setBackgroundColor(0xFFF0FDF4);
-                break;
-            case "sim2":
-                tvSimMode.setText("📱 SIM 2 Only — all messages via SIM 2");
-                tvSimMode.setTextColor(0xFFDB2777);
-                tvSimMode.setBackgroundColor(0xFFFDF2F8);
-                break;
-            case "parallel":
-                tvSimMode.setText("⚡ Parallel — both SIMs send concurrently");
-                tvSimMode.setTextColor(0xFF7C3AED);
-                tvSimMode.setBackgroundColor(0xFFF5F3FF);
-                break;
-            default:
-                tvSimMode.setText("↻ Round-robin — alternating SIM1 → SIM2");
-                tvSimMode.setTextColor(0xFF4CAF50);
-                tvSimMode.setBackgroundColor(0xFFF0FDF4);
-                break;
-        }
-    }
-
     private void detectSims() {
         tvSimCarrier.setText(R.string.label_sim_not_detected);
         tvSim2Carrier.setText(R.string.label_sim_not_detected);
+
+        // Clear stored subscription IDs and carriers by default
+        SharedPreferences.Editor edit = prefs.edit();
+        edit.remove(SmsSender.PREF_SIM1_SUB_ID);
+        edit.remove(SmsSender.PREF_SIM2_SUB_ID);
+        edit.remove(SmsSender.PREF_SIM1_CARRIER);
+        edit.remove(SmsSender.PREF_SIM2_CARRIER);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             try {
@@ -614,11 +563,24 @@ public class MainActivity extends AppCompatActivity {
                     String carrier = info.getCarrierName() == null
                             ? getString(R.string.label_unknown)
                             : info.getCarrierName().toString();
-                    if (slot == 0) tvSimCarrier.setText(carrier);
-                    else if (slot == 1) tvSim2Carrier.setText(carrier);
+                    int subId = info.getSubscriptionId();
+
+                    if (slot == 0) {
+                        tvSimCarrier.setText(carrier);
+                        edit.putInt(SmsSender.PREF_SIM1_SUB_ID, subId);
+                        edit.putString(SmsSender.PREF_SIM1_CARRIER, carrier);
+                    } else if (slot > 0) {
+                        tvSim2Carrier.setText(carrier);
+                        edit.putInt(SmsSender.PREF_SIM2_SUB_ID, subId);
+                        edit.putString(SmsSender.PREF_SIM2_CARRIER, carrier);
+                    }
                 }
-            } catch (SecurityException ignored) {}
+            } catch (SecurityException ignored) {
+                // READ_PHONE_STATE permission not granted — SIM detection unavailable
+            }
         }
+
+        edit.apply();
     }
 
     // ── Permissions ───────────────────────────────────────────────────
@@ -656,7 +618,6 @@ public class MainActivity extends AppCompatActivity {
                 new IntentFilter(GatewayService.ACTION_GATEWAY_STARTED), 0);
         updateStatusUi();
         detectSims();
-        updateSimModeDisplay();
         refreshLog();
         if (GatewayService.isRunning) statsPoller.pollNow();
     }

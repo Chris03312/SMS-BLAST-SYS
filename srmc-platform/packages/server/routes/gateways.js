@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
 import db from '../db.js';
 import { fixTimestamps } from '../fix-timestamps.js';
-import { authMiddleware, adminOnly } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import { checkGatewayNow } from '../gateway-poller.js';
 
 const router = Router();
@@ -109,7 +109,7 @@ router.put('/:id', (req, res) => {
   }
 });
 
-router.delete('/:id', adminOnly, (req, res) => {
+router.delete('/:id', (req, res) => {
   try {
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(req.params.id);
     if (!gateway) {
@@ -197,7 +197,7 @@ router.post('/:id/test-sim', async (req, res) => {
             'Content-Type': 'application/json',
             ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
           },
-          body: JSON.stringify({ to: targetNumber, message: testMsg }),
+          body: JSON.stringify({ to: targetNumber, message: testMsg, sim_mode: sim }),
           signal: controller.signal,
         });
         clearTimeout(timeout);

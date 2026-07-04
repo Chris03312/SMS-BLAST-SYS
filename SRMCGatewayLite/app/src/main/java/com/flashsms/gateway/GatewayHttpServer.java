@@ -190,8 +190,16 @@ public class GatewayHttpServer {
             return;
         }
 
-        // Send via SMS
-        int result = SmsSender.send(context, to, message);
+        // Send via SMS — use sim_mode from request if provided
+        String simMode = req.optString("sim_mode", "sim1");
+        boolean useSim2 = SmsSender.SIM_MODE_SIM2_ONLY.equals(simMode);
+        int subId = useSim2 ? SmsSender.getSim2SubId(context) : SmsSender.getSim1SubId(context);
+        int result;
+        if (subId >= 0) {
+            result = SmsSender.sendViaSubId(context, to, message, subId);
+        } else {
+            result = SmsSender.send(context, to, message);
+        }
 
         // Log to phone's message history (same as OutboundPoller does)
         Log.d(TAG, "PUSH send to " + to + ": " + (result == SmsSender.RESULT_OK ? "ok" : "failed"));

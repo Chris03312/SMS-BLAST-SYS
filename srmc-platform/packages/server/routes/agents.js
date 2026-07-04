@@ -100,7 +100,7 @@ router.delete('/:id', (req, res) => {
     if (!agent) {
       return fail(res, 'Agent not found', 404);
     }
-    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(req.params.id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
     return ok(res, { success: true });
   } catch (e) {
     console.error('[agents] DELETE error:', e);
@@ -176,7 +176,7 @@ router.delete('/admins/:id', superAdminOnly, (req, res) => {
       }
     }
 
-    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(req.params.id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
     return ok(res, { success: true });
   } catch (e) {
     console.error('[agents] DELETE /admins error:', e);

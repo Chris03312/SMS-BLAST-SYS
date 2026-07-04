@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { formatDate } from '../../lib/format.js';
 
@@ -58,7 +59,7 @@ function BroadcastDetail({ broadcast, onClose }) {
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
             </div>
-            <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)' }}>
+            <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)', alignItems: 'center' }}>
               {broadcast.started_at && (
                 <span style={{ color: 'var(--ok)' }}>▶ Started {formatDate(broadcast.started_at)}</span>
               )}
@@ -67,6 +68,16 @@ function BroadcastDetail({ broadcast, onClose }) {
               )}
               {!broadcast.completed_at && broadcast.started_at && (
                 <span style={{ color: 'var(--info)' }}>⟳ In progress</span>
+              )}
+              {broadcast.sim_mode && (
+                <span style={{
+                  padding: '1px 7px', borderRadius: 4,
+                  background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)' : 'rgba(5,150,105,0.12)',
+                  color: broadcast.sim_mode === 'sim2' ? '#db2777' : '#059669',
+                  fontWeight: 600,
+                }}>
+                  {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}
+                </span>
               )}
             </div>
           </div>
@@ -192,6 +203,7 @@ export default function History() {
   }
 
   const [detailBroadcast, setDetailBroadcast] = useState(null);
+  const [confirmCancel, setConfirmCancel] = useState(null);
 
   const pages = Math.ceil(total / limit);
 
@@ -299,11 +311,9 @@ export default function History() {
                   {/* Cancel button — only for active broadcasts */}
                   {(b.status === 'sending' || b.status === 'paused') && (
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Cancel this broadcast? ${b.sent || 0}/${b.total || 0} messages sent so far.`)) {
-                          api.del(`/broadcasts/${b.id}`).then(() => load()).catch(() => {});
-                        }
-                      }}
+                      onClick={() => setConfirmCancel({
+                        ...b,
+                      })}
                       title="Cancel"
                       style={{
                         width: 28, height: 28, padding: 0,
@@ -354,6 +364,16 @@ export default function History() {
           </div>
         </div>
       </div>
+
+      {confirmCancel && (
+        <ConfirmModal
+          title="Cancel Broadcast"
+          message={`Cancel this broadcast? ${confirmCancel.sent || 0}/${confirmCancel.total || 0} messages sent so far.`}
+          confirmLabel="Cancel Broadcast"
+          onConfirm={() => { api.del(`/broadcasts/${confirmCancel.id}`).then(() => { load(); setConfirmCancel(null); }).catch(() => {}); }}
+          onCancel={() => setConfirmCancel(null)}
+        />
+      )}
     </AgentShell>
   );
 }

@@ -68,35 +68,14 @@ export function validateInboundToken(token) {
 }
 
 /**
- * Ensure a gateway record exists for the given user.
- * If a gateway record already exists with this ID it will be updated.
- * Previously this auto-created gateways with a placeholder URL (localhost:8088),
- * which caused broadcasts to fail trying to send to a non-existent server.
- * Gateways should only be created through the admin UI with correct URLs.
- */
-function ensureGateway(userId, deviceInfo) {
-  const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(userId);
-  if (existing) return;
-
-  // Self-register the phone as a PULL gateway. It has no reachable URL — it
-  // polls the central server for outbound work — so this works across networks.
-  const user = db.prepare('SELECT username, display_name FROM users WHERE username = ?').get(userId);
-  const name = deviceInfo || (user && (user.display_name || user.username)) || 'Gateway';
-  db.prepare(
-    "INSERT INTO gateways (id, name, url, mode, status, active) VALUES (?, ?, '', 'pull', 'online', 1)"
-  ).run(userId, name);
-  console.log('[gateway-service] Self-registered pull gateway for user', userId, `(${name})`);
-}
-
-/**
  * Mark a gateway as online.
  *
  * @param {string} userId     - Gateway user ID
  * @param {string} deviceInfo - Device model / info string
  */
-export function gatewayOnline(userId, deviceInfo, number, simCarrier, number2, sim2Carrier) {
+export function gatewayOnline(userId, deviceId, deviceInfo, number, simCarrier, number2, sim2Carrier) {
   const now = new Date().toISOString();
-  ensureGateway(userId, deviceInfo);
+  const gwId = deviceId || userId;
 
   // Build update — only set fields that are provided
   const updates = ["status = ?", "last_online = ?", "device_info = ?"];
@@ -119,12 +98,12 @@ export function gatewayOnline(userId, deviceInfo, number, simCarrier, number2, s
     params.push(String(sim2Carrier));
   }
 
-  params.push(userId);
+  params.push(gwId);
   db.prepare(`UPDATE gateways SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   broadcast({
     type: 'gateway:online',
-    gatewayId: userId,
+    gatewayId: gwId,
     deviceInfo: deviceInfo || '',
     last_online: now,
     sim_carrier: simCarrier || null,
@@ -137,15 +116,15 @@ export function gatewayOnline(userId, deviceInfo, number, simCarrier, number2, s
  *
  * @param {string} userId - Gateway user ID
  */
-export function gatewayOffline(userId) {
+export function gatewayOffline(userId, deviceId) {
   const now = new Date().toISOString();
-  ensureGateway(userId);
+  const gwId = deviceId || userId;
   db.prepare('UPDATE gateways SET status = ?, last_beat = ? WHERE id = ?')
-    .run('offline', now, userId);
+    .run('offline', now, gwId);
 
   broadcast({
     type: 'gateway:offline',
-    gatewayId: userId,
+    gatewayId: gwId,
     last_offline: now,
   });
 }
@@ -156,9 +135,9 @@ export function gatewayOffline(userId) {
  * @param {string} userId - Gateway user ID
  * @returns {boolean} - Whether the gateway was found
  */
-export function gatewayHeartbeat(userId, extra = {}) {
+export function gatewayHeartbeat(userId, deviceId, extra = {}) {
   const now = new Date().toISOString();
-  ensureGateway(userId);
+  const gwId = deviceId || userId;
 
   // Build update — always set status/beat/online, optionally update SIM fields
   const updates = ["status = ?", "last_beat = ?", "last_online = ?"];
@@ -181,12 +160,12 @@ export function gatewayHeartbeat(userId, extra = {}) {
     params.push(String(extra.number));
   }
 
-  params.push(userId);
+  params.push(gwId);
   db.prepare(`UPDATE gateways SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   broadcast({
     type: 'gateway:heartbeat',
-    gatewayId: userId,
+    gatewayId: gwId,
     timestamp: now,
     sim_carrier: extra.simCarrier || null,
     sim2_carrier: extra.sim2Carrier || null,
@@ -224,10 +203,10 @@ export function getInboundWebhookUrl(gatewayId) {
  *
  * @param {string} userId - Gateway user ID
  */
-export function gatewayLogout(userId) {
+export function gatewayLogout(userId, deviceId) {
   // Revoke all tokens for this gateway
   db.prepare('DELETE FROM gateway_tokens WHERE gateway_id = ?').run(userId);
-  gatewayOffline(userId);
+  gatewayOffline(userId, deviceId);
 }
 
 function logActivity(userId, action, detail, level = 'info') {

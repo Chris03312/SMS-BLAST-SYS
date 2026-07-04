@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 
 export default function AgentTemplates() {
@@ -10,6 +11,7 @@ export default function AgentTemplates() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => {
     load();
@@ -66,7 +68,7 @@ export default function AgentTemplates() {
   }
 
   async function handleDelete() {
-    if (!selected || !confirm(`Delete "${selected.name}"?`)) return;
+    if (!selected) return;
     try {
       await api.del(`/templates/${selected.id}`);
       setTemplates(prev => prev.filter(t => t.id !== selected.id));
@@ -75,6 +77,7 @@ export default function AgentTemplates() {
     } catch (e) {
       alert(e.message);
     }
+    setConfirmDelete(null);
   }
 
   async function handleDuplicate() {
@@ -156,7 +159,7 @@ export default function AgentTemplates() {
             {selected && !creating && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button className="btn-ghost" onClick={handleDuplicate}>Duplicate</button>
-                <button className="btn-danger" onClick={handleDelete}>Delete</button>
+                <button className="btn-danger" onClick={() => setConfirmDelete(selected)}>Delete</button>
               </div>
             )}
           </div>
@@ -233,14 +236,22 @@ export default function AgentTemplates() {
               <button className="btn-primary" type="submit" disabled={saving}>
                 {saving ? 'Saving...' : (creating ? 'Create template' : 'Save changes')}
               </button>
-            </form>
-          ) : (
+            </form>            ) : (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
               Select a template from the list or create a new one.
             </div>
           )}
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Template"
+          message={`Permanently delete template "${confirmDelete.name}"? This cannot be undone.`}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </AgentShell>
   );
 }

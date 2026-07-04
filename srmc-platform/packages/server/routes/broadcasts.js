@@ -34,6 +34,7 @@ router.get('/', (req, res) => {
         t.name as template_name,
         g.name as gateway_name,
         g.number as gateway_number,
+        g.number2 as gateway_number2,
         c.name as campaign_name,
         (SELECT COUNT(*) FROM messages WHERE broadcast_id = b.id AND status = 'delivered') as delivered
       FROM broadcasts b
@@ -90,7 +91,7 @@ router.get('/running/list', (req, res) => {
     const running = db.prepare(
       `SELECT b.id, b.status, b.sent, b.failed, b.total, b.message, b.delay_ms, b.created_at,
               u.display_name as agent_name,
-              c.name as campaign_name, g.number as gateway_number
+              c.name as campaign_name, g.number as gateway_number, g.number2 as gateway_number2
        FROM broadcasts b
        LEFT JOIN users u ON b.agent_id = u.id
        LEFT JOIN campaigns c ON b.campaign_id = c.id
@@ -164,6 +165,7 @@ router.get('/:id', (req, res) => {
         t.name as template_name,
         g.name as gateway_name,
         g.number as gateway_number,
+        g.number2 as gateway_number2,
         c.name as campaign_name
       FROM broadcasts b
       LEFT JOIN users u ON b.agent_id = u.id
@@ -192,9 +194,11 @@ router.get('/:id', (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution, sim_mode } = req.body;
+    const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution, sim_mode, send_start_at, send_end_at } = req.body;
     const distMode = distribution === 'linear' ? 'linear' : 'round-robin';
-    const resolvedSimMode = sim_mode === 'parallel' ? 'parallel' : sim_mode === 'sim1' ? 'sim1' : sim_mode === 'sim2' ? 'sim2' : 'round-robin';
+    const resolvedSimMode = sim_mode === 'sim2' ? 'sim2' : 'sim1';
+    const resolvedStartAt = (send_start_at && send_start_at !== '') ? send_start_at : null;
+    const resolvedEndAt = (send_end_at && send_end_at !== '') ? send_end_at : null;
 
     const rawGatewayIds = Array.isArray(gateway_ids) && gateway_ids.length > 0
       ? gateway_ids
@@ -271,7 +275,7 @@ router.post('/', async (req, res) => {
     const broadcastId = uuidv4();
     const primaryGwId = validGateways[0].id;
 
-    db.prepare(`INSERT INTO broadcasts (id, agent_id, campaign_id, template_id, gateway_id, gateway_ids, distribution, message, recipients, total, delay_ms, status, sim_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`)
+    db.prepare(`INSERT INTO broadcasts (id, agent_id, campaign_id, template_id, gateway_id, gateway_ids, distribution, message, recipients, total, delay_ms, status, sim_mode, send_start_at, send_end_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`)
       .run(
         broadcastId,
         req.user.id,
@@ -284,7 +288,9 @@ router.post('/', async (req, res) => {
         JSON.stringify(validRecipients),
         validRecipients.length,
         resolvedDelay,
-        resolvedSimMode
+        resolvedSimMode,
+        resolvedStartAt,
+        resolvedEndAt
       );
 
     const total = validRecipients.length;

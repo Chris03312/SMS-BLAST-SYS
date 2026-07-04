@@ -367,8 +367,11 @@ export function initDb() {
     "ALTER TABLE gateways ADD COLUMN delivery_fails INTEGER DEFAULT 0",
     // Human-readable last error message (e.g. "HTTP 401 Unauthorized", "Connection refused")
     "ALTER TABLE gateways ADD COLUMN last_error TEXT",
-    // SIM mode for dual-SIM gateways: 'round-robin' (alternating) or 'parallel' (concurrent)
-    "ALTER TABLE broadcasts ADD COLUMN sim_mode TEXT DEFAULT 'round-robin'",
+    // SIM mode for dual-SIM gateways: 'sim1' (SIM 1 only) or 'sim2' (SIM 2 only)
+    "ALTER TABLE broadcasts ADD COLUMN sim_mode TEXT DEFAULT 'sim1'",
+    // Per-broadcast scheduled send start/end time (stored as HH:MM)
+    "ALTER TABLE broadcasts ADD COLUMN send_start_at TEXT",
+    "ALTER TABLE broadcasts ADD COLUMN send_end_at TEXT",
   ];
   for (const sql of migrations) {
     try {
