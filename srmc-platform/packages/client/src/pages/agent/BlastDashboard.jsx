@@ -98,6 +98,7 @@ export default function BlastDashboard() {
   const [distribution, setDistribution] = useState(savedDraft.current?.distribution ?? 'round-robin');
   const [delayMs, setDelayMs] = useState(6000);
   const [simMode, setSimMode] = useState('sim1');
+  const [simRoundStart, setSimRoundStart] = useState('sim1');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [showSummary, setShowSummary] = useState(false);
@@ -157,6 +158,9 @@ export default function BlastDashboard() {
     if (initialDataLoaded && savedDraft.current?.simMode) {
       setSimMode(savedDraft.current.simMode);
     }
+    if (initialDataLoaded && savedDraft.current?.simRoundStart) {
+      setSimRoundStart(savedDraft.current.simRoundStart);
+    }
   }, [initialDataLoaded]);
 
   // Save draft on every form state change
@@ -171,8 +175,9 @@ export default function BlastDashboard() {
       distribution,
       delayMs,
       simMode,
+      simRoundStart,
     });
-  }, [selectedTemplate, selectedCampaign, message, recipients, selectedGateways, distribution, delayMs, simMode, initialDataLoaded]);
+  }, [selectedTemplate, selectedCampaign, message, recipients, selectedGateways, distribution, delayMs, simMode, simRoundStart, initialDataLoaded]);
 
   useWS((event) => {
     if (event.type === 'broadcast:progress' && event.broadcastId) {
@@ -273,6 +278,7 @@ export default function BlastDashboard() {
         recipients: recipientList,
         delay_ms: delayMs,
         sim_mode: selectedGateways.some(id => hasDualSim(gateways.find(g => g.id === id))) ? simMode : undefined,
+        sim_round_start: simMode === 'round-robin' ? simRoundStart : undefined,
       });
       const bid = result.broadcast.id;
       setActiveBroadcasts(prev => ({
@@ -290,6 +296,7 @@ export default function BlastDashboard() {
         distribution,
         delayMs,
         simMode,
+        simRoundStart,
         total: result.broadcast.total,
       });
       setShowSummary(true);
@@ -705,13 +712,14 @@ export default function BlastDashboard() {
                         Dual-SIM Mode
                       </label>
                       <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
-                        {simMode === 'sim2' ? '📱2 SIM 2 only' : '📱1 SIM 1 only'}
+                        {simMode === 'round-robin' ? '↻ Alternating' : (simMode === 'sim2' ? '📱2 SIM 2 only' : '📱1 SIM 1 only')}
                       </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                       {[
                         { key: 'sim1', icon: '📱1', title: 'SIM 1 Only', desc: 'All messages via SIM 1 only' },
                         { key: 'sim2', icon: '📱2', title: 'SIM 2 Only', desc: 'All messages via SIM 2 only' },
+                        { key: 'round-robin', icon: '↻', title: 'Round-robin', desc: 'Alternate SIM 1 ↔ SIM 2 per message' },
                       ].map(opt => {
                         const active = simMode === opt.key;
                         return (
@@ -736,6 +744,28 @@ export default function BlastDashboard() {
                         );
                       })}
                     </div>
+                    {simMode === 'round-robin' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 11 }}>
+                        <span style={{ color: 'var(--ink-3)' }}>Start with:</span>
+                        {['sim1', 'sim2'].map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setSimRoundStart(s)}
+                            style={{
+                              padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
+                              border: `1.5px solid ${simRoundStart === s ? 'var(--brand-1)' : 'var(--line)'}`,
+                              background: simRoundStart === s ? 'var(--brand-1)' : '#fff',
+                              color: simRoundStart === s ? '#fff' : 'var(--ink-1)',
+                              fontSize: 11, fontWeight: 500,
+                              transition: 'all 0.12s',
+                            }}
+                          >
+                            {s === 'sim1' ? '📱1 SIM 1' : '📱2 SIM 2'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -900,7 +930,9 @@ export default function BlastDashboard() {
                         color: simMode === 'sim1' ? '#059669' : '#db2777',
                         fontFamily: 'var(--mono)',
                       }}>
-                        {simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only'}
+                        {simMode === 'round-robin'
+                          ? `↻ Round-robin starting with ${simRoundStart === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}`
+                          : (simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only')}
                         </span>
                       </div>
                     )}
@@ -1050,12 +1082,16 @@ export default function BlastDashboard() {
                         color: sentSummary.simMode === 'sim1' ? '#059669' : '#db2777',
                         fontFamily: 'var(--mono)',
                       }}>
-                        {sentSummary.simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only'}
+                        {sentSummary.simMode === 'round-robin'
+                          ? `↻ Round-robin starting with ${sentSummary.simRoundStart === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}`
+                          : (sentSummary.simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only')}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                        {sentSummary.simMode === 'sim2'
-                          ? 'All messages sent via SIM 2'
-                          : 'All messages sent via SIM 1'}
+                        {sentSummary.simMode === 'round-robin'
+                          ? `Messages alternate between SIMs, starting with ${sentSummary.simRoundStart === 'sim2' ? 'SIM 2' : 'SIM 1'}`
+                          : (sentSummary.simMode === 'sim2'
+                            ? 'All messages sent via SIM 2'
+                            : 'All messages sent via SIM 1')}
                       </span>
                     </div>
                   )}

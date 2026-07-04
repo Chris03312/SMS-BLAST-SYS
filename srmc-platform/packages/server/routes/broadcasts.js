@@ -194,9 +194,9 @@ router.get('/:id', (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution, sim_mode, send_start_at, send_end_at } = req.body;
+    const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution, sim_mode, sim_round_start, send_start_at, send_end_at } = req.body;
     const distMode = distribution === 'linear' ? 'linear' : 'round-robin';
-    const resolvedSimMode = sim_mode === 'sim2' ? 'sim2' : 'sim1';
+    const resolvedSimMode = sim_mode === 'sim2' ? 'sim2' : sim_mode === 'round-robin' ? 'round-robin' : 'sim1';
     const resolvedStartAt = (send_start_at && send_start_at !== '') ? send_start_at : null;
     const resolvedEndAt = (send_end_at && send_end_at !== '') ? send_end_at : null;
 
@@ -275,7 +275,7 @@ router.post('/', async (req, res) => {
     const broadcastId = uuidv4();
     const primaryGwId = validGateways[0].id;
 
-    db.prepare(`INSERT INTO broadcasts (id, agent_id, campaign_id, template_id, gateway_id, gateway_ids, distribution, message, recipients, total, delay_ms, status, sim_mode, send_start_at, send_end_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`)
+    db.prepare(`INSERT INTO broadcasts (id, agent_id, campaign_id, template_id, gateway_id, gateway_ids, distribution, message, recipients, total, delay_ms, status, sim_mode, sim_round_start, send_start_at, send_end_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`)
       .run(
         broadcastId,
         req.user.id,
@@ -289,6 +289,7 @@ router.post('/', async (req, res) => {
         validRecipients.length,
         resolvedDelay,
         resolvedSimMode,
+        sim_round_start === 'sim2' ? 'sim2' : 'sim1',
         resolvedStartAt,
         resolvedEndAt
       );

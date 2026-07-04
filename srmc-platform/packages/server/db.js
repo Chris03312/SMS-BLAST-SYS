@@ -372,6 +372,8 @@ export function initDb() {
     // Per-broadcast scheduled send start/end time (stored as HH:MM)
     "ALTER TABLE broadcasts ADD COLUMN send_start_at TEXT",
     "ALTER TABLE broadcasts ADD COLUMN send_end_at TEXT",
+    // Starting SIM for round-robin mode: 'sim1' or 'sim2'
+    "ALTER TABLE broadcasts ADD COLUMN sim_round_start TEXT DEFAULT 'sim1'",
   ];
   for (const sql of migrations) {
     try {

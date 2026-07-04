@@ -68,11 +68,9 @@ router.get('/gateway/outbound', (req, res) => {
     db.prepare("UPDATE gateways SET status = 'online', last_poll = ?, last_beat = ?, last_online = ? WHERE id = ?")
       .run(now, now, now, gatewayId);
 
-    // Claim 'pending' messages, plus any 'sending' ones whose claim went stale
-    // (phone crashed/lost connection before ACKing).
-    // Also include sim_mode from the broadcast so the phone knows which SIM to use.
+    // Also include sim_mode + sim_round_start from the broadcast
     const rows = db.prepare(
-      `SELECT m.id, m.to_number, m.message, COALESCE(b.sim_mode, 'sim1') as sim_mode
+      `SELECT m.id, m.to_number, m.message, COALESCE(b.sim_mode, 'sim1') as sim_mode, b.sim_round_start
          FROM messages m
          LEFT JOIN broadcasts b ON m.broadcast_id = b.id
          WHERE m.gateway_id = ?
@@ -87,9 +85,19 @@ router.get('/gateway/outbound', (req, res) => {
     const claimAll = db.transaction(() => { for (const r of rows) claim.run(now, r.id); });
     claimAll();
 
+    // Apply round-robin alternation per-message
+    const processedRows = rows.map((r, idx) => {
+      if (r.sim_mode === 'round-robin') {
+        const startSim = r.sim_round_start || 'sim1';
+        const isSim2 = startSim === 'sim2' ? (idx % 2 === 0) : (idx % 2 === 1);
+        return { ...r, sim_mode: isSim2 ? 'sim2' : 'sim1' };
+      }
+      return r;
+    });
+
     return res.json({
       success: true,
-      messages: rows.map(r => ({ id: r.id, to: r.to_number, message: r.message, sim_mode: r.sim_mode })),
+      messages: processedRows.map(r => ({ id: r.id, to: r.to_number, message: r.message, sim_mode: r.sim_mode })),
     });
   } catch (e) {
     console.error('[gateway-outbound] claim error:', e);

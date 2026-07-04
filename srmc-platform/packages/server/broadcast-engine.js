@@ -149,6 +149,7 @@ export async function startBroadcast(broadcastId) {
   if (isTurbo) {
     let i = 0;
     let wasCancelled = false;
+    let roundSimIdx = 0; // track position for round-robin alternation across all batches
 
     try {
       while (i < recipients.length && !state.cancel) {
@@ -231,6 +232,8 @@ export async function startBroadcast(broadcastId) {
         if (batch.length === 0) continue;
 
         // ── Release messages: PUSH goes directly, PULL goes to 'pending' ─
+        const roundStartSim = broadcastRecord.sim_round_start || 'sim1';
+        const isRoundRobin = broadcastRecord.sim_mode === 'round-robin';
         for (const { num, msgRecord, gateway } of batch) {
           const isPush = gateway && gateway.url && gateway.mode !== 'pull';
 
@@ -238,14 +241,14 @@ export async function startBroadcast(broadcastId) {
             // PUSH gateway — POST directly to the phone's HTTP server
             try {
               const controller = new AbortController();
-              const t = setTimeout(() => controller.abort(), 10000);
+              const t = setTimeout(() => controller.abort(), 30000);
               await fetch(`${gateway.url}/send`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
                 },
-                body: JSON.stringify({ to: num, message: msgRecord.message, sim_mode: broadcastRecord.sim_mode || 'sim1' }),
+                body: JSON.stringify({ to: num, message: msgRecord.message, sim_mode: isRoundRobin ? (roundStartSim === 'sim2' ? (roundSimIdx % 2 === 0 ? 'sim2' : 'sim1') : (roundSimIdx % 2 === 0 ? 'sim1' : 'sim2')) : (broadcastRecord.sim_mode || 'sim1') }),
                 signal: controller.signal,
               });
               clearTimeout(t);
@@ -261,6 +264,7 @@ export async function startBroadcast(broadcastId) {
             // PULL gateway — release to 'pending' so the phone picks it up
             db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
           }
+          roundSimIdx++;
           logActivity(broadcastRecord.agent_id, 'broadcast:queued', `Message ${isPush ? 'sent' : 'queued'} for ${num} [Turbo]`, 'info', broadcastRecord.campaign_id);
         }
 
@@ -285,6 +289,7 @@ export async function startBroadcast(broadcastId) {
     }
   } else {
     // ── Normal mode: one-at-a-time with delay ────────────────────────
+    let roundIdx = 0; // track position for round-robin alternation
     for (const number of recipients) {
       if (state.cancel) {
         db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
@@ -382,15 +387,23 @@ export async function startBroadcast(broadcastId) {
 
       if (isPush) {
         // PUSH gateway — POST directly to the phone's HTTP server
+        // Round-robin SIM alternation using roundIdx (always advances per message)
+        const isRoundRobin = broadcastRecord.sim_mode === 'round-robin';
+        const roundStartSim = broadcastRecord.sim_round_start || 'sim1';
+        const msgSimMode = isRoundRobin
+          ? (roundStartSim === 'sim2'
+              ? (roundIdx % 2 === 0 ? 'sim2' : 'sim1')
+              : (roundIdx % 2 === 0 ? 'sim1' : 'sim2'))
+          : (broadcastRecord.sim_mode || 'sim1');
         try {
           const controller = new AbortController();
-          const t = setTimeout(() => controller.abort(), 10000);
+          const t = setTimeout(() => controller.abort(), 30000);
           const response = await fetch(`${gateway.url}/send`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
-            },                body: JSON.stringify({ to: number, message: msgRecord.message, sim_mode: broadcastRecord.sim_mode || 'sim1' }),
+            },                body: JSON.stringify({ to: number, message: msgRecord.message, sim_mode: msgSimMode }),
             signal: controller.signal,
           });
           clearTimeout(t);
@@ -413,6 +426,7 @@ export async function startBroadcast(broadcastId) {
         // PULL gateway — release to 'pending' so the phone picks it up
         db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
       }
+      roundIdx++;
     }
   }
 

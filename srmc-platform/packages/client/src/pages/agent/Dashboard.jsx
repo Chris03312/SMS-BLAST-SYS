@@ -33,12 +33,6 @@ function BroadcastDetail({ broadcast, onClose }) {
 
   const pages = Math.ceil(total / limit);
 
-  function senderLabel(msg) {
-    // Show which sender number was used: SIM1, SIM2, or the number itself
-    if (msg.gateway_number && msg.gateway_number2) return `${msg.gateway_number} / ${msg.gateway_number2}`;
-    return msg.gateway_number || '—';
-  }
-
   function statusColor(s) {
     if (s === 'sent') return 'var(--ok)';
     if (s === 'failed') return 'var(--err)';
@@ -81,11 +75,17 @@ function BroadcastDetail({ broadcast, onClose }) {
               {broadcast.sim_mode && (
                 <span style={{
                   padding: '1px 7px', borderRadius: 4,
-                  background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)' : 'rgba(5,150,105,0.12)',
-                  color: broadcast.sim_mode === 'sim2' ? '#db2777' : '#059669',
+                  background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
+                    : broadcast.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
+                    : 'rgba(5,150,105,0.12)',
+                  color: broadcast.sim_mode === 'sim2' ? '#db2777'
+                    : broadcast.sim_mode === 'round-robin' ? '#7c3aed'
+                    : '#059669',
                   fontWeight: 600,
                 }}>
-                  {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}
+                  {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2'
+                    : broadcast.sim_mode === 'round-robin' ? '↻ Round-robin'
+                    : '📱1 SIM 1'}
                 </span>
               )}
             </div>
@@ -107,47 +107,63 @@ function BroadcastDetail({ broadcast, onClose }) {
           </div>
         </div>
 
-        {/* Messages list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
-          {loading && (
-            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
-          )}
-          {!loading && messages.length === 0 && (
-            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No messages found.</div>
-          )}
-          {!loading && messages.map((m, i) => (
-            <div key={m.id || i} style={{
-              display: 'grid', gridTemplateColumns: '1fr auto auto 1fr',
-              gap: 12, alignItems: 'center',
-              padding: '10px 0', borderBottom: '1px solid var(--line-soft)',
-              fontSize: 12,
-            }}>
-              {/* Recipient number */}
-              <div className="num" style={{ color: 'var(--ink-1)', fontWeight: 500, fontFamily: 'var(--mono)' }}>
-                {m.to_number}
-              </div>
-              {/* SIM / Sender */}
-              <div style={{ fontSize: 11, color: 'var(--ink-3)' }} title={senderLabel(m)}>
-                {m.gateway_number && m.gateway_number2
-                  ? <><span style={{ color: 'var(--brand-1)' }}>SIM1</span> / <span style={{ color: 'var(--info)' }}>SIM2</span></>
-                  : (m.gateway_number || '—')
-                }
-              </div>
-              {/* Status */}
-              <div style={{
-                fontSize: 11, fontWeight: 600, textAlign: 'center',
-                color: statusColor(m.status),
-                padding: '2px 8px', borderRadius: 4,
-                background: m.status === 'sent' ? 'var(--ok-bg)' : m.status === 'failed' ? 'var(--err-bg)' : 'transparent',
-              }}>
-                {m.status}
-              </div>
-              {/* Timestamp */}
-              <div style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
-                {m.sent_at ? formatTime(m.sent_at) : '—'}
-              </div>
-            </div>
-          ))}
+        {/* Messages table */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+              <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recipient #</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', width: 120 }}>SIM</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', width: 80 }}>Status</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', width: '40%' }}>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={4} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-3)' }}>Loading...</td></tr>
+              )}
+              {!loading && messages.length === 0 && (
+                <tr><td colSpan={4} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-3)' }}>No messages found.</td></tr>
+              )}
+              {!loading && messages.map((m, i) => (
+                <tr key={m.id || i} style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                  {/* Recipient number */}
+                  <td style={{ padding: '8px 16px', fontFamily: 'var(--mono)', fontWeight: 500, color: 'var(--ink-1)' }}>
+                    {m.to_number}
+                  </td>
+                  {/* SIM */}
+                  <td style={{ padding: '8px 16px', fontSize: 11, color: 'var(--ink-3)' }}>
+                    {m.gateway_number && m.gateway_number2
+                      ? <><span style={{ color: 'var(--brand-1)', fontWeight: 600 }}>SIM1</span> / <span style={{ color: 'var(--info)', fontWeight: 600 }}>SIM2</span></>
+                      : (m.gateway_number || '—')
+                    }
+                  </td>
+                  {/* Status */}
+                  <td style={{ padding: '8px 16px' }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600,
+                      color: statusColor(m.status),
+                      padding: '2px 8px', borderRadius: 4,
+                      background: m.status === 'sent' ? 'var(--ok-bg)' : m.status === 'failed' ? 'var(--err-bg)' : 'transparent',
+                      cursor: m.error ? 'help' : 'default',
+                    }} title={m.error || undefined}>
+                      {m.status}
+                    </span>
+                  </td>
+                  {/* Remarks */}
+                  <td style={{
+                    padding: '8px 16px', fontSize: 11, lineHeight: 1.4,
+                    color: m.status === 'failed' ? 'var(--err)' : 'var(--ink-4)',
+                    fontFamily: 'var(--mono)', wordBreak: 'break-word',
+                  }}>
+                    {m.status === 'failed' && m.error ? m.error
+                     : m.sent_at ? formatTime(m.sent_at)
+                     : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
         {/* Footer */}
@@ -497,16 +513,22 @@ export default function Dashboard() {
                   <td className="num" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
                     {b.sim_mode === 'sim2' && b.gateway_number2
                       ? b.gateway_number2
-                      : (b.gateway_number || '—')
+                      : b.sim_mode === 'round-robin'
+                        ? `${b.gateway_number || '—'} / ${b.gateway_number2 || '—'}`
+                        : (b.gateway_number || '—')
                     }
                     {b.sim_mode && (
                       <span style={{
                         marginLeft: 4, fontSize: 9, fontWeight: 600,
                         padding: '1px 4px', borderRadius: 3,
-                        background: b.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)' : 'rgba(5,150,105,0.12)',
-                        color: b.sim_mode === 'sim2' ? '#db2777' : '#059669',
+                        background: b.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
+                          : b.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
+                          : 'rgba(5,150,105,0.12)',
+                        color: b.sim_mode === 'sim2' ? '#db2777'
+                          : b.sim_mode === 'round-robin' ? '#7c3aed'
+                          : '#059669',
                         verticalAlign: 'middle',
-                      }}>{b.sim_mode === 'sim2' ? '📱2' : '📱1'}</span>
+                      }}>{b.sim_mode === 'sim2' ? '📱2' : b.sim_mode === 'round-robin' ? '↻' : '📱1'}</span>
                     )}
                   </td>
 
