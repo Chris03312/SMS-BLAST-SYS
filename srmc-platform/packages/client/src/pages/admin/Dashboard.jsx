@@ -85,25 +85,22 @@ export default function AdminDashboard() {
   // Compute week-over-week trend from daily data
   const totalSent = stats?.sent_7d || 0;
   const totalFailed = stats?.failed_7d || 0;
+  const sentToday = stats?.sent_today || 0;
   const deliveryRate = stats?.delivery_rate || 0;
   const activeAgents = stats?.active_agents || 0;
 
-  // Simple trend: compare first half vs second half of the 7 days
-  const mid = Math.floor(dailyData.length / 2);
-  const firstHalf = dailyData.slice(0, mid).reduce((s, d) => s + d.sent, 0);
-  const secondHalf = dailyData.slice(mid).reduce((s, d) => s + d.sent, 0);
-  const sentUp = firstHalf > 0 ? secondHalf / firstHalf >= 1 : false;
-  const sentTrend = firstHalf > 0
-    ? `${Math.round(((secondHalf - firstHalf) / firstHalf) * 100)}%`
-    : '';
-
   const kpis = stats ? [
     {
-      label: 'Sent (7d)',
+      label: 'Total Sent',
       value: formatNumber(totalSent),
       chart: <Sparkline data={sentSeries} color="var(--brand-1)" fill width={100} height={28} />,
-      delta: sentTrend ? (sentUp ? '▲' : '▼') + ' ' + sentTrend : '',
-      up: sentUp,
+    },
+    {
+      label: 'Sent Today',
+      value: formatNumber(sentToday),
+      chart: null,
+      delta: '',
+      up: true,
     },
     {
       label: 'Delivery Rate',
@@ -140,8 +137,8 @@ export default function AdminDashboard() {
       </div>
 
       {/* KPIs — mini analytic cards with sparklines and rings */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
-        {loading ? Array.from({ length: 4 }).map((_, i) => (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+        {loading ? Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="card" style={{ padding: '18px 20px', height: 120 }} />
         )) : kpis.map(k => (
           <div key={k.label} className="card" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column' }}>
@@ -149,9 +146,7 @@ export default function AdminDashboard() {
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{k.label}</div>
                 <div className="num" style={{ fontSize: 24, fontWeight: 600, color: 'var(--ink-1)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>{k.value}</div>
-                {k.delta && (
-                  <div style={{ fontSize: 11, color: k.up ? 'var(--ok)' : 'var(--err)', marginTop: 4, fontWeight: 500 }}>{k.delta}</div>
-                )}
+
               </div>
               {k.chart && (
                 <div style={{ flexShrink: 0, marginLeft: 8, marginTop: 2 }}>
@@ -159,17 +154,13 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
-            {k.label === 'Failed (7d)' && totalFailed > 0 && (
-              <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 6, fontFamily: 'var(--mono)' }}>
-                {deliveryRate}% delivered
-              </div>
-            )}
+
             {k.label === 'Active Agents' && (
               <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 6 }}>
                 {stats?.gateways_status?.filter(g => g.status === 'online').length || 0} gateways online
               </div>
             )}
-            {k.label === 'Sent (7d)' && sentSeries.length > 0 && (
+            {k.label === 'Total Sent' && sentSeries.length > 0 && (
               <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 6 }}>
                 {dailyData[0]?.day?.slice(5)} – {dailyData[dailyData.length - 1]?.day?.slice(5)}
               </div>

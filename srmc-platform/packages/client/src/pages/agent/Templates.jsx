@@ -7,7 +7,7 @@ export default function AgentTemplates() {
   const [templates, setTemplates] = useState([]);
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState({ name: '', body: '', category: 'transactional' });
+  const [editing, setEditing] = useState({ name: '', body: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
@@ -32,7 +32,6 @@ export default function AgentTemplates() {
     setEditing({
       name: t.name,
       body: t.body,
-      category: t.category,
     });
     setCreating(false);
     setError('');
@@ -41,7 +40,7 @@ export default function AgentTemplates() {
   function startNew() {
     setSelected(null);
     setCreating(true);
-    setEditing({ name: '', body: '', category: 'transactional' });
+    setEditing({ name: '', body: '' });
     setError('');
   }
 
@@ -73,7 +72,7 @@ export default function AgentTemplates() {
       await api.del(`/templates/${selected.id}`);
       setTemplates(prev => prev.filter(t => t.id !== selected.id));
       setSelected(null);
-      setEditing({ name: '', body: '', category: 'transactional' });
+      setEditing({ name: '', body: '' });
     } catch (e) {
       alert(e.message);
     }
@@ -86,7 +85,6 @@ export default function AgentTemplates() {
       const t = await api.post('/templates', {
         name: selected.name + ' (copy)',
         body: selected.body,
-        category: selected.category,
         variables: JSON.parse(selected.variables || '[]'),
       });
       setTemplates(prev => [t.template, ...prev]);
@@ -143,7 +141,6 @@ export default function AgentTemplates() {
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-1)' }}>{t.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>{t.category}</div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                   <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>{t.use_count} uses</span>
                 </div>
@@ -165,24 +162,14 @@ export default function AgentTemplates() {
           </div>
           {(selected || creating) ? (
             <form style={{ padding: 18 }} onSubmit={handleSave}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Name</label>
-                  <input
-                    className="input"
-                    value={editing.name}
-                    onChange={e => setEditing(prev => ({ ...prev, name: e.target.value }))}
-                    required
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Category</label>
-                  <select className="input" value={editing.category} onChange={e => setEditing(prev => ({ ...prev, category: e.target.value }))}>
-                    <option value="transactional">Transactional</option>
-                    <option value="promotional">Promotional</option>
-                    <option value="otp">OTP</option>
-                  </select>
-                </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Name</label>
+                <input
+                  className="input"
+                  value={editing.name}
+                  onChange={e => setEditing(prev => ({ ...prev, name: e.target.value }))}
+                  required
+                />
               </div>
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>

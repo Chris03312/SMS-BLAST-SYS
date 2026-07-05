@@ -12,6 +12,14 @@ import db from '../db.js';
  * @returns {object}  { sent_7d, delivery_rate, active_agents, failed_7d, sent_by_gateway, gateways_status, daily }
  */
 export function getGlobalStats() {
+  // ── Daily sent_today reset for gateways table ─────────────────────────
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const lastReset = db.prepare("SELECT value FROM settings WHERE key = 'sent_today_date'").get();
+  if (!lastReset || lastReset.value !== todayStr) {
+    db.prepare('UPDATE gateways SET sent_today = 0').run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sent_today_date', ?)").run(todayStr);
+  }
+
   // Count sent messages directly from the messages table (7 days)
   const sentMsg = db.prepare(`
     SELECT COUNT(*) as total
@@ -28,8 +36,34 @@ export function getGlobalStats() {
       AND created_at >= datetime('now', '-7 days')
   `).get();
 
+  // Count failed messages TODAY
+  const failedToday = db.prepare(`
+    SELECT COUNT(*) as total
+    FROM messages
+    WHERE status = 'failed'
+      AND date(created_at) = date('now')
+  `).get();
+
+  // Count ALL sent messages (all time)
+  const allTimeSent = db.prepare(`
+    SELECT COUNT(*) as total
+    FROM messages
+    WHERE status IN ('sent', 'delivered')
+  `).get();
+
+  // Count sent messages TODAY
+  const sentToday = db.prepare(`
+    SELECT COUNT(*) as total
+    FROM messages
+    WHERE status IN ('sent', 'delivered')
+      AND date(sent_at) = date('now')
+  `).get();
+
+  const totalSentToday = sentToday ? sentToday.total : 0;
   const totalSent7d = sentMsg ? sentMsg.total : 0;
   const totalFailed7d = failedMsg ? failedMsg.total : 0;
+  const totalFailedToday = failedToday ? failedToday.total : 0;
+  const totalAllTime = allTimeSent ? allTimeSent.total : 0;
   const deliveryRate = totalSent7d + totalFailed7d > 0
     ? Math.round((totalSent7d / (totalSent7d + totalFailed7d)) * 100)
     : 0;
@@ -82,9 +116,12 @@ export function getGlobalStats() {
 
   return {
     sent_7d: totalSent7d,
+    sent_today: totalSentToday,
+    total_all_time: totalAllTime,
     delivery_rate: deliveryRate,
     active_agents: activeAgents ? activeAgents.c : 0,
     failed_7d: totalFailed7d,
+    failed_today: totalFailedToday,
     sent_today_by_gateway: sentByGateway,
     gateways_status: gatewaysStatus,
     daily,

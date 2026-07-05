@@ -55,7 +55,17 @@ function BroadcastDetail({ broadcast, onClose }) {
           padding: '16px 20px', borderBottom: '1px solid var(--line)',
         }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>Broadcast Details</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Broadcast Details</div>
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+                color: 'var(--ink-4)', background: 'var(--bg)',
+                padding: '2px 7px', borderRadius: 4,
+                letterSpacing: '0.02em',
+              }}>
+                {broadcast.id}
+              </span>
+            </div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
             </div>
@@ -72,11 +82,20 @@ function BroadcastDetail({ broadcast, onClose }) {
               {broadcast.sim_mode && (
                 <span style={{
                   padding: '1px 7px', borderRadius: 4,
-                  background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)' : 'rgba(5,150,105,0.12)',
-                  color: broadcast.sim_mode === 'sim2' ? '#db2777' : '#059669',
+                  background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
+                    : broadcast.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
+                    : broadcast.sim_mode === 'parallel' ? 'rgba(245,158,11,0.12)'
+                    : 'rgba(5,150,105,0.12)',
+                  color: broadcast.sim_mode === 'sim2' ? '#db2777'
+                    : broadcast.sim_mode === 'round-robin' ? '#7c3aed'
+                    : broadcast.sim_mode === 'parallel' ? '#f59e0b'
+                    : '#059669',
                   fontWeight: 600,
                 }}>
-                  {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}
+                  {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2'
+                    : broadcast.sim_mode === 'round-robin' ? '↻ Round-robin'
+                    : broadcast.sim_mode === 'parallel' ? '⟗ Parallel'
+                    : '📱1 SIM 1'}
                 </span>
               )}
             </div>
@@ -134,7 +153,7 @@ function BroadcastDetail({ broadcast, onClose }) {
                 {m.status}
               </div>
               {/* Timestamp */}
-              <div style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)', textAlign: 'left' }}>
                 {m.sent_at ? formatDate(m.sent_at) : '—'}
               </div>
             </div>
@@ -147,7 +166,9 @@ function BroadcastDetail({ broadcast, onClose }) {
           padding: '12px 20px', borderTop: '1px solid var(--line)',
           fontSize: 12, color: 'var(--ink-3)',
         }}>
-          <span>{total} messages · {messages.filter(m => m.status === 'sent').length} sent · {messages.filter(m => m.status === 'failed').length} failed</span>
+          <span style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span>{total} messages · {messages.filter(m => m.status === 'sent').length} sent · {messages.filter(m => m.status === 'failed').length} failed</span>
+          </span>
           <div className="pager" style={{ margin: 0 }}>
             <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>‹</button>
             {pages > 1 && Array.from({ length: Math.min(pages, 5) }, (_, i) => (
@@ -204,6 +225,7 @@ export default function History() {
 
   const [detailBroadcast, setDetailBroadcast] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   const pages = Math.ceil(total / limit);
 
@@ -263,12 +285,12 @@ export default function History() {
               <th>Campaign</th>
               <th>Message</th>
               <th>Status</th>
-              <th style={{ textAlign: 'right' }}>Gateways</th>
-              <th style={{ textAlign: 'right' }}>To</th>
-              <th style={{ textAlign: 'right' }}>Sent</th>
-              <th style={{ textAlign: 'right' }}>Delivered</th>
-              <th style={{ textAlign: 'right' }}>Failed</th>
-              <th style={{ textAlign: 'right' }}></th>
+              <th style={{ textAlign: 'left' }}>Gateways</th>
+              <th style={{ textAlign: 'left' }}>To</th>
+              <th style={{ textAlign: 'left' }}>Sent</th>
+              <th style={{ textAlign: 'left' }}>Delivered</th>
+              <th style={{ textAlign: 'left' }}>Failed</th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -307,7 +329,7 @@ export default function History() {
                 <td className="num" style={{ color: 'var(--info)' }}>{b.delivered || 0}</td>
                 <td className="num" style={{ color: b.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{b.failed}</td>
                 <td>
-                <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
                   {/* Cancel button — only for active broadcasts */}
                   {(b.status === 'sending' || b.status === 'paused') && (
                     <button
@@ -347,6 +369,26 @@ export default function History() {
                       <circle cx="12" cy="12" r="10"/><polyline points="12 16 12 12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
                     </svg>
                   </button>
+                  {/* Delete button — only for done/cancelled/failed broadcasts */}
+                  {(b.status === 'done' || b.status === 'cancelled' || b.status === 'failed') && (
+                    <button
+                      onClick={() => setConfirmDelete(b)}
+                      title="Delete"
+                      style={{
+                        width: 28, height: 28, padding: 0,
+                        border: '1px solid var(--err-line)',
+                        borderRadius: 6, background: 'var(--err-bg)',
+                        color: 'var(--err)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--err)'; e.currentTarget.style.color = '#fff'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </td>
               </tr>
@@ -370,8 +412,36 @@ export default function History() {
           title="Cancel Broadcast"
           message={`Cancel this broadcast? ${confirmCancel.sent || 0}/${confirmCancel.total || 0} messages sent so far.`}
           confirmLabel="Cancel Broadcast"
-          onConfirm={() => { api.del(`/broadcasts/${confirmCancel.id}`).then(() => { load(); setConfirmCancel(null); }).catch(() => {}); }}
+          onConfirm={async () => {
+            try {
+              await api.post(`/broadcasts/${confirmCancel.id}/cancel`);
+              // Update broadcast in local state immediately
+              setBroadcasts(prev => prev.map(b =>
+                b.id === confirmCancel.id ? { ...b, status: 'cancelled', completed_at: new Date().toISOString() } : b
+              ));
+            } catch (_) {}
+            setConfirmCancel(null);
+          }}
           onCancel={() => setConfirmCancel(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Broadcast"
+          message={`Delete this broadcast${confirmDelete.status === 'done' ? '? Sent messages will be preserved.' : ' and all its messages?'}`}
+          confirmLabel="Delete"
+          danger={true}
+          onConfirm={async () => {
+            try {
+              await api.del(`/broadcasts/${confirmDelete.id}`);
+              // Remove broadcast from local state immediately
+              setBroadcasts(prev => prev.filter(b => b.id !== confirmDelete.id));
+              setTotal(prev => Math.max(0, prev - 1));
+            } catch (_) {}
+            setConfirmDelete(null);
+          }}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
     </AgentShell>

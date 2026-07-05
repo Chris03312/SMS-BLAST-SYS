@@ -77,14 +77,17 @@ function BroadcastDetail({ broadcast, onClose }) {
                   padding: '1px 7px', borderRadius: 4,
                   background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
                     : broadcast.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
+                    : broadcast.sim_mode === 'parallel' ? 'rgba(245,158,11,0.12)'
                     : 'rgba(5,150,105,0.12)',
                   color: broadcast.sim_mode === 'sim2' ? '#db2777'
                     : broadcast.sim_mode === 'round-robin' ? '#7c3aed'
+                    : broadcast.sim_mode === 'parallel' ? '#f59e0b'
                     : '#059669',
                   fontWeight: 600,
                 }}>
                   {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2'
                     : broadcast.sim_mode === 'round-robin' ? '↻ Round-robin'
+                    : broadcast.sim_mode === 'parallel' ? '⟗ Parallel'
                     : '📱1 SIM 1'}
                 </span>
               )}
@@ -435,14 +438,14 @@ export default function Dashboard() {
             <tr>
               <th style={{ minWidth: 180 }}>Broadcast</th>
               <th>Campaign</th>
-              <th style={{ textAlign: 'right' }}>Sender</th>
-              <th style={{ textAlign: 'right' }}>Recipients</th>
+              <th style={{ textAlign: 'left' }}>Sender</th>
+              <th style={{ textAlign: 'left' }}>Recipients</th>
               <th style={{ minWidth: 180 }}>Progress</th>
-              <th style={{ textAlign: 'right' }}>Sent</th>
-              <th style={{ textAlign: 'right' }}>Delivered</th>
-              <th style={{ textAlign: 'right' }}>Failed</th>
+              <th style={{ textAlign: 'left' }}>Sent</th>
+              <th style={{ textAlign: 'left' }}>Delivered</th>
+              <th style={{ textAlign: 'left' }}>Failed</th>
               <th>Status</th>
-              <th style={{ textAlign: 'right', minWidth: 160 }}>Actions</th>
+              <th style={{ textAlign: 'center', minWidth: 160 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -515,6 +518,8 @@ export default function Dashboard() {
                       ? b.gateway_number2
                       : b.sim_mode === 'round-robin'
                         ? `${b.gateway_number || '—'} / ${b.gateway_number2 || '—'}`
+                        : b.sim_mode === 'parallel'
+                        ? `${b.gateway_number || '—'} + ${b.gateway_number2 || '—'}`
                         : (b.gateway_number || '—')
                     }
                     {b.sim_mode && (
@@ -523,12 +528,14 @@ export default function Dashboard() {
                         padding: '1px 4px', borderRadius: 3,
                         background: b.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
                           : b.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
+                          : b.sim_mode === 'parallel' ? 'rgba(245,158,11,0.12)'
                           : 'rgba(5,150,105,0.12)',
                         color: b.sim_mode === 'sim2' ? '#db2777'
                           : b.sim_mode === 'round-robin' ? '#7c3aed'
+                          : b.sim_mode === 'parallel' ? '#f59e0b'
                           : '#059669',
                         verticalAlign: 'middle',
-                      }}>{b.sim_mode === 'sim2' ? '📱2' : b.sim_mode === 'round-robin' ? '↻' : '📱1'}</span>
+                      }}>{b.sim_mode === 'sim2' ? '📱2' : b.sim_mode === 'round-robin' ? '↻' : b.sim_mode === 'parallel' ? '⟗' : '📱1'}</span>
                     )}
                   </td>
 
@@ -554,7 +561,7 @@ export default function Dashboard() {
                         }} />
                       </div>
                       <span className="num" style={{
-                        fontSize: 11, fontWeight: 600, minWidth: 36, textAlign: 'right',
+                        fontSize: 11, fontWeight: 600, minWidth: 36, textAlign: 'left',
                         color: isTerminal ? 'var(--ink-3)' : color,
                       }}>
                         {progress}%

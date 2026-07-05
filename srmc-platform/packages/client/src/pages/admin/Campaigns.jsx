@@ -71,10 +71,10 @@ export default function Campaigns() {
               <th>Campaign</th>
               <th>Owner</th>
               <th>Status</th>
-              <th style={{ textAlign: 'right' }}>Broadcasts</th>
-              <th style={{ textAlign: 'right' }}>Sent</th>
+              <th>Broadcasts</th>
+              <th>Sent</th>
               <th>Created</th>
-              <th style={{ textAlign: 'right' }}></th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>

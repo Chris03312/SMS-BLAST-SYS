@@ -25,14 +25,14 @@ export default function AdminTemplates() {
 
   function openEdit(t) {
     setSelected(t);
-    setEditing({ name: t.name, body: t.body, category: t.category, variables: JSON.parse(t.variables || '[]') });
+    setEditing({ name: t.name, body: t.body, variables: JSON.parse(t.variables || '[]') });
     setShowModal(true);
     setError('');
   }
 
   function openNew() {
     setSelected(null);
-    setEditing({ name: '', body: '', category: 'transactional', variables: [] });
+    setEditing({ name: '', body: '', variables: [] });
     setShowModal(true);
     setError('');
   }
@@ -95,27 +95,21 @@ export default function AdminTemplates() {
           <thead>
             <tr>
               <th>Name</th>
-              <th>Category</th>
               <th>Body</th>
-              <th style={{ textAlign: 'right' }}>Uses</th>
+              <th>Uses</th>
               <th>Created by</th>
-              <th style={{ textAlign: 'right' }}></th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No templates found.</td></tr>
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No templates found.</td></tr>
             )}
             {filtered.map(t => (
               <tr key={t.id}>
                 <td>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{t.name}</div>
                   <div className="cell-id">{t.id.slice(0, 8)}</div>
-                </td>
-                <td>
-                  <span style={{ fontSize: 11, padding: '2px 8px', background: 'var(--bg-soft)', borderRadius: 5, fontWeight: 600, color: 'var(--ink-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    {t.category}
-                  </span>
                 </td>
                 <td style={{ maxWidth: 280 }}>
                   <div style={{ fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.body}</div>
@@ -151,19 +145,9 @@ export default function AdminTemplates() {
         <Modal title={selected ? 'Edit Template' : 'New Template'} onClose={() => setShowModal(false)} width={560}>
           <form onSubmit={handleSave}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Name</label>
-                  <input className="input" value={editing.name} onChange={e => setEditing(prev => ({ ...prev, name: e.target.value }))} required />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Category</label>
-                  <select className="input" value={editing.category} onChange={e => setEditing(prev => ({ ...prev, category: e.target.value }))}>
-                    <option value="transactional">Transactional</option>
-                    <option value="promotional">Promotional</option>
-                    <option value="otp">OTP</option>
-                  </select>
-                </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Name</label>
+                <input className="input" value={editing.name} onChange={e => setEditing(prev => ({ ...prev, name: e.target.value }))} required />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Message body</label>

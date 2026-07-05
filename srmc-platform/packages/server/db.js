@@ -374,6 +374,8 @@ export function initDb() {
     "ALTER TABLE broadcasts ADD COLUMN send_end_at TEXT",
     // Starting SIM for round-robin mode: 'sim1' or 'sim2'
     "ALTER TABLE broadcasts ADD COLUMN sim_round_start TEXT DEFAULT 'sim1'",
+    // Which gateway received this inbound message
+    "ALTER TABLE inbound ADD COLUMN gateway_id TEXT",
   ];
   for (const sql of migrations) {
     try {

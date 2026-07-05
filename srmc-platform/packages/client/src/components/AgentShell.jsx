@@ -79,7 +79,7 @@ export default function AgentShell({ children }) {
         </div>
       )}
       <div className="nav">
-        <div className="nav-left">
+        <Link to="/dashboard" className="nav-left" style={{ textDecoration: 'none', cursor: 'pointer' }}>
           <div className="brand-mark">
             <img src="/assets/LOGO.svg" alt="SMS Platform" style={{ width: 32, height: 32 }} />
           </div>
@@ -87,7 +87,7 @@ export default function AgentShell({ children }) {
             <div className="brand-title">SMS Platform</div>
             <div className="brand-sub">Broadcast Console</div>
           </div>
-        </div>
+        </Link>
         <div className="nav-tabs">
           {TABS.map((tab) => {
             const isActive = location.pathname === tab.path;

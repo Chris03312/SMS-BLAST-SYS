@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -90,12 +90,15 @@ export default function Inbound() {
   const [messages, setMessages]   = useState([]);
   const [counts, setCounts]       = useState({ all: 0, unread: 0, confirmed: 0, 'opt-out': 0, 'needs-reply': 0 });
   const [selected, setSelected]   = useState(null);
+  const [conversation, setConversation] = useState([]);
   const [gateways, setGateways]   = useState([]);
   const [replyText, setReplyText] = useState('');
   const [replyGw, setReplyGw]     = useState('');
+  const [replySim, setReplySim]   = useState('sim1');
   const [replying, setReplying]   = useState(false);
   const [replyError, setReplyError] = useState('');
   const [search, setSearch]       = useState('');
+  const chatRef = useRef(null);
 
   useEffect(() => {
     api.get('/gateways').then(d => setGateways(d.gateways || [])).catch(() => {});
@@ -103,6 +106,20 @@ export default function Inbound() {
   }, []);
 
   useEffect(() => { loadMessages(); }, [folder, search]);
+
+  // Auto-select the first (latest) message when messages load
+  useEffect(() => {
+    if (messages.length > 0 && !selected) {
+      handleSelect(messages[0]);
+    }
+  }, [messages, selected]);
+
+  // Auto-scroll chat to bottom when conversation loads or new message sent
+  useEffect(() => {
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [conversation]);
 
   useWS((event) => {
     if (event.type === 'inbound:new') {
@@ -143,10 +160,24 @@ export default function Inbound() {
     } catch (e) {}
   }
 
+  /** Check if a gateway has dual-SIM capability */
+  function hasDualSim(gw) {
+    return gw && ((gw.sim_carrier && gw.sim2_carrier) || (gw.number && gw.number2));
+  }
+
   async function handleSelect(m) {
     setSelected(m);
     setReplyText('');
     setReplyError('');
+    setReplyGw('');
+    setReplySim('sim1');
+    // Load full conversation thread
+    try {
+      const data = await api.get(`/inbound/conversation/${encodeURIComponent(m.from_number)}`);
+      setConversation(data.messages || []);
+    } catch (_) {
+      setConversation([]);
+    }
     if (!m.read_at) {
       try {
         await api.put(`/inbound/${m.id}`, { read: true });
@@ -172,8 +203,17 @@ export default function Inbound() {
     setReplying(true);
     setReplyError('');
     try {
-      await api.post(`/inbound/${selected.id}/reply`, { message: replyText.trim(), gateway_id: replyGw });
+      await api.post(`/inbound/${selected.id}/reply`, { message: replyText.trim(), gateway_id: replyGw, sim_mode: replySim });
       setReplyText('');
+      // Add the sent message to conversation immediately for instant feedback
+      const sentMsg = {
+        id: 'temp-' + Date.now(),
+        direction: 'outbound',
+        other_number: selected.from_number,
+        body: replyText.trim(),
+        created_at: new Date().toISOString(),
+      };
+      setConversation(prev => [...prev, sentMsg]);
     } catch (e) {
       setReplyError(e.message || 'Failed to send');
     }
@@ -326,50 +366,66 @@ export default function Inbound() {
                 {selected.flag && <Pill status={selected.flag} label={FLAG_LABELS[selected.flag] || selected.flag} />}
               </div>
 
-              {/* Message bubble */}
-              <div style={{
+              {/* Chat conversation — full thread */}
+              <div ref={chatRef} style={{
                 flex: 1, overflowY: 'auto',
                 padding: 16,
-                background: 'repeating-linear-gradient(45deg,var(--bg-soft),var(--bg-soft) 6px,#fff 6px,#fff 12px)',
-                display: 'flex', flexDirection: 'column', gap: 12,
+                background: '#f7f7f8',
+                display: 'flex', flexDirection: 'column', gap: 8,
               }}>
-                {/* Replied-to broadcast context */}
-                {selected.linked_broadcast && (
-                  <div style={{
-                    background: 'var(--info-bg)',
-                    border: '1px solid var(--info-line)',
-                    borderRadius: 10,
-                    padding: '10px 14px',
-                    fontSize: 12,
-                    color: 'var(--info)',
-                    maxWidth: '90%',
-                  }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-3)', marginBottom: 4 }}>
-                      Replied to
-                    </div>
-                    <div style={{ color: 'var(--ink-1)', lineHeight: 1.5, marginBottom: 4 }}>
-                      {selected.linked_broadcast.outbound_message || selected.linked_broadcast.broadcast_message}
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, fontSize: 10.5, color: 'var(--ink-3)' }}>
-                      {selected.linked_broadcast.sent_at && (
-                        <span>Sent {timeAgo(selected.linked_broadcast.sent_at)} ago</span>
-                      )}
-                    </div>
+                {conversation.length === 0 && (
+                  <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 12, padding: 20 }}>
+                    No messages in this conversation.
                   </div>
                 )}
-
-                {/* The reply itself */}
-                <div style={{
-                  background: '#fff',
-                  border: '1px solid var(--line)',
-                  borderRadius: '14px 14px 14px 4px',
-                  padding: '10px 14px',
-                  fontSize: 13, color: 'var(--ink-1)', lineHeight: 1.55,
-                  maxWidth: '85%',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                }}>
-                  {selected.body}
-                </div>
+                {conversation.map((msg, i) => {
+                  const isInbound = msg.direction === 'inbound';
+                  const isFirst = i === 0;
+                  const isLast = i === conversation.length - 1;
+                  const showSender = isFirst || (i > 0 && conversation[i-1].direction !== msg.direction);
+                  return (
+                    <div key={msg.id || i} style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: isInbound ? 'flex-start' : 'flex-end',
+                    }}>
+                      {/* Sender label */}
+                      {showSender && (
+                        <div style={{
+                          fontSize: 10, color: 'var(--ink-4)',
+                          marginBottom: 3, marginLeft: isInbound ? 4 : 0, marginRight: isInbound ? 0 : 4,
+                          fontFamily: 'var(--mono)',
+                        }}>
+                          {isInbound ? msg.other_number || selected.from_number : 'You'}
+                        </div>
+                      )}
+                      {/* Bubble */}
+                      <div style={{
+                        background: isInbound ? '#fff' : '#1a1a1a',
+                        color: isInbound ? 'var(--ink-1)' : '#fff',
+                        borderRadius: isInbound
+                          ? '4px 14px 14px 14px'
+                          : '14px 4px 14px 14px',
+                        padding: '9px 13px',
+                        fontSize: 13, lineHeight: 1.5,
+                        maxWidth: '85%',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                        border: isInbound ? '1px solid var(--line)' : 'none',
+                      }}>
+                        {msg.body}
+                      </div>
+                      {/* Timestamp */}
+                      <div style={{
+                        fontSize: 9.5, color: 'var(--ink-4)',
+                        marginTop: 2, fontFamily: 'var(--mono)',
+                        marginLeft: isInbound ? 4 : 0, marginRight: isInbound ? 0 : 4,
+                      }}>
+                        {formatTime(msg.created_at)}
+                        {!isInbound && ' · ✓ Sent'}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Flag buttons */}
@@ -411,17 +467,45 @@ export default function Inbound() {
                   background: 'var(--bg-page)',
                 }}
               >
-                <select
-                  className="input"
-                  value={replyGw}
-                  onChange={e => setReplyGw(e.target.value)}
-                  style={{ fontSize: 12 }}
-                >
-                  <option value="">Select gateway to send reply…</option>
-                  {gateways.map(g => (
-                    <option key={g.id} value={g.id}>{g.name} · {g.status}</option>
-                  ))}
-                </select>
+                {/* Gateway selector — full width */}
+                <div style={{ width: '100%' }}>
+                  <select
+                    className="input"
+                    value={replyGw}
+                    onChange={e => { setReplyGw(e.target.value); setReplySim('sim1'); }}
+                    style={{ fontSize: 12, width: '100%' }}
+                  >
+                    <option value="">Select gateway to send reply…</option>
+                    {gateways.map(g => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* SIM selector — only when selected gateway has dual SIM */}
+                {replyGw && hasDualSim(gateways.find(g => g.id === replyGw)) && (
+                  <div style={{ display: 'flex', gap: 6, width: '100%' }}>
+                    {['sim1', 'sim2'].map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setReplySim(s)}
+                        style={{
+                          flex: 1, padding: '5px 8px', fontSize: 11, fontWeight: 600,
+                          borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+                          background: replySim === s ? 'var(--ink-1)' : '#fff',
+                          color: replySim === s ? '#fff' : 'var(--ink-2)',
+                          border: `1.5px solid ${replySim === s ? 'var(--ink-1)' : 'var(--line)'}`,
+                          transition: 'all 0.12s',
+                        }}
+                      >
+                        {s === 'sim1' ? '📱1 SIM 1' : '📱2 SIM 2'}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: 7, alignItems: 'flex-end' }}>
                   <textarea

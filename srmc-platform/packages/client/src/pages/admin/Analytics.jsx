@@ -151,10 +151,10 @@ export default function AdminAnalytics() {
               exportAnalyticsXlsx(data, periodLabel);
             }}
             disabled={!data}
-            style={{ fontSize: 12, padding: '7px 14px' }}
+            style={{ fontSize: 12, padding: '7px 14px', whiteSpace: 'nowrap' }}
             title="Export all data as Excel workbook (multi-sheet)"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: 'middle' }}>
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
@@ -179,12 +179,11 @@ export default function AdminAnalytics() {
       {!loading && !error && (
         <>
           {/* KPI cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 18 }}>
             {[
               { label: 'Total Sent', value: formatNumber(totals.sent), color: 'var(--brand-1)' },
               { label: 'Total Failed', value: formatNumber(totals.failed), color: 'var(--err)' },
               { label: 'Delivery Rate', value: `${totals.delivery_rate}%`, color: totals.delivery_rate >= 80 ? 'var(--ok)' : totals.delivery_rate >= 50 ? 'var(--warn)' : 'var(--err)' },
-              { label: 'Periods', value: series.length, color: 'var(--ink-3)' },
             ].map(k => (
               <div key={k.label} className="card" style={{ padding: '16px 18px' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{k.label}</div>
@@ -241,9 +240,9 @@ export default function AdminAnalytics() {
                 <thead>
                   <tr>
                     <th>Campaign</th>
-                    <th style={{ textAlign: 'right' }}>Sent</th>
-                    <th style={{ textAlign: 'right' }}>Failed</th>
-                    <th style={{ textAlign: 'right' }}>Rate</th>
+                    <th style={{ textAlign: 'left' }}>Sent</th>
+                    <th style={{ textAlign: 'left' }}>Failed</th>
+                    <th style={{ textAlign: 'left' }}>Rate</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -278,9 +277,9 @@ export default function AdminAnalytics() {
                 <thead>
                   <tr>
                     <th>Agent</th>
-                    <th style={{ textAlign: 'right' }}>Sent</th>
-                    <th style={{ textAlign: 'right' }}>Failed</th>
-                    <th style={{ textAlign: 'right' }}>Rate</th>
+                    <th style={{ textAlign: 'left' }}>Sent</th>
+                    <th style={{ textAlign: 'left' }}>Failed</th>
+                    <th style={{ textAlign: 'left' }}>Rate</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -321,9 +320,9 @@ export default function AdminAnalytics() {
                 <thead>
                   <tr>
                     <th>Gateway</th>
-                    <th style={{ textAlign: 'right' }}>Sent</th>
-                    <th style={{ textAlign: 'right' }}>Failed</th>
-                    <th style={{ textAlign: 'right' }}>Rate</th>
+                    <th style={{ textAlign: 'left' }}>Sent</th>
+                    <th style={{ textAlign: 'left' }}>Failed</th>
+                    <th style={{ textAlign: 'left' }}>Rate</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -350,42 +349,7 @@ export default function AdminAnalytics() {
             </div>
           </div>
 
-          {/* Detail series table */}
-          <div className="card">
-            <div className="card-head">
-              <h3>Period Breakdown</h3>
-              <span className="pill info">{series.length} periods</span>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Period</th>
-                  <th style={{ textAlign: 'right' }}>Sent</th>
-                  <th style={{ textAlign: 'right' }}>Failed</th>
-                  <th style={{ textAlign: 'right' }}>Total</th>
-                  <th style={{ textAlign: 'right' }}>Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {series.length === 0 && (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No data for the selected period and range.</td></tr>
-                )}
-                {series.map((s, i) => {
-                  const total = s.sent + s.failed;
-                  const rate = total > 0 ? Math.round((s.sent / total) * 100) : 0;
-                  return (
-                    <tr key={i}>
-                      <td className="num" style={{ fontSize: 12 }}>{s.date}</td>
-                      <td className="num">{s.sent}</td>
-                      <td className="num" style={{ color: s.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{s.failed}</td>
-                      <td className="num">{total}</td>
-                      <td className="num" style={{ color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
-                    </tr>
-                  );
-                }).slice().reverse()}
-              </tbody>
-            </table>
-          </div>
+
         </>
       )}
     </AdminShell>

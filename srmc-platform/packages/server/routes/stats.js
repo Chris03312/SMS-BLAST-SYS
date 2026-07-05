@@ -20,6 +20,16 @@ function fail(res, error, status = 400) {
 router.get('/', authMiddleware, (req, res) => {
   try {
     const stats = getGlobalStats();
+    // If the requesting user is an agent, include their own all-time message count
+    if (req.user.role === 'agent') {
+      const userTotal = db.prepare(
+        `SELECT COUNT(*) as total FROM messages m
+         JOIN broadcasts b ON b.id = m.broadcast_id
+         WHERE b.agent_id = ?
+           AND m.status IN ('sent', 'delivered')`
+      ).get(req.user.id);
+      stats.user_total_all_time = userTotal ? userTotal.total : 0;
+    }
     return ok(res, stats);
   } catch (e) {
     console.error('[stats] GET error:', e);

@@ -91,7 +91,8 @@ router.get('/running/list', (req, res) => {
     const running = db.prepare(
       `SELECT b.id, b.status, b.sent, b.failed, b.total, b.message, b.delay_ms, b.created_at,
               u.display_name as agent_name,
-              c.name as campaign_name, g.number as gateway_number, g.number2 as gateway_number2
+              c.name as campaign_name,
+              g.name as gateway_name, g.number as gateway_number, g.number2 as gateway_number2
        FROM broadcasts b
        LEFT JOIN users u ON b.agent_id = u.id
        LEFT JOIN campaigns c ON b.campaign_id = c.id
@@ -196,7 +197,7 @@ router.post('/', async (req, res) => {
   try {
     const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution, sim_mode, sim_round_start, send_start_at, send_end_at } = req.body;
     const distMode = distribution === 'linear' ? 'linear' : 'round-robin';
-    const resolvedSimMode = sim_mode === 'sim2' ? 'sim2' : sim_mode === 'round-robin' ? 'round-robin' : 'sim1';
+    const resolvedSimMode = sim_mode === 'sim2' ? 'sim2' : sim_mode === 'round-robin' ? 'round-robin' : sim_mode === 'parallel' ? 'parallel' : 'sim1';
     const resolvedStartAt = (send_start_at && send_start_at !== '') ? send_start_at : null;
     const resolvedEndAt = (send_end_at && send_end_at !== '') ? send_end_at : null;
 
@@ -345,29 +346,71 @@ router.delete('/:id', (req, res) => {
     // Stop the engine if this broadcast is actively sending
     cancelBroadcast(req.params.id);
 
-    // Notify frontend before deleting so it can update UIs
-    const finalStatus = bcast.status === 'pending' || bcast.status === 'sending' || bcast.status === 'paused'
-      ? 'cancelled' : (bcast.status || 'done');
+    // Delete messages — skip 'sent'/'delivered' if broadcast is already complete
+    if (bcast.status === 'done') {
+      // Only delete non-sent messages (queued, pending, failed, cancelled)
+      db.prepare("DELETE FROM messages WHERE broadcast_id = ? AND status NOT IN ('sent', 'delivered')").run(req.params.id);
+    } else {
+      // Otherwise hard-delete all messages
+      db.prepare('DELETE FROM messages WHERE broadcast_id = ?').run(req.params.id);
+    }
 
-    // TODO: replace with your real event emitter (e.g. emitEvent, io.emit, etc.)
+    db.prepare('DELETE FROM broadcasts WHERE id = ?').run(req.params.id);
+
+    // Notify frontend so it can update UIs
     if (typeof emitEvent === 'function') {
       emitEvent({
         type: 'broadcast:complete',
         broadcastId: req.params.id,
-        status: finalStatus,
+        status: 'cancelled',
         sent: bcast.sent || 0,
         failed: bcast.failed || 0,
         total: bcast.total || 0,
       });
     }
 
-    // Delete associated messages first, then the broadcast itself
-    db.prepare('DELETE FROM messages WHERE broadcast_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM broadcasts WHERE id = ?').run(req.params.id);
-
     return ok(res, { success: true });
   } catch (e) {
     console.error('[broadcasts] DELETE error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Soft-cancel a broadcast (keeps data, used by History page) ──────
+
+router.post('/:id/cancel', (req, res) => {
+  try {
+    const bcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id);
+    if (!bcast) {
+      return fail(res, 'Broadcast not found', 404);
+    }
+
+    if (req.user.role === 'agent' && bcast.agent_id !== req.user.id) {
+      return fail(res, 'Access denied', 403);
+    }
+
+    // Stop the engine
+    cancelBroadcast(req.params.id);
+
+    // Mark as cancelled — keep data for history
+    db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?").run(req.params.id);
+    // Mark non-sent messages as cancelled (keep already sent/delivered as-is)
+    db.prepare("UPDATE messages SET status = 'cancelled' WHERE broadcast_id = ? AND status NOT IN ('sent', 'delivered')").run(req.params.id);
+
+    if (typeof emitEvent === 'function') {
+      emitEvent({
+        type: 'broadcast:complete',
+        broadcastId: req.params.id,
+        status: 'cancelled',
+        sent: bcast.sent || 0,
+        failed: bcast.failed || 0,
+        total: bcast.total || 0,
+      });
+    }
+
+    return ok(res, { success: true, status: 'cancelled' });
+  } catch (e) {
+    console.error('[broadcasts] CANCEL error:', e);
     return fail(res, 'Internal server error', 500);
   }
 });

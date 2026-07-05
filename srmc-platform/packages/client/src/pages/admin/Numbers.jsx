@@ -129,9 +129,9 @@ export default function Numbers() {
               <th>SIM 2</th>
               <th>Status</th>
               <th>Last beat</th>
-              <th style={{ textAlign: 'right' }}>Today</th>
-              <th style={{ textAlign: 'right' }}>Fails</th>
-              <th style={{ textAlign: 'right' }}></th>
+              <th>Today</th>
+              <th>Fails</th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>

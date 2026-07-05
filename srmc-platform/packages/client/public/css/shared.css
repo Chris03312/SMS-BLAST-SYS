@@ -150,7 +150,7 @@ tbody tr:hover { background: var(--bg-page); }
 .pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
 /* ─── TABLE HELPERS ─── */
-.num { font-family: var(--mono); font-size: 12.5px; text-align: right; }
+.num { font-family: var(--mono); font-size: 12.5px; text-align: left; }
 .row-avatar {
   width: 28px; height: 28px; border-radius: 6px;
   background: var(--bg-soft); color: var(--ink-2);
@@ -167,7 +167,7 @@ tbody tr:hover { background: var(--bg-page); }
   background: transparent; border: none; cursor: pointer;
 }
 .iconlink:hover { background: var(--bg-soft); color: var(--ink-1); }
-.row-actions { display: flex; gap: 2px; justify-content: flex-end; }
+.row-actions { display: flex; gap: 2px; justify-content: center; }
 
 /* ─── CARD FOOTER ─── */
 .footer {

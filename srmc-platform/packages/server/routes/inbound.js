@@ -58,35 +58,38 @@ router.get('/inbound', authMiddleware, (req, res) => {
     const flag = req.query.flag;
     const unread = req.query.unread;
 
-    let query = 'SELECT * FROM inbound';
+    let query = 'SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number';
     const conditions = [];
     const params = [];
 
     if (flag && flag !== 'all') {
       if (flag === 'unread') {
-        conditions.push('read_at IS NULL');
+        conditions.push('inbound.read_at IS NULL');
       } else {
-        conditions.push('flag = ?');
+        conditions.push('inbound.flag = ?');
         params.push(flag);
       }
     }
 
     if (unread === '1') {
-      conditions.push('read_at IS NULL');
+      conditions.push('inbound.read_at IS NULL');
     }
 
     // Agents only see inbound messages linked to their own broadcasts.
     // Admins see all inbound messages (including unlinked ones).
     if (req.user.role === 'agent') {
-      conditions.push('agent_id = ?');
+      conditions.push('inbound.agent_id = ?');
       params.push(req.user.id);
     }
 
+    let fromClause = ' FROM inbound LEFT JOIN gateways ON inbound.gateway_id = gateways.id';
     if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
+      query += fromClause + ' WHERE ' + conditions.join(' AND ');
+    } else {
+      query += fromClause;
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY inbound.created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
     const messages = db.prepare(query).all(...params);
@@ -97,9 +100,11 @@ router.get('/inbound', authMiddleware, (req, res) => {
     // Batched into a single query instead of N+1 per message.
     enrichInboundMessages(messages);
 
-    const total = db.prepare(
-      `SELECT COUNT(*) as c FROM inbound${conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : ''}`
-    ).get(...params.slice(0, -2));
+    let countQuery = 'SELECT COUNT(*) as c FROM inbound LEFT JOIN gateways ON inbound.gateway_id = gateways.id';
+    if (conditions.length > 0) {
+      countQuery += ' WHERE ' + conditions.join(' AND ');
+    }
+    const total = db.prepare(countQuery).get(...params.slice(0, -2));
 
     return ok(res, { messages: fixTimestamps(messages), total: total ? total.c : 0 });
   } catch (e) {
@@ -233,8 +238,8 @@ router.post('/webhook/inbound/:gatewayId', (req, res) => {
     `).get(finalSender);
     if (senderMsg) agentId = senderMsg.agent_id;
 
-    db.prepare('INSERT INTO inbound (id, from_number, body, flag, agent_id) VALUES (?, ?, ?, ?, ?)')
-      .run(id, finalSender, finalBody, flag, agentId);
+    db.prepare('INSERT INTO inbound (id, from_number, body, flag, agent_id, gateway_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, finalSender, finalBody, flag, agentId, gatewayId || null);
 
     const messageRecord = db.prepare('SELECT * FROM inbound WHERE id = ?').get(id);
     enrichInboundMessages([messageRecord]);
@@ -279,6 +284,40 @@ router.put('/inbound/:id', authMiddleware, (req, res) => {
   }
 });
 
+// ── Conversation thread for a phone number ───────────────────────────
+
+router.get('/inbound/conversation/:number', authMiddleware, (req, res) => {
+  try {
+    const number = req.params.number;
+
+    // Inbound messages FROM this number
+    const inboundMsgs = db.prepare(`
+      SELECT 'inbound' as direction, id, from_number as other_number, body, created_at, flag, read_at, NULL as gateway_name, NULL as sim_mode
+      FROM inbound
+      WHERE from_number = ?
+    `).all(number);
+
+    // Outbound messages SENT to this number
+    const outboundMsgs = db.prepare(`
+      SELECT 'outbound' as direction, m.id, m.to_number as other_number, m.message as body,
+             COALESCE(m.sent_at, m.created_at) as created_at, NULL as flag, NULL as read_at,
+             g.name as gateway_name, m.gateway_id, 'sent' as status
+      FROM messages m
+      LEFT JOIN gateways g ON m.gateway_id = g.id
+      WHERE m.to_number = ? AND m.status IN ('sent', 'delivered')
+    `).all(number);
+
+    // Combine and sort by time
+    const combined = [...inboundMsgs, ...outboundMsgs]
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    return ok(res, { messages: fixTimestamps(combined) });
+  } catch (e) {
+    console.error('[inbound] conversation error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
 // ── Reply to inbound message ────────────────────────────────────────
 
 router.post('/inbound/:id/reply', authMiddleware, async (req, res) => {
@@ -288,7 +327,7 @@ router.post('/inbound/:id/reply', authMiddleware, async (req, res) => {
       return fail(res, 'Message not found', 404);
     }
 
-    const { message, gateway_id } = req.body;
+    const { message, gateway_id, sim_mode } = req.body;
     if (!message || !gateway_id) {
       return fail(res, 'message and gateway_id are required', 400);
     }
@@ -298,20 +337,18 @@ router.post('/inbound/:id/reply', authMiddleware, async (req, res) => {
       return fail(res, 'Invalid gateway', 400);
     }
 
+    const msgId = uuidv4();
     const isPullGateway = gateway.mode === 'pull' || !gateway.url;
 
+    // Always store the reply in messages table for conversation history
+    db.prepare(
+      'INSERT INTO messages (id, to_number, message, status, gateway_id) VALUES (?, ?, ?, ?, ?)'
+    ).run(msgId, inbound.from_number, message, 'pending', gateway_id);
+
     if (isPullGateway) {
-      // Pull gateway — queue the reply as a pending message so the phone
-      // picks it up on its next outbound poll cycle.
-      const msgId = uuidv4();
-      db.prepare(
-        'INSERT INTO messages (id, to_number, message, status, gateway_id) VALUES (?, ?, ?, ?, ?)'
-      ).run(msgId, inbound.from_number, message, 'pending', gateway_id);
-
+      // Pull gateway — phone picks it up on next poll
       db.prepare("UPDATE inbound SET read_at = datetime('now') WHERE id = ?").run(req.params.id);
-
       broadcast({ type: 'message:queued', message_id: msgId, gateway_id });
-
       return ok(res, { message_id: msgId, method: 'queue' });
     }
 
@@ -326,7 +363,7 @@ router.post('/inbound/:id/reply', authMiddleware, async (req, res) => {
           'Content-Type': 'application/json',
           ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
         },
-        body: JSON.stringify({ to: inbound.from_number, message, flash: false }),
+        body: JSON.stringify({ to: inbound.from_number, message, flash: false, sim_mode: sim_mode || 'sim1' }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -334,6 +371,9 @@ router.post('/inbound/:id/reply', authMiddleware, async (req, res) => {
       if (!response.ok) {
         return fail(res, `Gateway returned ${response.status}`, 502);
       }
+
+      // Mark as sent in the messages table
+      db.prepare("UPDATE messages SET status = 'sent', sent_at = ? WHERE id = ?").run(new Date().toISOString(), msgId);
     } catch (e) {
       clearTimeout(timeout);
       return fail(res, 'Failed to reach gateway: ' + e.message, 502);
@@ -342,7 +382,7 @@ router.post('/inbound/:id/reply', authMiddleware, async (req, res) => {
     // Mark as read
     db.prepare("UPDATE inbound SET read_at = datetime('now') WHERE id = ?").run(req.params.id);
 
-    return ok(res, { success: true, method: 'push' });
+    return ok(res, { success: true, method: 'push', message_id: msgId });
   } catch (e) {
     console.error('[inbound] reply error:', e);
     return fail(res, 'Internal server error', 500);

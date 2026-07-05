@@ -143,8 +143,9 @@ export default function BlastDashboard() {
 
     // Load stats
     api.get('/stats').then(d => {
-      setStatsSent(d.sent_7d || 0);
-      setStatsFailed(d.failed_7d || 0);
+      setStatsSent(d.sent_today || 0);
+      setStatsFailed(d.failed_today || 0);
+      setStatsTotal(d.user_total_all_time || 0);
     }).catch(() => { });
 
     setInitialDataLoaded(true);
@@ -278,14 +279,13 @@ export default function BlastDashboard() {
         recipients: recipientList,
         delay_ms: delayMs,
         sim_mode: selectedGateways.some(id => hasDualSim(gateways.find(g => g.id === id))) ? simMode : undefined,
-        sim_round_start: simMode === 'round-robin' ? simRoundStart : undefined,
+        sim_round_start: (simMode === 'round-robin' || simMode === 'parallel') ? simRoundStart : undefined,
       });
       const bid = result.broadcast.id;
       setActiveBroadcasts(prev => ({
         ...prev,
         [bid]: { sent: 0, failed: 0, total: result.broadcast.total, status: 'sending', message: result.broadcast.message },
       }));
-      setStatsTotal(result.broadcast.total);
       setSending(false);
       // Capture summary data for post-send receipt
       setSentSummary({
@@ -311,7 +311,7 @@ export default function BlastDashboard() {
   async function handleCancel(broadcastId) {
     if (!broadcastId) return;
     try {
-      await api.del(`/broadcasts/${broadcastId}`);
+      await api.post(`/broadcasts/${broadcastId}/cancel`);
       setActiveBroadcasts(prev => {
         const next = { ...prev };
         delete next[broadcastId];
@@ -385,9 +385,9 @@ export default function BlastDashboard() {
           {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {[
-              { label: 'Sent (7d)', val: statsSent },
-              { label: 'Failed (7d)', val: statsFailed },
-              { label: 'Total msgs', val: statsTotal || activeBcList.reduce((sum, [_, b]) => sum + (b.total || 0), 0) || 0 },
+              { label: 'Sent Today', val: statsSent },
+              { label: 'Failed Today', val: statsFailed },
+              { label: 'Total msgs', val: statsTotal },
               { label: 'Queued', val: isSending ? activeBcList.reduce((sum, [_, b]) => sum + Math.max(0, b.total - b.sent), 0) : 0 },
             ].map(s => (
               <div key={s.label} className="card" style={{ padding: '12px 14px' }}>
@@ -425,15 +425,15 @@ export default function BlastDashboard() {
           )}
         </div>
 
-      {confirmCancel && (
-        <ConfirmModal
-          title="Cancel Broadcast"
-          message={`Cancel this broadcast? ${confirmCancel.sent || 0}/${confirmCancel.total || 0} messages sent so far.`}
-          confirmLabel="Cancel Broadcast"
-          onConfirm={() => { handleCancel(confirmCancel.id); setConfirmCancel(null); }}
-          onCancel={() => setConfirmCancel(null)}
-        />
-      )}
+        {confirmCancel && (
+          <ConfirmModal
+            title="Cancel Broadcast"
+            message={`Cancel this broadcast? ${confirmCancel.sent || 0}/${confirmCancel.total || 0} messages sent so far.`}
+            confirmLabel="Cancel Broadcast"
+            onConfirm={() => { handleCancel(confirmCancel.id); setConfirmCancel(null); }}
+            onCancel={() => setConfirmCancel(null)}
+          />
+        )}
 
         {/* CENTER COL */}
         <div>
@@ -706,68 +706,71 @@ export default function BlastDashboard() {
 
               {/* ── Dual-SIM Mode Picker (only if any selected gateway has dual SIM) ── */}
               {selectedGateways.some(id => hasDualSim(gateways.find(g => g.id === id))) && (
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>
-                        Dual-SIM Mode
-                      </label>
-                      <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
-                        {simMode === 'round-robin' ? '↻ Alternating' : (simMode === 'sim2' ? '📱2 SIM 2 only' : '📱1 SIM 1 only')}
-                      </span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                      {[
-                        { key: 'sim1', icon: '📱1', title: 'SIM 1 Only', desc: 'All messages via SIM 1 only' },
-                        { key: 'sim2', icon: '📱2', title: 'SIM 2 Only', desc: 'All messages via SIM 2 only' },
-                        { key: 'round-robin', icon: '↻', title: 'Round-robin', desc: 'Alternate SIM 1 ↔ SIM 2 per message' },
-                      ].map(opt => {
-                        const active = simMode === opt.key;
-                        return (
-                          <div
-                            key={opt.key}
-                            onClick={() => setSimMode(opt.key)}
-                            style={{
-                              padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                              border: `1.5px solid ${active ? 'var(--brand-1)' : 'var(--line)'}`,
-                              background: active ? 'var(--brand-1)' : '#fff',
-                              transition: 'all 0.12s',
-                            }}
-                          >
-                            <div style={{ fontSize: 13, marginBottom: 1 }}>{opt.icon}</div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#fff' : 'var(--ink-1)', marginBottom: 1 }}>
-                              {opt.title}
-                            </div>
-                            <div style={{ fontSize: 10, color: active ? 'rgba(255,255,255,0.7)' : 'var(--ink-3)', lineHeight: 1.3 }}>
-                              {opt.desc}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {simMode === 'round-robin' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 11 }}>
-                        <span style={{ color: 'var(--ink-3)' }}>Start with:</span>
-                        {['sim1', 'sim2'].map(s => (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => setSimRoundStart(s)}
-                            style={{
-                              padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
-                              border: `1.5px solid ${simRoundStart === s ? 'var(--brand-1)' : 'var(--line)'}`,
-                              background: simRoundStart === s ? 'var(--brand-1)' : '#fff',
-                              color: simRoundStart === s ? '#fff' : 'var(--ink-1)',
-                              fontSize: 11, fontWeight: 500,
-                              transition: 'all 0.12s',
-                            }}
-                          >
-                            {s === 'sim1' ? '📱1 SIM 1' : '📱2 SIM 2'}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>
+                      Dual-SIM Mode
+                    </label>
+                    <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
+                      {simMode === 'round-robin' ? '↻ Alternating' : simMode === 'parallel' ? '⟗ 50/50 Split' : (simMode === 'sim2' ? '📱2 SIM 2 only' : '📱1 SIM 1 only')}
+                    </span>
                   </div>
-                )}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {[
+                      { key: 'sim1', icon: '📱1', title: 'SIM 1 Only', desc: 'All messages via SIM 1 only' },
+                      { key: 'sim2', icon: '📱2', title: 'SIM 2 Only', desc: 'All messages via SIM 2 only' },
+                      { key: 'round-robin', icon: '↻', title: 'Round-robin', desc: 'Alternate SIM 1 ↔ SIM 2 per message' },
+                      { key: 'parallel', icon: '⟗', title: 'Parallel (50/50)', desc: 'Split messages evenly between SIM 1 and SIM 2' },
+                    ].map(opt => {
+                      const active = simMode === opt.key;
+                      return (
+                        <div
+                          key={opt.key}
+                          onClick={() => setSimMode(opt.key)}
+                          style={{
+                            padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                            border: `1.5px solid ${active ? 'var(--brand-1)' : 'var(--line)'}`,
+                            background: active ? 'var(--brand-1)' : '#fff',
+                            transition: 'all 0.12s',
+                          }}
+                        >
+                          <div style={{ fontSize: 13, marginBottom: 1 }}>{opt.icon}</div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#fff' : 'var(--ink-1)', marginBottom: 1 }}>
+                            {opt.title}
+                          </div>
+                          <div style={{ fontSize: 10, color: active ? 'rgba(255,255,255,0.7)' : 'var(--ink-3)', lineHeight: 1.3 }}>
+                            {opt.desc}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {(simMode === 'round-robin' || simMode === 'parallel') && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 11 }}>
+                      <span style={{ color: 'var(--ink-3)' }}>
+                        {simMode === 'round-robin' ? 'Start with:' : 'First half starts with:'}
+                      </span>
+                      {['sim1', 'sim2'].map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setSimRoundStart(s)}
+                          style={{
+                            padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
+                            border: `1.5px solid ${simRoundStart === s ? 'var(--brand-1)' : 'var(--line)'}`,
+                            background: simRoundStart === s ? 'var(--brand-1)' : '#fff',
+                            color: simRoundStart === s ? '#fff' : 'var(--ink-1)',
+                            fontSize: 11, fontWeight: 500,
+                            transition: 'all 0.12s',
+                          }}
+                        >
+                          {s === 'sim1' ? '📱1 SIM 1' : '📱2 SIM 2'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Large batch warning */}
               {isLargeBatch && (
@@ -919,12 +922,12 @@ export default function BlastDashboard() {
 
                   {/* Dual-SIM mode */}
                   {selectedGateways.some(id => hasDualSim(gateways.find(g => g.id === id))) && (
-                      <div style={{ gridColumn: '1 / -1' }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
-                          Dual-SIM Mode
-                        </div>
-                        <span style={{
-                          padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600,
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                        Dual-SIM Mode
+                      </div>
+                      <span style={{
+                        padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600,
                         background: simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
                           : 'rgba(219,39,119,0.12)',
                         color: simMode === 'sim1' ? '#059669' : '#db2777',
@@ -932,10 +935,12 @@ export default function BlastDashboard() {
                       }}>
                         {simMode === 'round-robin'
                           ? `↻ Round-robin starting with ${simRoundStart === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}`
-                          : (simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only')}
-                        </span>
-                      </div>
-                    )}
+                          : simMode === 'parallel'
+                            ? `⟗ Parallel 50/50 — ${simRoundStart === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'} first half`
+                            : (simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only')}
+                      </span>
+                    </div>
+                  )}
 
                 </div>
 
@@ -1066,35 +1071,39 @@ export default function BlastDashboard() {
 
                 {/* SIM Mode — read-only indicator */}
                 {sentSummary.gateways.some(id => hasDualSim(gateways.find(g => g.id === id))) && (
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '10px 12px', borderRadius: 8,
-                      background: 'var(--bg-soft)',
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 8,
+                    background: 'var(--bg-soft)',
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
+                      Dual-SIM
+                    </div>
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 5,
+                      fontSize: 11, fontWeight: 600,
+                      background: sentSummary.simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
+                        : 'rgba(219,39,119,0.12)',
+                      color: sentSummary.simMode === 'sim1' ? '#059669' : '#db2777',
+                      fontFamily: 'var(--mono)',
                     }}>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
-                        Dual-SIM
-                      </div>
-                      <span style={{
-                        padding: '3px 10px', borderRadius: 5,
-                        fontSize: 11, fontWeight: 600,
-                        background: sentSummary.simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
-                          : 'rgba(219,39,119,0.12)',
-                        color: sentSummary.simMode === 'sim1' ? '#059669' : '#db2777',
-                        fontFamily: 'var(--mono)',
-                      }}>
-                        {sentSummary.simMode === 'round-robin'
-                          ? `↻ Round-robin starting with ${sentSummary.simRoundStart === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}`
+                      {sentSummary.simMode === 'round-robin'
+                        ? `↻ Round-robin starting with ${sentSummary.simRoundStart === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'}`
+                        : sentSummary.simMode === 'parallel'
+                          ? `⟗ Parallel 50/50 — ${sentSummary.simRoundStart === 'sim2' ? '📱2 SIM 2' : '📱1 SIM 1'} first half`
                           : (sentSummary.simMode === 'sim1' ? '📱1 SIM 1 Only' : '📱2 SIM 2 Only')}
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                        {sentSummary.simMode === 'round-robin'
-                          ? `Messages alternate between SIMs, starting with ${sentSummary.simRoundStart === 'sim2' ? 'SIM 2' : 'SIM 1'}`
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                      {sentSummary.simMode === 'round-robin'
+                        ? `Messages alternate between SIMs, starting with ${sentSummary.simRoundStart === 'sim2' ? 'SIM 2' : 'SIM 1'}`
+                        : sentSummary.simMode === 'parallel'
+                          ? `First half of messages via ${sentSummary.simRoundStart === 'sim2' ? 'SIM 2' : 'SIM 1'}, second half via the other SIM`
                           : (sentSummary.simMode === 'sim2'
                             ? 'All messages sent via SIM 2'
                             : 'All messages sent via SIM 1')}
-                      </span>
-                    </div>
-                  )}
+                    </span>
+                  </div>
+                )}
 
                 {/* Distribution mode summary */}
                 {sentSummary.gateways.length > 1 && (
@@ -1109,38 +1118,13 @@ export default function BlastDashboard() {
 
         {/* RIGHT COL */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Activity log */}
-          <div className="card" style={{ flex: 1 }}>
-            <div className="card-head">
-              <h3>Activity</h3>
-              <LiveBadge />
-            </div>
-            <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-              {activities.length === 0 && (
-                <div style={{ padding: '20px 18px', fontSize: 13, color: 'var(--ink-3)' }}>No recent activity.</div>
-              )}
-              {activities.map((a, i) => (
-                <div key={a.id || i} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line-soft)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', marginTop: 5, flexShrink: 0, background: a.level === 'error' ? 'var(--err)' : a.level === 'warn' ? 'var(--warn)' : 'var(--ok)' }} />
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-1)' }}>{a.action}</div>
-                    {a.detail && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 1 }}>{a.detail}</div>}
-                    <div style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)', marginTop: 2 }}>
-                      {formatTime(a.created_at)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Inbound replies */}
+          {/* Inbound replies — moved to top */}
           <div className="card">
             <div className="card-head">
               <h3>Inbound Replies</h3>
               {inboundRecent.length > 0 && <span className="pill info">{inboundRecent.length}</span>}
             </div>
-            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+            <div style={{ maxHeight: 170, overflowY: 'auto' }}>
               {inboundRecent.length === 0 && (
                 <div style={{ padding: '14px 18px', fontSize: 13, color: 'var(--ink-3)' }}>No recent inbound.</div>
               )}
@@ -1164,6 +1148,31 @@ export default function BlastDashboard() {
                       </span>
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Activity log */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className="card-head" style={{ flexShrink: 0 }}>
+              <h3>Activity</h3>
+              <LiveBadge />
+            </div>
+            <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+              {activities.length === 0 && (
+                <div style={{ padding: '20px 18px', fontSize: 13, color: 'var(--ink-3)' }}>No recent activity.</div>
+              )}
+              {activities.map((a, i) => (
+                <div key={a.id || i} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line-soft)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', marginTop: 5, flexShrink: 0, background: a.level === 'error' ? 'var(--err)' : a.level === 'warn' ? 'var(--warn)' : 'var(--ok)' }} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-1)' }}>{a.action}</div>
+                    {a.detail && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 1 }}>{a.detail}</div>}
+                    <div style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                      {formatTime(a.created_at)}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

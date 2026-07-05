@@ -15,6 +15,7 @@ export default function AdminAgents() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmToggleActive, setConfirmToggleActive] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -70,6 +71,17 @@ export default function AdminAgents() {
     setConfirmDelete(null);
   }
 
+  async function handleToggleActive(item) {
+    try {
+      const newActive = item.active ? 0 : 1;
+      const updated = await api.put(`/agents/${item.id}`, { active: newActive });
+      setItems(prev => prev.map(a => a.id === item.id ? { ...a, active: updated.agent.active } : a));
+    } catch (e) {
+      alert(e.message);
+    }
+    setConfirmToggleActive(null);
+  }
+
   const activeItems = items.filter(a => a.active).length;
   const idleItems = items.filter(a => !a.active).length;
 
@@ -108,11 +120,11 @@ export default function AdminAgents() {
           <thead>
             <tr>
               <th>Agent</th>
-              <th style={{ textAlign: 'right' }}>Sent today</th>
-              <th style={{ textAlign: 'right' }}>Total</th>
+              <th>Sent today</th>
+              <th>Total</th>
               <th>Status</th>
               <th>Created</th>
-              <th style={{ textAlign: 'right' }}></th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -143,6 +155,17 @@ export default function AdminAgents() {
                 <td>
                   <div className="row-actions">
                     <button className="iconlink" onClick={() => openEdit(a)} title="Edit">✎</button>
+                    <button
+                      className="iconlink"
+                      onClick={() => setConfirmToggleActive(a)}
+                      title={a.active ? 'Deactivate' : 'Activate'}
+                      style={{ color: a.active ? 'var(--warn)' : 'var(--ok)' }}
+                    >
+                      {a.active
+                        ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                        : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      }
+                    </button>
                     <button className="iconlink" onClick={() => setConfirmDelete(a)} title="Delete" style={{ color: 'var(--err)' }}>✕</button>
                   </div>
                 </td>
@@ -154,6 +177,20 @@ export default function AdminAgents() {
           <span>{items.length} agents</span>
         </div>
       </div>
+
+      {confirmToggleActive && (
+        <ConfirmModal
+          title={confirmToggleActive.active ? 'Deactivate Agent' : 'Activate Agent'}
+          message={confirmToggleActive.active
+            ? `Deactivate "${confirmToggleActive.display_name}"? They will not be able to log in or send broadcasts.`
+            : `Activate "${confirmToggleActive.display_name}"? They will regain access to the platform.`
+          }
+          confirmLabel={confirmToggleActive.active ? 'Deactivate' : 'Activate'}
+          danger={confirmToggleActive.active}
+          onConfirm={() => handleToggleActive(confirmToggleActive)}
+          onCancel={() => setConfirmToggleActive(null)}
+        />
+      )}
 
       {confirmDelete && (
         <ConfirmModal

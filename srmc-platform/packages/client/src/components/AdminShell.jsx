@@ -110,7 +110,7 @@ export default function AdminShell({ children }) {
     <div className="layout">
       <aside className="sidebar">
         {/* ── Sidebar header (brand) ── */}
-        <div className="sb-header">
+        <Link to="/admin" className="sb-header" style={{ textDecoration: 'none', cursor: 'pointer' }}>
           <div className="brand-mark">
             <img src="/assets/LOGO.svg" alt="SMS Platform" style={{ width: 36, height: 36 }} />
           </div>
@@ -118,7 +118,7 @@ export default function AdminShell({ children }) {
             <div className="brand-title">SMS Admin</div>
             <div className="brand-sub">Management Portal</div>
           </div>
-        </div>
+        </Link>
 
         {/* ── Navigation ── */}
         <div className="sb-nav">
