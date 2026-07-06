@@ -652,6 +652,7 @@ export default function BlastDashboard() {
                   value={selectedCampaign}
                   onChange={e => setSelectedCampaign(e.target.value)}
                   style={{ fontSize: 12 }}
+                  required
                 >
                   <option value="">No campaign</option>
                   {campaigns.filter(c => c.status === 'active').map(c => (

@@ -1,0 +1,4 @@
+#Mon Jul 06 17:51:00 CST 2026
+base.0=D\:\\WEBSITES\\SMS-BLAST-SYS\\SRMCGatewayLite\\app\\build\\intermediates\\dex\\debugAndroidTest\\mergeProjectDexDebugAndroidTest\\0\\classes.dex
+path.0=0/classes.dex
+renamed.0=classes.dex

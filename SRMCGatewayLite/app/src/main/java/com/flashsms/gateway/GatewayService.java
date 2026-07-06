@@ -55,62 +55,37 @@ public class GatewayService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         // Call startForeground immediately — must happen within 5 seconds of service start.
-        // Android 14 (API 34): MUST pass the type flag or throws MissingForegroundServiceTypeException.
-        // Android 10–13 (API 29–33): accepts the 3-arg overload but type is not strictly required.
-        // Android 9 and below (API < 29): 3-arg overload does not exist, use 2-arg.
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // API 29+ — pass type flag
                 startForeground(NOTIF_ID,
-                        buildNotification("Checking SMS server\u2026"),
+                        buildNotification("Starting gateway\u2026"),
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
             } else {
-                // API 28 and below                        startForeground(NOTIF_ID, buildNotification("Checking SMS server\u2026"));
+                startForeground(NOTIF_ID, buildNotification("Starting gateway\u2026"));
             }
         } catch (Exception e) {
             Log.e(TAG, "startForeground failed: " + e.getMessage(), e);
-            // Last resort fallback — try without type
-            try { startForeground(NOTIF_ID, buildNotification("Checking SMS server\u2026")); }
+            try { startForeground(NOTIF_ID, buildNotification("Starting gateway\u2026")); }
             catch (Exception ignored) {}
         }
 
-        ServerChecker.check(getApplicationContext(), (online, message) -> {
-            if (!online) {
-                Log.w(TAG, "SMS server offline \u2014 gateway blocked. " + message);
-                updateNotification("\u26a0 SMS server offline \u2014 gateway stopped");
+        // Push-only mode: just start the HTTP server and listen for incoming
+        // SMS send requests from the central platform.
+        // No server check needed — the admin adds this gateway manually.
+        if (!isRunning) {
+            try {
+                isRunning = true;
+                startHttpServer();
+                updateNotification("\u2713 Gateway running");
+                Log.d(TAG, "Gateway started — push mode");
+                sendBroadcast(new Intent(ACTION_GATEWAY_STARTED));
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to start gateway: " + e.getMessage(), e);
                 isRunning = false;
-                Intent bc = new Intent(ACTION_SERVER_OFFLINE);
-                bc.putExtra("reason", message);
-                sendBroadcast(bc);
+                updateNotification("\u26a0 Failed: " + e.getMessage());
                 stopSelf();
-                return;
             }
-
-            if (!isRunning) {
-                try {
-                    isRunning = true;
-                    String srvAddr = ServerConfig.getBaseUrl(getApplicationContext());
-                    updateNotification("\u2713 Connected to: " + srvAddr);
-                    Log.d(TAG, "Gateway started — SMS server OK @ " + srvAddr);
-
-                    // ── Start PULL outbound poller ───────────────────────────
-                    outboundPoller = new OutboundPoller(getApplicationContext());
-                    outboundPoller.start();
-
-                    // ── Start PUSH HTTP server ────────────────────────────────
-                    // Listens for incoming POST /send and GET /health requests
-                    // from the central server (URL + token mode).
-                    startHttpServer();
-
-                    sendBroadcast(new Intent(ACTION_GATEWAY_STARTED));
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to start gateway: " + e.getMessage(), e);
-                    isRunning = false;
-                    updateNotification("\u26a0 Failed: " + e.getMessage());
-                    stopSelf();
-                }
-            }
-        });
+        }
 
         return START_STICKY;
     }
@@ -224,7 +199,7 @@ public class GatewayService extends Service {
             sHttpUrl = "http://" + localIp + ":" + httpPort;
 
             Log.d(TAG, "PUSH HTTP server at " + sHttpUrl);
-            updateNotification("\u2713 " + sHttpUrl + " | " + ServerConfig.getBaseUrl(getApplicationContext()));
+            updateNotification("\u2713 " + sHttpUrl);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start HTTP server: " + e.getMessage());
         }

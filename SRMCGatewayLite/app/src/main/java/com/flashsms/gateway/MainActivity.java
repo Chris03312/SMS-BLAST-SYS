@@ -15,90 +15,60 @@ import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * MainActivity — Push-only SMS Gateway.
+ *
+ * No server IP/port needed. Just runs an HTTP server that the central
+ * platform pushes SMS requests to. Admin adds this gateway manually
+ * in the web dashboard with the device IP and API key shown here.
+ */
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQ_PERMISSIONS = 100;
+    private static final String PREF_API_KEY = "api_key";
     private static final String PREF_DEVICE_ID = "device_id";
 
-    // Tabs
-    private LinearLayout btnTabDashboard, btnTabSettings;
-    private LinearLayout layoutDashboard, layoutSettings;
+    // Gateway info
+    private TextView tvDeviceIp, tvApiKey, tvDeviceModel;
+    private EditText etGatewayPort;
 
-    // Dashboard views
-    private TextView     tvStatus, tvSentCount, tvFailCount, tvQueueCount;
-    private TextView     tvSendingStatus, tvServerBanner, tvLastUpdated;
-    private Button       btnToggle, btnClearLog;
-    private RecyclerView recyclerView;
-    private LogAdapter   logAdapter;
+    // Inbound webhook
+    private EditText etServerUrl;
+    private Button   btnRegisterWebhook;
+    private TextView tvWebhookStatus;
 
-    // User info header
-    private TextView tvWelcomeUser, tvUserRole, tvUserStatus;
-    private Button   btnLogout;
+    // Gateway endpoints
+    private View     layoutEndpoints;
+    private TextView tvEndpointUrl, tvEndpointHealth, tvEndpointSend;
 
-    // User-scoped stats
-    private TextView tvMySentCount;
-
-    // Settings — server
-    private EditText etSrmcIp, etSrmcPort;
-    private Button   btnCheckServer;
-    private TextView tvSrmcStatus;
-
-    // Settings — local gateway
-    private TextView tvIpAddress, tvApiKey, tvSimCarrier, tvSim2Carrier;
-    private EditText etPort;
+    // Gateway control
+    private Button   btnToggle;
+    private TextView tvStatus, tvSim1Carrier, tvSim2Carrier, tvGatewayStatus;
 
     private SharedPreferences prefs;
 
-    private ServerStatsPoller statsPoller;
-
-    private java.util.concurrent.ScheduledExecutorService heartbeatExecutor;
-    private static final long HEARTBEAT_INTERVAL_SEC = 60;
-
-    private String loggedInUserId;
-    private String loggedInUserName;
-    private String loggedInUserRole;
-    private String loggedInUserStatus;
-
-    // ── Broadcast receivers ───────────────────────────────────────────
-
-    private final BroadcastReceiver logReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context ctx, Intent i) { refreshLog(); }
-    };
-
-    private final BroadcastReceiver serverOfflineReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context ctx, Intent i) {
-            String reason = i.getStringExtra("reason");
-            btnToggle.setEnabled(true);
-            updateStatusUi();
-            showBanner(reason != null ? reason : getString(R.string.msg_server_unreachable));
-            statsPoller.stop();
-        }
-    };
-
+    // Broadcast receiver
     private final BroadcastReceiver gatewayStartedReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context ctx, Intent i) {
             btnToggle.setEnabled(true);
+            String url = GatewayService.getHttpUrl();
+            if (!url.isEmpty() && GatewayService.isRunning) {
+                showEndpoints(url);
+            }
             updateStatusUi();
-            hideBanner();
-            statsPoller.start();
         }
     };
 
@@ -107,55 +77,32 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences("settings", MODE_PRIVATE);
 
-        if (!prefs.getBoolean(LoginActivity.PREF_LOGGED_IN, false)) {
-            redirectToLogin();
-            return;
-        }
-
-        loggedInUserId     = prefs.getString(LoginActivity.PREF_USER_ID,     "");
-        loggedInUserName   = prefs.getString(LoginActivity.PREF_USER_NAME,   "");
-        loggedInUserRole   = prefs.getString(LoginActivity.PREF_USER_ROLE,   "user");
-        loggedInUserStatus = prefs.getString(LoginActivity.PREF_USER_STATUS, "Active");
-
-        setContentView(R.layout.activity_main);
-
         bindViews();
-        initRecycler();
-        initTabs();
 
-        // Detect SIMs FIRST so heartbeat has the data
-        detectSims();
+        // Display device info
+        tvDeviceIp.setText(getLocalIp());
+        tvDeviceModel.setText(Build.MANUFACTURER + " " + Build.MODEL);
 
-        initStatsPoller();
-        startGatewayHeartbeat();
-        setupUserHeader();
-
-        // Now send immediate heartbeat — detectSims() has already run
-        new Thread(() -> sendHeartbeat(loggedInUserId)).start();
-
-        tvIpAddress.setText(getLocalIp());
-        int savedPort = prefs.getInt("port", 8088);
-        etPort.setText(String.valueOf(savedPort));
-
-        etSrmcIp.setText(ServerConfig.getIp(this));
-        etSrmcPort.setText(String.valueOf(ServerConfig.getPort(this)));
-
-        // Generate and display API key (lowercase + numbers only)
-        String key = prefs.getString("api_key", "");
-        if (key.isEmpty()) { key = generateApiKey(); prefs.edit().putString("api_key", key).apply(); }
+        // Load or generate API key
+        String key = prefs.getString(PREF_API_KEY, "");
+        if (key.isEmpty()) {
+            key = generateApiKey();
+            prefs.edit().putString(PREF_API_KEY, key).apply();
+        }
         tvApiKey.setText(key);
 
-        // Long-press to regenerate
+        // Long-press to regenerate API key
         tvApiKey.setOnLongClickListener(v -> {
-            new AlertDialog.Builder(this)
+            new androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Regenerate API Key?")
                     .setMessage("The old key will stop working immediately.")
                     .setPositiveButton("Yes", (d, w) -> {
                         String k = generateApiKey();
-                        prefs.edit().putString("api_key", k).apply();
+                        prefs.edit().putString(PREF_API_KEY, k).apply();
                         tvApiKey.setText(k);
                     })
                     .setNegativeButton("Cancel", null)
@@ -163,284 +110,89 @@ public class MainActivity extends AppCompatActivity {
             return true;
         });
 
+        // Gateway port
+        int savedPort = prefs.getInt("port", 8088);
+        etGatewayPort.setText(String.valueOf(savedPort));
+
+        // Server URL
+        String savedUrl = prefs.getString("server_url", "");
+        etServerUrl.setText(savedUrl);
+
+        // Detect SIMs
+        detectSims();
+
         listeners();
         updateStatusUi();
-        refreshLog();
         checkPermissions();
-    }
-
-    // ── User header ───────────────────────────────────────────────────
-
-    private void setupUserHeader() {
-        tvWelcomeUser.setText(getString(R.string.label_welcome_name, loggedInUserName));
-        tvUserRole.setText(loggedInUserRole.equals("admin")
-                ? R.string.label_role_admin
-                : R.string.label_role_user);
-        updateStatusBadge(loggedInUserStatus);
-        btnLogout.setOnClickListener(v -> confirmLogout());
-    }
-
-    private void updateStatusBadge(String status) {
-        boolean isActive = "Active".equalsIgnoreCase(status);
-        tvUserStatus.setText(isActive ? R.string.label_active : R.string.label_inactive);
-        tvUserStatus.setTextColor(isActive ? 0xFF4CAF50 : 0xFFAAAAAA);
-    }
-
-    private void confirmLogout() {
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.dialog_logout_title)
-                .setMessage(R.string.dialog_logout_message)
-                .setPositiveButton(R.string.btn_logout, (d, w) -> performLogout())
-                .setNegativeButton(R.string.btn_cancel, null)
-                .show();
-    }
-
-    private void performLogout() {
-        if (GatewayService.isRunning) {
-            stopService(new Intent(this, GatewayService.class));
-            statsPoller.stop();
-        }
-        stopGatewayHeartbeat();
-
-        prefs.edit()
-                .remove(LoginActivity.PREF_LOGGED_IN)
-                .remove(LoginActivity.PREF_USER_ID)
-                .remove(LoginActivity.PREF_USER_NAME)
-                .remove(LoginActivity.PREF_USER_ROLE)
-                .remove(LoginActivity.PREF_USER_STATUS)
-                .remove("saved_password")
-                .remove(InboundSmsReceiver.PREF_INBOUND_TOKEN)
-                .remove(InboundSmsReceiver.PREF_INBOUND_WEBHOOK)
-                .apply();
-
-        redirectToLogin();
-    }
-
-    // ── Gateway Heartbeat ─────────────────────────────────────────────
-
-    private void startGatewayHeartbeat() {
-        stopGatewayHeartbeat();
-        heartbeatExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-        heartbeatExecutor.scheduleWithFixedDelay(
-                () -> sendHeartbeat(loggedInUserId),
-                HEARTBEAT_INTERVAL_SEC, HEARTBEAT_INTERVAL_SEC,
-                java.util.concurrent.TimeUnit.SECONDS);
-    }
-
-    private void stopGatewayHeartbeat() {
-        if (heartbeatExecutor != null && !heartbeatExecutor.isShutdown()) {
-            heartbeatExecutor.shutdownNow();
-            heartbeatExecutor = null;
-        }
-    }
-
-    /** Get this device's persistent unique ID. */
-    private String getGatewayDeviceId() {
-        String deviceId = prefs.getString(PREF_DEVICE_ID, "");
-        if (deviceId.isEmpty()) {
-            deviceId = java.util.UUID.randomUUID().toString();
-            prefs.edit().putString(PREF_DEVICE_ID, deviceId).apply();
-        }
-        return deviceId;
-    }
-
-    private void sendHeartbeat(String userId) {
-        if (userId == null || userId.isEmpty()) return;
-        String url = ServerConfig.getBaseUrl(this) + "/api/auth/gateway/heartbeat";
-        String deviceId = getGatewayDeviceId();
-        try {
-            org.json.JSONObject body = new org.json.JSONObject();
-            body.put("userId", userId);
-            body.put("deviceId", deviceId);
-
-            // Include SIM carrier info from prefs so server always has latest
-            String sim1 = prefs.getString(SmsSender.PREF_SIM1_CARRIER, "");
-            String sim2 = prefs.getString(SmsSender.PREF_SIM2_CARRIER, "");
-            if (!sim1.isEmpty()) body.put("sim_carrier", sim1);
-            if (!sim2.isEmpty()) body.put("sim2_carrier", sim2);
-
-            java.net.HttpURLConnection conn =
-                    (java.net.HttpURLConnection) new java.net.URI(url).toURL().openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setConnectTimeout(5_000);
-            conn.setReadTimeout(5_000);
-            conn.setDoOutput(true);
-            try (java.io.OutputStream os = conn.getOutputStream()) {
-                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-            }
-            conn.getResponseCode();
-            conn.disconnect();
-        } catch (Exception e) {
-            android.util.Log.w("MainActivity", "Heartbeat failed: " + e.getMessage());
-        }
-    }
-
-    private void redirectToLogin() {
-        startActivity(new Intent(this, LoginActivity.class));
-        finish();
-    }
-
-    // ── Stats poller ──────────────────────────────────────────────────
-
-    private void initStatsPoller() {
-        statsPoller = new ServerStatsPoller(this, stats -> {
-            if (stats.fetchError) {
-                tvSentCount    .setText(R.string.label_default_value);
-                tvFailCount    .setText(R.string.label_default_value);
-                tvQueueCount   .setText(R.string.label_default_value);
-                tvMySentCount  .setText(R.string.label_default_value);
-                tvSendingStatus.setText(R.string.msg_server_unreachable);
-                tvSendingStatus.setTextColor(0xFFFF5B5B);
-                tvLastUpdated  .setText(R.string.msg_last_update_failed);
-            } else {
-                tvSentCount .setText(String.valueOf(stats.totalSent));
-                tvFailCount .setText(String.valueOf(stats.totalFailed));
-                tvQueueCount.setText(String.valueOf(stats.totalQueued));
-                tvMySentCount.setText(String.valueOf(stats.userSentToday));
-                if (stats.sendingActive) {
-                    tvSendingStatus.setText(R.string.msg_sending_active);
-                    tvSendingStatus.setTextColor(0xFF4CAF50);
-                } else {
-                    tvSendingStatus.setText(R.string.msg_sending_canceled);
-                    tvSendingStatus.setTextColor(0xFFFF5B5B);
-                }
-                java.text.SimpleDateFormat sdf =
-                        new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
-                tvLastUpdated.setText(getString(R.string.msg_last_updated, sdf.format(new java.util.Date())));
-                tvLastUpdated.setTextColor(0xFF555555);
-            }
-        });
-        statsPoller.setUserId(loggedInUserId);
-        if (GatewayService.isRunning) {
-            statsPoller.start();
-        }
     }
 
     // ── View binding ──────────────────────────────────────────────────
 
     private void bindViews() {
-        btnTabDashboard = findViewById(R.id.btnTabDashboard);
-        btnTabSettings  = findViewById(R.id.btnTabSettings);
-        layoutDashboard = findViewById(R.id.layoutDashboard);
-        layoutSettings  = findViewById(R.id.layoutSettings);
+        tvDeviceIp      = findViewById(R.id.tvDeviceIp);
+        tvDeviceModel   = findViewById(R.id.tvDeviceModel);
+        tvApiKey        = findViewById(R.id.tvApiKey);
+        etGatewayPort   = findViewById(R.id.etGatewayPort);
 
-        tvServerBanner  = findViewById(R.id.tvServerBanner);
-        tvStatus        = findViewById(R.id.tvStatus);
-        tvSentCount     = findViewById(R.id.tvSentCount);
-        tvFailCount     = findViewById(R.id.tvFailCount);
-        tvQueueCount    = findViewById(R.id.tvQueueCount);
-        tvSendingStatus = findViewById(R.id.tvSendingStatus);
-        tvLastUpdated   = findViewById(R.id.tvLastUpdated);
+        etServerUrl          = findViewById(R.id.etServerUrl);
+        btnRegisterWebhook  = findViewById(R.id.btnRegisterWebhook);
+        tvWebhookStatus    = findViewById(R.id.tvWebhookStatus);
+
+        layoutEndpoints    = findViewById(R.id.layoutEndpoints);
+        tvEndpointUrl      = findViewById(R.id.tvEndpointUrl);
+        tvEndpointHealth   = findViewById(R.id.tvEndpointHealth);
+        tvEndpointSend     = findViewById(R.id.tvEndpointSend);
+
         btnToggle       = findViewById(R.id.btnToggle);
-        btnClearLog     = findViewById(R.id.btnClearLog);
-        recyclerView    = findViewById(R.id.recyclerView);
-
-        tvWelcomeUser = findViewById(R.id.tvWelcomeUser);
-        tvUserRole    = findViewById(R.id.tvUserRole);
-        tvUserStatus  = findViewById(R.id.tvUserStatus);
-        btnLogout     = findViewById(R.id.btnLogout);
-
-        tvMySentCount = findViewById(R.id.tvMySentCount);
-
-        tvIpAddress   = findViewById(R.id.tvIpAddress);
-        tvApiKey      = findViewById(R.id.tvApiKey);
-        tvSimCarrier  = findViewById(R.id.tvSimCarrier);
-        tvSim2Carrier = findViewById(R.id.tvSim2Carrier);
-        etPort        = findViewById(R.id.etPort);
-
-        etSrmcIp       = findViewById(R.id.etSrmcIp);
-        etSrmcPort     = findViewById(R.id.etSrmcPort);
-        btnCheckServer = findViewById(R.id.btnCheckServer);
-        tvSrmcStatus   = findViewById(R.id.tvSrmcStatus);
-    }
-
-    private void initRecycler() {
-        recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        logAdapter = new LogAdapter(MessageLog.load(this));
-        recyclerView.setAdapter(logAdapter);
-    }
-
-    private void initTabs() {
-        showDashboard();
-        btnTabDashboard.setOnClickListener(v -> showDashboard());
-        btnTabSettings .setOnClickListener(v -> showSettings());
-    }
-
-    private void showDashboard() {
-        layoutDashboard.setVisibility(View.VISIBLE);
-        layoutSettings .setVisibility(View.GONE);
-        setNavTabActive(btnTabDashboard, true);
-        setNavTabActive(btnTabSettings,  false);
-    }
-
-    private void showSettings() {
-        layoutDashboard.setVisibility(View.GONE);
-        layoutSettings .setVisibility(View.VISIBLE);
-        setNavTabActive(btnTabDashboard, false);
-        setNavTabActive(btnTabSettings,  true);
-    }
-
-    private void setNavTabActive(LinearLayout tab, boolean active) {
-        int color = active ? 0xFF1A73C8 : 0xFF9A9AB0;
-        if (tab.getChildCount() >= 2) {
-            View icon  = tab.getChildAt(0);
-            View label = tab.getChildAt(1);
-            if (icon  instanceof TextView) ((TextView) icon ).setTextColor(color);
-            if (label instanceof TextView) ((TextView) label).setTextColor(color);
-        }
-        if (tab.getChildCount() >= 3) {
-            View indicator = tab.getChildAt(2);
-            indicator.setVisibility(active ? View.VISIBLE : View.INVISIBLE);
-        }
+        tvStatus        = findViewById(R.id.tvStatus);
+        tvGatewayStatus = findViewById(R.id.tvGatewayStatus);
+        tvSim1Carrier   = findViewById(R.id.tvSim1Carrier);
+        tvSim2Carrier   = findViewById(R.id.tvSim2Carrier);
     }
 
     // ── Listeners ─────────────────────────────────────────────────────
 
     private void listeners() {
         btnToggle.setOnClickListener(v -> toggleService());
-        btnClearLog.setOnClickListener(v -> {
-            MessageLog.clear(this);
-            refreshLog();
-        });
 
-        etPort.setOnFocusChangeListener((v, f) -> { if (!f) savePort(); });
-        etPort.setOnEditorActionListener((v, a, e) -> {
-            if (a == EditorInfo.IME_ACTION_DONE) savePort();
+        // Auto-save port on focus loss
+        etGatewayPort.setOnFocusChangeListener((v, f) -> { if (!f) saveGatewayPort(); });
+        etGatewayPort.setOnEditorActionListener((v, a, e) -> {
+            if (a == EditorInfo.IME_ACTION_DONE) saveGatewayPort();
             return false;
         });
 
-        etSrmcIp.setOnFocusChangeListener((v, f)     -> { if (!f) saveSrmcServer(); });
-        etSrmcIp.setOnEditorActionListener((v, a, e)  -> {
-            if (a == EditorInfo.IME_ACTION_DONE) saveSrmcServer();
+        // Register webhook
+        btnRegisterWebhook.setOnClickListener(v -> registerWebhook());
+
+        // Auto-save server URL on focus loss
+        etServerUrl.setOnFocusChangeListener((v, f) -> { if (!f) saveServerUrl(); });
+        etServerUrl.setOnEditorActionListener((v, a, e) -> {
+            if (a == EditorInfo.IME_ACTION_DONE) { saveServerUrl(); return true; }
             return false;
         });
-        etSrmcPort.setOnFocusChangeListener((v, f)    -> { if (!f) saveSrmcServer(); });
-        etSrmcPort.setOnEditorActionListener((v, a, e) -> {
-            if (a == EditorInfo.IME_ACTION_DONE) saveSrmcServer();
-            return false;
-        });
+    }
 
-        btnCheckServer.setOnClickListener(v -> checkSrmcServerNow());
+    // ── Gateway port ──────────────────────────────────────────────────
 
+    private void saveGatewayPort() {
+        String val = etGatewayPort.getText().toString().trim();
+        int port;
+        try { port = Integer.parseInt(val); } catch (Exception e) { port = 8088; }
+        if (port < 1024 || port > 65535) port = 8088;
+        prefs.edit().putInt("port", port).apply();
+        etGatewayPort.setText(String.valueOf(port));
+        updateStatusUi();
     }
 
     // ── Gateway toggle ────────────────────────────────────────────────
 
     private void toggleService() {
-        savePort();
+        saveGatewayPort();
         Intent svc = new Intent(this, GatewayService.class);
         if (GatewayService.isRunning) {
             stopService(svc);
-            statsPoller.stop();
-            tvSentCount    .setText(R.string.label_default_value);
-            tvFailCount    .setText(R.string.label_default_value);
-            tvQueueCount   .setText(R.string.label_default_value);
-            tvMySentCount  .setText(R.string.label_default_value);
-            tvSendingStatus.setText(R.string.msg_gateway_stopped);
-            tvSendingStatus.setTextColor(0xFFAAAAAA);
-            tvLastUpdated  .setText("");
-            btnToggle.postDelayed(() -> { updateStatusUi(); hideBanner(); }, 400);
+            btnToggle.postDelayed(() -> updateStatusUi(), 400);
         } else {
             tvStatus.setText(R.string.msg_checking_server);
             tvStatus.setTextColor(0xFFFFCC00);
@@ -464,87 +216,185 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateStatusUi() {
-        int port = prefs.getInt("port", 8088);
         if (GatewayService.isRunning) {
+            int port = prefs.getInt("port", 8088);
             tvStatus.setText(getString(R.string.msg_running_on_port, port));
             tvStatus.setTextColor(0xFF4CAF50);
-            btnToggle.setText(R.string.btn_stop);
+            btnToggle.setText("STOP");
+            btnToggle.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(0xFFEF4444));
+            tvGatewayStatus.setText("RUNNING");
+            tvGatewayStatus.setTextColor(0xFFA5D6A7);
+            // Show endpoints if we have a URL
+            String url = GatewayService.getHttpUrl();
+            if (!url.isEmpty()) {
+                showEndpoints(url);
+            }
         } else {
             tvStatus.setText(R.string.label_status_stopped);
             tvStatus.setTextColor(0xFFAAAAAA);
-            btnToggle.setText(R.string.btn_start);
+            btnToggle.setText("START");
+            btnToggle.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(0xFF1A73C8));
+            tvGatewayStatus.setText("STOPPED");
+            tvGatewayStatus.setTextColor(0xFFFFCDD2);
+            hideEndpoints();
         }
     }
 
-    private void showBanner(String reason) {
-        tvServerBanner.setVisibility(View.VISIBLE);
-        tvServerBanner.setText(getString(R.string.msg_banner_template, reason));
+    // ── Server URL ───────────────────────────────────────────────────
+
+    private void saveServerUrl() {
+        String url = etServerUrl.getText().toString().trim();
+        if (!url.isEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "http://" + url;
+        }
+        prefs.edit().putString("server_url", url).apply();
+        etServerUrl.setText(url);
     }
 
-    private void hideBanner() { tvServerBanner.setVisibility(View.GONE); }
+    // ── Heartbeat / Registration ─────────────────────────────────────
 
-    private void refreshLog() { logAdapter.update(MessageLog.load(this)); }
-
-    // ── Settings helpers ──────────────────────────────────────────────
-
-    private void savePort() {
-        String val = etPort.getText().toString().trim();
-        int port;
-        try { port = Integer.parseInt(val); } catch (Exception e) { port = 8088; }
-        if (port < 1024 || port > 65535) port = 8088;
-        prefs.edit().putInt("port", port).apply();
-        etPort.setText(String.valueOf(port));
-        updateStatusUi();
+    /** Get or generate a persistent device UUID. */
+    private String getGatewayDeviceId() {
+        String deviceId = prefs.getString(PREF_DEVICE_ID, "");
+        if (deviceId.isEmpty()) {
+            deviceId = java.util.UUID.randomUUID().toString();
+            prefs.edit().putString(PREF_DEVICE_ID, deviceId).apply();
+        }
+        return deviceId;
     }
 
-    private void saveSrmcServer() {
-        String ip = etSrmcIp.getText().toString().trim();
-        if (ip.isEmpty()) ip = ServerConfig.DEFAULT_IP;
-        ServerConfig.setIp(this, ip);
+    private void registerWebhook() {
+        String serverUrl = prefs.getString("server_url", "");
+        if (serverUrl.isEmpty()) {
+            tvWebhookStatus.setText("No server configured");
+            tvWebhookStatus.setTextColor(0xFFF44336);
+            return;
+        }
 
-        String ps = etSrmcPort.getText().toString().trim();
-        int port;
-        try { port = Integer.parseInt(ps); } catch (Exception e) { port = ServerConfig.DEFAULT_PORT; }
-        if (port < 1 || port > 65535) port = ServerConfig.DEFAULT_PORT;
-        ServerConfig.setPort(this, port);
+        tvWebhookStatus.setText("Registering\u2026");
+        tvWebhookStatus.setTextColor(0xFFFFCC00);
+        btnRegisterWebhook.setEnabled(false);
 
-        etSrmcIp  .setText(ServerConfig.getIp(this));
-        etSrmcPort.setText(String.valueOf(ServerConfig.getPort(this)));
+        new Thread(() -> {
+            try {
+                String deviceId = getGatewayDeviceId();
+                String deviceName = Build.MANUFACTURER + " " + Build.MODEL;
+                String sim1 = prefs.getString(SmsSender.PREF_SIM1_CARRIER, "");
+                String sim2 = prefs.getString(SmsSender.PREF_SIM2_CARRIER, "");
 
-        tvSrmcStatus.setVisibility(View.VISIBLE);
-        tvSrmcStatus.setText(R.string.msg_saved_verify);
-        tvSrmcStatus.setTextColor(0xFFAAAAAA);
-    }
+                // Step 1: Mark gateway as online
+                org.json.JSONObject onlinePayload = new org.json.JSONObject();
+                onlinePayload.put("userId", deviceId);
+                onlinePayload.put("deviceId", deviceId);
+                onlinePayload.put("deviceInfo", deviceName);
+                if (!sim1.isEmpty()) onlinePayload.put("sim_carrier", sim1);
+                if (!sim2.isEmpty()) onlinePayload.put("sim2_carrier", sim2);
 
-    private void checkSrmcServerNow() {
-        etSrmcIp.clearFocus();
-        etSrmcPort.clearFocus();
-        saveSrmcServer();
+                byte[] onlineBody = onlinePayload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-        tvSrmcStatus.setVisibility(View.VISIBLE);
-        tvSrmcStatus.setText(R.string.msg_checking);
-        tvSrmcStatus.setTextColor(0xFFFFCC00);
-        btnCheckServer.setEnabled(false);
+                java.net.HttpURLConnection onlineConn = (java.net.HttpURLConnection)
+                        new java.net.URL(serverUrl + "/api/auth/gateway/online").openConnection();
+                onlineConn.setRequestMethod("POST");
+                onlineConn.setRequestProperty("Content-Type", "application/json");
+                onlineConn.setDoOutput(true);
+                onlineConn.setConnectTimeout(10_000);
+                onlineConn.setReadTimeout(10_000);
+                try (java.io.OutputStream os = onlineConn.getOutputStream()) { os.write(onlineBody); }
+                onlineConn.getResponseCode();
+                onlineConn.disconnect();
 
-        ServerChecker.check(this, (online, message) -> {
-            btnCheckServer.setEnabled(true);
-            tvSrmcStatus.setVisibility(View.VISIBLE);
-            if (online) {
-                tvSrmcStatus.setText(getString(R.string.msg_server_ok, message));
-                tvSrmcStatus.setTextColor(0xFF4CAF50);
-                statsPoller.pollNow();
-            } else {
-                tvSrmcStatus.setText(getString(R.string.msg_server_fail, message));
-                tvSrmcStatus.setTextColor(0xFFFF5B5B);
+                // Step 2: Send heartbeat (registers inbound webhook URL)
+                org.json.JSONObject beatPayload = new org.json.JSONObject();
+                beatPayload.put("userId", deviceId);
+                beatPayload.put("deviceId", deviceId);
+                if (!sim1.isEmpty()) beatPayload.put("sim_carrier", sim1);
+                if (!sim2.isEmpty()) beatPayload.put("sim2_carrier", sim2);
+
+                byte[] beatBody = beatPayload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+                java.net.HttpURLConnection beatConn = (java.net.HttpURLConnection)
+                        new java.net.URL(serverUrl + "/api/auth/gateway/heartbeat").openConnection();
+                beatConn.setRequestMethod("POST");
+                beatConn.setRequestProperty("Content-Type", "application/json");
+                beatConn.setDoOutput(true);
+                beatConn.setConnectTimeout(10_000);
+                beatConn.setReadTimeout(10_000);
+                try (java.io.OutputStream os = beatConn.getOutputStream()) { os.write(beatBody); }
+
+                int code = beatConn.getResponseCode();
+                java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(
+                                code >= 400 ? beatConn.getErrorStream() : beatConn.getInputStream(),
+                                java.nio.charset.StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                beatConn.disconnect();
+
+                String responseBody = sb.toString();
+
+                // Extract webhook URL from response if available
+                String webhookUrl = "";
+                try {
+                    org.json.JSONObject resp = new org.json.JSONObject(responseBody);
+                    webhookUrl = resp.optString("inbound_webhook_url", "");
+                } catch (Exception ignored) {}
+
+                final boolean finalSuccess = code < 400;
+                final String msg;
+                if (finalSuccess) {
+                    if (!webhookUrl.isEmpty()) {
+                        msg = "\u2713 OK \u2014 " + webhookUrl;
+                        // Store the webhook URL for InboundSmsReceiver
+                        prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
+                    } else {
+                        msg = "\u2713 Registered (device: " + deviceId.substring(0, 8) + "\u2026)";
+                    }
+                } else {
+                    msg = "\u2717 HTTP " + code + " \u2014 " + responseBody;
+                }
+
+                runOnUiThread(() -> {
+                    tvWebhookStatus.setText(msg);
+                    tvWebhookStatus.setTextColor(finalSuccess ? 0xFF4CAF50 : 0xFFF44336);
+                    btnRegisterWebhook.setEnabled(true);
+                });
+
+            } catch (java.net.ConnectException e) {
+                runOnUiThread(() -> {
+                    tvWebhookStatus.setText("\u2717 Connection refused");
+                    tvWebhookStatus.setTextColor(0xFFF44336);
+                    btnRegisterWebhook.setEnabled(true);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    tvWebhookStatus.setText("\u2717 " + e.getMessage());
+                    tvWebhookStatus.setTextColor(0xFFF44336);
+                    btnRegisterWebhook.setEnabled(true);
+                });
             }
-        });
+        }).start();
     }
+
+    private void showEndpoints(String baseUrl) {
+        tvEndpointUrl.setText(baseUrl);
+        tvEndpointHealth.setText("GET  " + baseUrl + "/health");
+        tvEndpointSend.setText("POST " + baseUrl + "/send");
+        layoutEndpoints.setVisibility(View.VISIBLE);
+    }
+
+    private void hideEndpoints() {
+        layoutEndpoints.setVisibility(View.GONE);
+    }
+
+    // ── SIM detection ─────────────────────────────────────────────────
 
     private void detectSims() {
-        tvSimCarrier.setText(R.string.label_sim_not_detected);
-        tvSim2Carrier.setText(R.string.label_sim_not_detected);
+        tvSim1Carrier.setText(getString(R.string.label_sim_not_detected));
+        tvSim2Carrier.setText(getString(R.string.label_sim_not_detected));
 
-        // Clear stored subscription IDs and carriers by default
         SharedPreferences.Editor edit = prefs.edit();
         edit.remove(SmsSender.PREF_SIM1_SUB_ID);
         edit.remove(SmsSender.PREF_SIM2_SUB_ID);
@@ -566,7 +416,7 @@ public class MainActivity extends AppCompatActivity {
                     int subId = info.getSubscriptionId();
 
                     if (slot == 0) {
-                        tvSimCarrier.setText(carrier);
+                        tvSim1Carrier.setText(carrier);
                         edit.putInt(SmsSender.PREF_SIM1_SUB_ID, subId);
                         edit.putString(SmsSender.PREF_SIM1_CARRIER, carrier);
                     } else if (slot > 0) {
@@ -575,9 +425,7 @@ public class MainActivity extends AppCompatActivity {
                         edit.putString(SmsSender.PREF_SIM2_CARRIER, carrier);
                     }
                 }
-            } catch (SecurityException ignored) {
-                // READ_PHONE_STATE permission not granted — SIM detection unavailable
-            }
+            } catch (Exception ignored) {}
         }
 
         edit.apply();
@@ -597,6 +445,14 @@ public class MainActivity extends AppCompatActivity {
             if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED)
                 needed.add(p);
 
+        // POST_NOTIFICATIONS only exists on Android 13+ (API 33)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.POST_NOTIFICATIONS);
+            }
+        }
+
         if (!needed.isEmpty())
             ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQ_PERMISSIONS);
     }
@@ -606,44 +462,26 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (!prefs.getBoolean(LoginActivity.PREF_LOGGED_IN, false)) {
-            redirectToLogin();
-            return;
-        }
-        ContextCompat.registerReceiver(this, logReceiver,
-                new IntentFilter("com.flashsms.LOG_UPDATED"), 0);
-        ContextCompat.registerReceiver(this, serverOfflineReceiver,
-                new IntentFilter(GatewayService.ACTION_SERVER_OFFLINE), 0);
-        ContextCompat.registerReceiver(this, gatewayStartedReceiver,
-                new IntentFilter(GatewayService.ACTION_GATEWAY_STARTED), 0);
+        registerReceiver(gatewayStartedReceiver,
+                new IntentFilter(GatewayService.ACTION_GATEWAY_STARTED));
         updateStatusUi();
         detectSims();
-        refreshLog();
-        if (GatewayService.isRunning) statsPoller.pollNow();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        savePort();
-        saveSrmcServer();
-        try { unregisterReceiver(logReceiver); }           catch (Exception ignored) {}
-        try { unregisterReceiver(serverOfflineReceiver); }  catch (Exception ignored) {}
+        saveGatewayPort();
         try { unregisterReceiver(gatewayStartedReceiver); } catch (Exception ignored) {}
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        stopGatewayHeartbeat();
-        statsPoller.stop();
-    }
+    // ── Helpers ───────────────────────────────────────────────────────
 
     private String generateApiKey() {
         String chars = "abcdefghijklmnopqrstuvwxyz0123456789";
         StringBuilder sb = new StringBuilder();
         java.util.Random r = new java.util.Random();
-        for (int i = 0; i < 8; i++) sb.append(chars.charAt(r.nextInt(chars.length())));
+        for (int i = 0; i < 32; i++) sb.append(chars.charAt(r.nextInt(chars.length())));
         return sb.toString();
     }
 

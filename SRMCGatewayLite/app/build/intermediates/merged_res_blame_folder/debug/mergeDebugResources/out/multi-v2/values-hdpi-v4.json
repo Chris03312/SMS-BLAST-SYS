@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.flashsms.gateway.app-mergeDebugResources-18:/values-hdpi-v4/values-hdpi-v4.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\administratorr\\.gradle\\caches\\8.14.5\\transforms\\345bd4cb69010325549bf96391a81277\\transformed\\appcompat-1.6.1\\res\\values-hdpi-v4\\values-hdpi-v4.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "6",
+                        "endColumns": "13",
+                        "endOffsets": "327"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,4 @@
+com.flashsms.gateway.test.app-androidTest-0 D:\WEBSITES\SMS-BLAST-SYS\SRMCGatewayLite\app\build\generated\res\resValues\androidTest\debug
+com.flashsms.gateway.test.app-mergeDebugAndroidTestResources-1 D:\WEBSITES\SMS-BLAST-SYS\SRMCGatewayLite\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.flashsms.gateway.test.app-mergeDebugAndroidTestResources-2 D:\WEBSITES\SMS-BLAST-SYS\SRMCGatewayLite\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.flashsms.gateway.test.app-debugAndroidTest-3 D:\WEBSITES\SMS-BLAST-SYS\SRMCGatewayLite\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources

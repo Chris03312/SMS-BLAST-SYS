@@ -1,86 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SMS Gateway Lite</string>
+    <string name="app_name">SRMC Gateway Lite</string>
 
-    <!-- Login -->
-    <string name="label_welcome_back">Welcome back</string>
-    <string name="label_sign_in_subtitle">Sign in to continue to your account</string>
-    <string name="hint_user_id">Enter your user ID</string>
-    <string name="hint_password">Enter your password</string>
-    <string name="btn_sign_in">Sign In</string>
-    <string name="error_fields_required">User ID and password are required.</string>
-    <string name="label_sms_gateway">SMS GATEWAY</string>
-
-    <!-- Login errors -->
-    <string name="error_no_server_configured">No server configured. Go to Settings and enter the server IP.</string>
-    <string name="error_login_failed">Login failed. Check credentials.</string>
-    <string name="error_connection_refused">Connection refused. Check the server IP and port in Settings.</string>
-    <string name="error_timeout">Connection timed out. Make sure the server is running.</string>
-    <string name="error_cannot_reach_server">Unable to connect to server. Make sure the server is running and the IP/Port in Settings are correct.</string>
-
-    <!-- Login success -->
-    <string name="toast_welcome">Welcome, %1$s!</string>
-
-    <!-- Top bar -->
-    <string name="label_welcome_name">Welcome, %1$s</string>
-    <string name="label_active">ACTIVE</string>
-    <string name="label_inactive">INACTIVE</string>
-    <string name="label_role_admin">Administrator</string>
-    <string name="label_role_user">User</string>
-    <string name="btn_logout">Logout</string>
-
-    <!-- Dashboard -->
-    <string name="label_gateway_status">GATEWAY STATUS</string>
+    <!-- Status -->
     <string name="label_status_stopped">Stopped</string>
-    <string name="btn_start">START GATEWAY</string>
-    <string name="btn_stop">STOP GATEWAY</string>
-    <string name="label_sent">SENT</string>
-    <string name="label_failed">FAILED</string>
-    <string name="label_queue">QUEUE</string>
-    <string name="label_my_sent_today">MY SENT TODAY</string>
-    <string name="label_blast_status">BLAST STATUS</string>
-    <string name="label_start_gateway_to_sync">Start gateway to sync</string>
-    <string name="label_message_logs">MESSAGE LOGS</string>
-    <string name="btn_clear">Clear</string>
-    <string name="label_default_value">—</string>
-
-    <!-- Settings -->
-    <string name="hint_server_ip">Server IP</string>
-    <string name="hint_server_port">Server Port</string>
-    <string name="btn_check_server">Check Server</string>
-    <string name="label_device_ip">DEVICE IP</string>
-    <string name="label_default_sim">DETECTED SIMS</string>
-    <string name="label_sim1_slot">SIM Slot 1</string>
-    <string name="label_sim2_slot">SIM Slot 2</string>
-    <string name="label_sim_not_detected">not detected</string>
-
-    <!-- Bottom nav -->
-    <string name="nav_dashboard">Dashboard</string>
-    <string name="nav_settings">Settings</string>
-
-    <!-- Dialogs -->
-    <string name="dialog_logout_title">Logout</string>
-    <string name="dialog_logout_message">Are you sure you want to log out?</string>
-    <string name="dialog_server_settings_title">Server Settings</string>
-    <string name="btn_yes">Yes</string>
-    <string name="btn_cancel">Cancel</string>
-    <string name="btn_save">Save</string>
-
-    <!-- Status messages -->
-    <string name="msg_server_unreachable">Server unreachable</string>
-    <string name="msg_last_update_failed">Last update: failed</string>
-    <string name="msg_sending_active">Sending active</string>
-    <string name="msg_sending_canceled">Sending canceled</string>
-    <string name="msg_last_updated">Updated: %1$s</string>
-    <string name="msg_gateway_stopped">Gateway stopped</string>
-    <string name="msg_checking_server">Checking server&#8230;</string>
+    <string name="msg_checking_server">Starting&#8230;</string>
     <string name="msg_running_on_port">Running on :%1$d</string>
-    <string name="msg_banner_template">%1$s</string>
-    <string name="msg_saved_verify">Saved. Tap CHECK SERVER to verify.</string>
-    <string name="msg_checking">Checking&#8230;</string>
-    <string name="msg_server_ok">%1$s</string>
-    <string name="msg_server_fail">%1$s</string>
 
-    <!-- Misc -->
+    <!-- SIM -->
+    <string name="label_sim_not_detected">not detected</string>
     <string name="label_unknown">Unknown</string>
 </resources>
