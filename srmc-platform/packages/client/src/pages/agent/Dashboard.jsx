@@ -16,9 +16,10 @@ function BroadcastDetail({ broadcast, onClose }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const limit = 50;
+  const isActive = broadcast.status === 'sending' || broadcast.status === 'paused';
 
+  // Silent fetch — doesn't touch loading state (used by poll)
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const params = new URLSearchParams({ limit, offset: page * limit });
       if (filter !== 'all') params.set('status', filter);
@@ -26,10 +27,23 @@ function BroadcastDetail({ broadcast, onClose }) {
       setMessages(data.messages || []);
       setTotal(data.total || 0);
     } catch (_) { }
-    setLoading(false);
   }, [broadcast.id, filter, page]);
 
-  useEffect(() => { load(); }, [load]);
+  // Full load with loading spinner (first load + filter/page change)
+  const loadWithLoading = useCallback(async () => {
+    setLoading(true);
+    await load();
+    setLoading(false);
+  }, [load]);
+
+  useEffect(() => { loadWithLoading(); }, [loadWithLoading]);
+
+  // ── Live auto-refresh: poll every 2s while broadcast is active ──
+  useEffect(() => {
+    if (!isActive) return;
+    const interval = setInterval(() => { load(); }, 2000);
+    return () => clearInterval(interval);
+  }, [isActive, load]);
 
   const pages = Math.ceil(total / limit);
 
@@ -232,18 +246,26 @@ export default function Dashboard() {
   // Real-time WebSocket updates
   useWS((event) => {
     if (event.type === 'broadcast:progress' || event.type === 'broadcast:complete') {
-      setBroadcasts(prev => prev.map(b => {
-        if (b.id === event.broadcastId) {
-          return {
-            ...b,
-            sent: event.sent ?? b.sent,
-            failed: event.failed ?? b.failed,
-            total: event.total ?? b.total,
-            status: event.status ?? b.status,
+      setBroadcasts(prev => {
+        const idx = prev.findIndex(b => b.id === event.broadcastId);
+        if (idx >= 0) {
+          // Update existing broadcast
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            sent: event.sent ?? updated[idx].sent,
+            failed: event.failed ?? updated[idx].failed,
+            total: event.total ?? updated[idx].total,
+            status: event.status ?? updated[idx].status,
           };
+          return updated;
         }
-        return b;
-      }));
+        // New broadcast — add it to the list (only for 'sending' status to avoid stale entries)
+        if (event.status === 'sending' || event.status === 'paused') {
+          return [{ id: event.broadcastId, sent: event.sent || 0, failed: event.failed || 0, total: event.total || 0, status: event.status, started_at: event.started_at }, ...prev];
+        }
+        return prev;
+      });
 
       // Update stats
       if (event.type === 'broadcast:progress') {
@@ -259,15 +281,27 @@ export default function Dashboard() {
       }
     }
     if (event.type === 'broadcast:paused') {
-      setBroadcasts(prev => prev.map(b =>
-        b.id === event.broadcastId ? { ...b, status: 'paused' } : b
-      ));
+      setBroadcasts(prev => {
+        const idx = prev.findIndex(b => b.id === event.broadcastId);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: 'paused' };
+          return updated;
+        }
+        return prev;
+      });
       setStats(s => ({ ...s, active: Math.max(0, s.active - 1), paused: s.paused + 1 }));
     }
     if (event.type === 'broadcast:resumed') {
-      setBroadcasts(prev => prev.map(b =>
-        b.id === event.broadcastId ? { ...b, status: 'sending' } : b
-      ));
+      setBroadcasts(prev => {
+        const idx = prev.findIndex(b => b.id === event.broadcastId);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: 'sending' };
+          return updated;
+        }
+        return prev;
+      });
       setStats(s => ({ ...s, active: s.active + 1, paused: Math.max(0, s.paused - 1) }));
     }
   });
@@ -328,8 +362,20 @@ export default function Dashboard() {
     }
   }
 
-  const [detailBroadcast, setDetailBroadcast] = useState(null);
+  const [detailBroadcastId, setDetailBroadcastId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+
+  // Derive live-updating detail broadcast from the broadcasts array
+  const detailBroadcast = detailBroadcastId
+    ? broadcasts.find(b => b.id === detailBroadcastId) || null
+    : null;
+
+  // Close detail modal if broadcast gets deleted
+  useEffect(() => {
+    if (detailBroadcastId && !detailBroadcast) {
+      setDetailBroadcastId(null);
+    }
+  }, [detailBroadcastId, detailBroadcast]);
 
   const pages = Math.ceil(total / limit);
 
@@ -349,7 +395,7 @@ export default function Dashboard() {
       <AgentShell>
 
       {detailBroadcast && (
-        <BroadcastDetail broadcast={detailBroadcast} onClose={() => setDetailBroadcast(null)} />
+        <BroadcastDetail broadcast={detailBroadcast} onClose={() => setDetailBroadcastId(null)} />
       )}
       <div className="page-head">
         <div>
@@ -597,7 +643,7 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
                       {/* Detail icon — always visible */}
                       <button
-                        onClick={() => setDetailBroadcast(b)}
+                        onClick={() => setDetailBroadcastId(b.id)}
                         title="View details"
                         style={{
                           width: 28, height: 28, padding: 0,

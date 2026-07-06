@@ -79,6 +79,11 @@ export async function startBroadcast(broadcastId) {
   let failed = 0;
   const total = broadcastRecord.total;
 
+  // Helper: persist sent/failed to DB after each progress update so page refreshes preserve the count
+  function saveProgress() {
+    try { db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(sent, failed, broadcastId); } catch (_) {}
+  }
+
   broadcast({
     type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt,
     gateways: gateways.map(g => ({ id: g.id, name: g.name }))
@@ -289,6 +294,9 @@ export async function startBroadcast(broadcastId) {
         for (const { num, msgRecord } of pullItems) {
           db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
           logActivity(broadcastRecord.agent_id, 'broadcast:queued', `Message queued for ${num} [Turbo]`, 'info', broadcastRecord.campaign_id);
+          // ── Real-time progress after EVERY PULL release ──
+          saveProgress();
+          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
         }
 
         // ── PUSH gateways: send ALL in parallel ─
@@ -341,9 +349,13 @@ export async function startBroadcast(broadcastId) {
             } else {
               failed++;
             }
+            // ── Real-time progress after EVERY status change ──
+            saveProgress();
+            broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
           }
         }
 
+        saveProgress();
         broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
       }
     } catch (e) {
@@ -368,53 +380,41 @@ export async function startBroadcast(broadcastId) {
     const isParallelMode = broadcastRecord.sim_mode === 'parallel';
     const roundIdxMap = {};
     let normalCombinedPos = 0;
-    let normalPushBatch = [];
 
-    async function flushNormalPush() {
-      if (normalPushBatch.length === 0) return;
-      const items = normalPushBatch.splice(0);
-      const results = await Promise.allSettled(
-        items.map(async ({ number, msgRecord, gateway, simMode }) => {
-          const controller = new AbortController();
-          const t = setTimeout(() => controller.abort(), 30000);
-          try {
-            const response = await fetch(`${gateway.url}/send`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
-              },
-              body: JSON.stringify({ to: number, message: msgRecord.message, sim_mode: simMode }),
-              signal: controller.signal,
-            });
-            clearTimeout(t);
-            if (response.ok) {
-              db.prepare("UPDATE messages SET status = 'sent', sent_at = ? WHERE id = ?").run(new Date().toISOString(), msgRecord.id);
-              return { success: true };
-            } else {
-              db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
-                'Gateway returned HTTP ' + response.status, msgRecord.id
-              );
-              return { success: false };
-            }
-          } catch (pushErr) {
-            clearTimeout(t);
-            db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
-              'Push failed: ' + (pushErr.message || 'timeout'), msgRecord.id
-            );
-            return { success: false };
-          }
-        })
-      );
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value && result.value.success) sent++;
-        else failed++;
+    async function sendPushMessage(number, msgRecord, gateway, simMode) {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 30000);
+      try {
+        const response = await fetch(`${gateway.url}/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(gateway.token ? { Authorization: `Bearer ${gateway.token}` } : {}),
+          },
+          body: JSON.stringify({ to: number, message: msgRecord.message, sim_mode: simMode }),
+          signal: controller.signal,
+        });
+        clearTimeout(t);
+        if (response.ok) {
+          db.prepare("UPDATE messages SET status = 'sent', sent_at = ? WHERE id = ?").run(new Date().toISOString(), msgRecord.id);
+          return true;
+        } else {
+          db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
+            'Gateway returned HTTP ' + response.status, msgRecord.id
+          );
+          return false;
+        }
+      } catch (pushErr) {
+        clearTimeout(t);
+        db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
+          'Push failed: ' + (pushErr.message || 'timeout'), msgRecord.id
+        );
+        return false;
       }
     }
 
     for (const number of recipients) {
       if (state.cancel) {
-        await flushNormalPush();
         db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
           .run(new Date().toISOString(), sent, failed, broadcastId);
         broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total, completed_at: new Date().toISOString() });
@@ -536,25 +536,25 @@ export async function startBroadcast(broadcastId) {
         } else {
           simMode = broadcastRecord.sim_mode || 'sim1';
         }
-        normalPushBatch.push({ number, msgRecord, gateway, simMode });
+        // ── Send PUSH message immediately (no batching) ──
+        const ok = await sendPushMessage(number, msgRecord, gateway, simMode);
+        if (ok) sent++; else failed++;
+        // ── Real-time progress after EVERY message ──
+        saveProgress();
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt });
       } else {
         // PULL gateway — release to 'pending' so the phone picks it up
         db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
+        // ── Real-time progress after EVERY PULL release ──
+        saveProgress();
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt });
       }
       if (broadcastRecord.distribution === 'round-robin' && gateways.length > 1 && broadcastRecord.sim_mode === 'round-robin') {
         normalCombinedPos++;
       } else {
-        roundIdxMap[gid]++; // increment per-gateway for ALL messages
-      }
-
-      // Flush PUSH batch when full (send all in parallel)
-      if (normalPushBatch.length >= TURBO_BATCH) {
-        await flushNormalPush();
+        roundIdxMap[gid]++;
       }
     }
-
-    // Flush any remaining PUSH messages
-    await flushNormalPush();
   }
 
   running.delete(broadcastId);

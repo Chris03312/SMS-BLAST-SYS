@@ -2,6 +2,7 @@
   "name": "@srmc/desktop",
   "version": "1.0.0",
   "description": "SMS Platform — Electron Desktop App",
+  "author": "SRMC Dev",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -18,7 +19,7 @@
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
-    "electron": "^42.3.3",
+    "electron": "42.5.0",
     "electron-builder": "^26.8.1"
   },
   "build": {
@@ -38,7 +39,7 @@
         "nsis",
         "portable"
       ],
-      "icon": "electron/icon.png"
+      "icon": "electron/icon.ico"
     },
     "portable": {
       "artifactName": "SMS Platform Portable ${version}.exe"
@@ -59,12 +60,12 @@
     },
     "mac": {
       "target": "dmg",
-      "icon": "electron/icon.png",
+      "icon": "electron/icon.ico",
       "category": "public.app-category.business"
     },
     "linux": {
       "target": "AppImage",
-      "icon": "electron/icon.png",
+      "icon": "electron/icon.ico",
       "category": "Office"
     }
   }
