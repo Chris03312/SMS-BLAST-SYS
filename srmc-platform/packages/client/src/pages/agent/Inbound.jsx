@@ -114,10 +114,13 @@ export default function Inbound() {
     }
   }, [messages, selected]);
 
-  // Auto-scroll chat to bottom when conversation loads or new message sent
+  // Auto-scroll chat to bottom when conversation loads or new message sent/received
   useEffect(() => {
     if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+      // Use requestAnimationFrame to ensure DOM has painted the new messages
+      requestAnimationFrame(() => {
+        chatRef.current.scrollTop = chatRef.current.scrollHeight;
+      });
     }
   }, [conversation]);
 
@@ -275,70 +278,92 @@ export default function Inbound() {
             </div>
           </div>
 
-          {/* Message rows */}
+          {/* Message rows — grouped by conversation (phone number) */}
           <div style={{ overflowY: 'auto', flex: 1 }}>
-            {messages.length === 0 && (
-              <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
-                No messages in this folder.
-              </div>
-            )}
-            {messages.map(m => {
-              const isActive  = selected?.id === m.id;
-              const isUnread  = !m.read_at;
-              return (
-                <div
-                  key={m.id}
-                  onClick={() => handleSelect(m)}
-                  style={{
-                    padding: '11px 14px',
-                    borderBottom: '1px solid var(--line-soft)',
-                    cursor: 'pointer',
-                    borderLeft: `3px solid ${isActive ? 'var(--ink-1)' : 'transparent'}`,
-                    background: isActive ? 'var(--bg-soft)' : '#fff',
-                    transition: 'background 0.1s',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                    <span className="num" style={{ fontSize: 12.5, fontWeight: isUnread ? 700 : 500, color: 'var(--ink-1)' }}>
-                      {m.from_number}
-                    </span>
-                    <span className="num" style={{ fontSize: 10, color: 'var(--ink-4)' }}>
-                      {timeAgo(m.created_at)}
-                    </span>
+            {(() => {
+              // Group messages by phone number, keeping only the latest message per number
+              const convMap = new Map();
+              for (const m of messages) {
+                const num = m.from_number;
+                if (!convMap.has(num) || new Date(m.created_at) > new Date(convMap.get(num).created_at)) {
+                  convMap.set(num, m);
+                }
+              }
+              // Sort conversations by latest message time (newest first)
+              const conversations = Array.from(convMap.entries())
+                .sort((a, b) => new Date(b[1].created_at) - new Date(a[1].created_at));
+
+              if (conversations.length === 0) {
+                return (
+                  <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
+                    No messages in this folder.
                   </div>
-                  <div style={{
-                    fontSize: 12, color: isUnread ? 'var(--ink-2)' : 'var(--ink-3)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    fontWeight: isUnread ? 500 : 400,
-                  }}>
-                    {m.body}
-                  </div>
-                  {m.linked_broadcast && (
-                    <div style={{ marginTop: 3, display: 'flex', gap: 4, alignItems: 'center' }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2" style={{ flexShrink: 0 }}>
-                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                      </svg>
-                      <span style={{ fontSize: 10.5, color: 'var(--ink-4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        Re: {m.linked_broadcast.outbound_message || m.linked_broadcast.broadcast_message}
+                );
+              }
+
+              return conversations.map(([number, m], idx) => {
+                const isActive  = selected?.from_number === number;
+                const isUnread  = !m.read_at;
+                const evenBg   = '#fff';
+                const oddBg    = '#f8f9fc';
+                const baseBg   = isActive ? 'var(--bg-soft)' : (idx % 2 === 0 ? evenBg : oddBg);
+                return (
+                  <div
+                    key={number}
+                    onClick={() => handleSelect(m)}
+                    style={{
+                      padding: '11px 14px',
+                      borderBottom: '1px solid var(--line-soft)',
+                      cursor: 'pointer',
+                      borderLeft: `3px solid ${isActive ? 'var(--ink-1)' : 'transparent'}`,
+                      background: baseBg,
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-soft)'; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = baseBg; }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                      <span className="num" style={{ fontSize: 12.5, fontWeight: isUnread ? 700 : 500, color: 'var(--ink-1)' }}>
+                        {number}
+                      </span>
+                      <span className="num" style={{ fontSize: 10, color: 'var(--ink-4)' }}>
+                        {timeAgo(m.created_at)}
                       </span>
                     </div>
-                  )}
-                  {m.gateway_name && (
-                    <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--ink-4)' }}>
-                      <span style={{ fontWeight: 500 }}>{m.gateway_name}</span>
-                      {m.sim_carrier && <span>📱1 {m.sim_carrier}</span>}
-                      {m.sim2_carrier && <span>📱2 {m.sim2_carrier}</span>}
+                    <div style={{
+                      fontSize: 12, color: isUnread ? 'var(--ink-2)' : 'var(--ink-3)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      fontWeight: isUnread ? 500 : 400,
+                    }}>
+                      {m.body}
                     </div>
-                  )}
-                  {m.flag && (
-                    <div style={{ marginTop: 4 }}>
-                      <Pill status={m.flag} label={FLAG_LABELS[m.flag] || m.flag} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    {m.linked_broadcast && (
+                      <div style={{ marginTop: 3, display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2" style={{ flexShrink: 0 }}>
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <span style={{ fontSize: 10.5, color: 'var(--ink-4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          Re: {m.linked_broadcast.outbound_message || m.linked_broadcast.broadcast_message}
+                        </span>
+                      </div>
+                    )}
+                    {m.gateway_name && (
+                      <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--ink-4)' }}>
+                        <span style={{ fontWeight: 500 }}>{m.gateway_name}</span>
+                        {m.sim_carrier && <span>📱1 {m.sim_carrier}</span>}
+                        {m.sim2_carrier && <span>📱2 {m.sim2_carrier}</span>}
+                      </div>
+                    )}
+                    {m.flag && (
+                      <div style={{ marginTop: 4 }}>
+                        <Pill status={m.flag} label={FLAG_LABELS[m.flag] || m.flag} />
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
 
@@ -381,12 +406,12 @@ export default function Inbound() {
                 {selected.flag && <Pill status={selected.flag} label={FLAG_LABELS[selected.flag] || selected.flag} />}
               </div>
 
-              {/* Chat conversation — full thread */}
+              {/* Chat conversation — clean alternating style like standard messaging apps */}
               <div ref={chatRef} style={{
                 flex: 1, overflowY: 'auto',
-                padding: 16,
-                background: '#f7f7f8',
-                display: 'flex', flexDirection: 'column', gap: 8,
+                padding: '12px 14px',
+                background: 'linear-gradient(180deg, #e8eaef 0%, #dde1e8 100%)',
+                display: 'flex', flexDirection: 'column', gap: 6,
               }}>
                 {conversation.length === 0 && (
                   <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 12, padding: 20 }}>
@@ -395,48 +420,29 @@ export default function Inbound() {
                 )}
                 {conversation.map((msg, i) => {
                   const isInbound = msg.direction === 'inbound';
-                  const isFirst = i === 0;
-                  const isLast = i === conversation.length - 1;
-                  const showSender = isFirst || (i > 0 && conversation[i-1].direction !== msg.direction);
                   return (
                     <div key={msg.id || i} style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: isInbound ? 'flex-start' : 'flex-end',
+                      alignSelf: isInbound ? 'flex-start' : 'flex-end',
+                      maxWidth: '80%',
+                      padding: '9px 14px',
+                      borderRadius: isInbound ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                      background: isInbound ? '#fff' : '#1a73e8',
+                      color: isInbound ? '#1e293b' : '#fff',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                      border: isInbound ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                      fontSize: 13, lineHeight: 1.5,
+                      wordBreak: 'break-word',
                     }}>
-                      {/* Sender label */}
-                      {showSender && (
-                        <div style={{
-                          fontSize: 10, color: 'var(--ink-4)',
-                          marginBottom: 3, marginLeft: isInbound ? 4 : 0, marginRight: isInbound ? 0 : 4,
-                          fontFamily: 'var(--mono)',
-                        }}>
-                          {isInbound ? msg.other_number || selected.from_number : 'You'}
-                        </div>
-                      )}
-                      {/* Bubble */}
+                      {msg.body}
                       <div style={{
-                        background: isInbound ? '#fff' : '#1a1a1a',
-                        color: isInbound ? 'var(--ink-1)' : '#fff',
-                        borderRadius: isInbound
-                          ? '4px 14px 14px 14px'
-                          : '14px 4px 14px 14px',
-                        padding: '9px 13px',
-                        fontSize: 13, lineHeight: 1.5,
-                        maxWidth: '85%',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                        border: isInbound ? '1px solid var(--line)' : 'none',
-                      }}>
-                        {msg.body}
-                      </div>
-                      {/* Timestamp */}
-                      <div style={{
-                        fontSize: 9.5, color: 'var(--ink-4)',
-                        marginTop: 2, fontFamily: 'var(--mono)',
-                        marginLeft: isInbound ? 4 : 0, marginRight: isInbound ? 0 : 4,
+                        fontSize: 9.5,
+                        marginTop: 3,
+                        opacity: 0.6,
+                        fontFamily: 'var(--mono)',
+                        textAlign: 'right',
                       }}>
                         {formatTime(msg.created_at)}
-                        {!isInbound && ' · ✓ Sent'}
+                        {!isInbound && ' ✓'}
                       </div>
                     </div>
                   );

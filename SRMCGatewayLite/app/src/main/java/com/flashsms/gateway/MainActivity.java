@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.annotation.SuppressLint;
 import android.os.Build;
 import android.os.Bundle;
 import android.telephony.SubscriptionInfo;
@@ -40,6 +41,11 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_PERMISSIONS = 100;
     private static final String PREF_API_KEY = "api_key";
     private static final String PREF_DEVICE_ID = "device_id";
+
+    // Prevent permission dialog from being requested more than once
+    // (some custom ROMs recreate the activity when the dialog shows,
+    //  causing an infinite loop).
+    private static boolean sPermissionsRequested = false;
 
     // Gateway info
     private TextView tvDeviceIp, tvApiKey, tvDeviceModel;
@@ -118,12 +124,18 @@ public class MainActivity extends AppCompatActivity {
         String savedUrl = prefs.getString("server_url", "");
         etServerUrl.setText(savedUrl);
 
-        // Detect SIMs
+        // Detect SIMs (wrapped in try-catch, safe without permissions)
         detectSims();
 
         listeners();
         updateStatusUi();
-        checkPermissions();
+
+        // Only request permissions once per app install, even if the activity
+        // gets recreated when the dialog shows (common on Xiaomi/Oppo/etc.)
+        if (!sPermissionsRequested) {
+            sPermissionsRequested = true;
+            checkPermissions();
+        }
     }
 
     // ── View binding ──────────────────────────────────────────────────
@@ -409,6 +421,7 @@ public class MainActivity extends AppCompatActivity {
 
     // ── SIM detection ─────────────────────────────────────────────────
 
+    @SuppressLint("MissingPermission")
     private void detectSims() {
         tvSim1Carrier.setText(getString(R.string.label_sim_not_detected));
         tvSim2Carrier.setText(getString(R.string.label_sim_not_detected));
@@ -467,7 +480,11 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
-                needed.add(Manifest.permission.POST_NOTIFICATIONS);
+                // If user has already denied twice, don't spam them again
+                if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.POST_NOTIFICATIONS)
+                        || !sPermissionsRequested) {
+                    needed.add(Manifest.permission.POST_NOTIFICATIONS);
+                }
             }
         }
 
@@ -475,13 +492,31 @@ public class MainActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQ_PERMISSIONS);
     }
 
+    // ── Handle permission result ──────────────────────────────────────
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_PERMISSIONS) {
+            // Retry SIM detection now that we might have READ_PHONE_STATE
+            detectSims();
+        }
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────
 
     @Override
     protected void onResume() {
         super.onResume();
-        registerReceiver(gatewayStartedReceiver,
-                new IntentFilter(GatewayService.ACTION_GATEWAY_STARTED));
+        // Android 14+ (API 34+) requires RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED
+        // when registering a receiver for non-system broadcasts.
+        // GATEWAY_STARTED is an internal app broadcast — RECEIVER_NOT_EXPORTED is correct.
+        int receiverFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? ContextCompat.RECEIVER_NOT_EXPORTED
+                : 0;
+        ContextCompat.registerReceiver(this, gatewayStartedReceiver,
+                new IntentFilter(GatewayService.ACTION_GATEWAY_STARTED),
+                receiverFlags);
         updateStatusUi();
         detectSims();
     }

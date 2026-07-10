@@ -149,9 +149,23 @@ export function gatewayHeartbeat(userId, deviceId, extra = {}) {
   const now = new Date().toISOString();
   const gwId = deviceId || userId;
 
-  // Only update if gateway was manually added by admin
+  // Auto-create gateway if it doesn't exist (supports Lite app which has no login)
   const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(gwId);
-  if (!existing) return false;
+  if (!existing) {
+    // Derive display name from device info or use a fallback
+    const deviceName = extra.simCarrier
+      ? `Lite Gateway (${extra.simCarrier}${extra.sim2Carrier ? ' + ' + extra.sim2Carrier : ''})`
+      : `Lite Gateway (${gwId.slice(0, 8)}…)`;
+    db.prepare(
+      'INSERT INTO gateways (id, name, url, token, mode, active, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(gwId, deviceName, '', '', 'pull', 1, 'online', now);
+    broadcast({
+      type: 'gateway:new',
+      gatewayId: gwId,
+      name: deviceName,
+      status: 'online',
+    });
+  }
 
   // Build update — always set status/beat/online, optionally update SIM fields
   const updates = ["status = ?", "last_beat = ?", "last_online = ?"];
