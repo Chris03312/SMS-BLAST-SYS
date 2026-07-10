@@ -55,6 +55,7 @@ public class InboundSmsReceiver extends BroadcastReceiver {
 
         StringBuilder body = new StringBuilder();
         String sender = null;
+        int subscriptionId = 0; // 0 = unknown, 1 = SIM1, 2 = SIM2
 
         for (Object pdu : pdus) {
             SmsMessage msg = useNewApi
@@ -63,20 +64,26 @@ public class InboundSmsReceiver extends BroadcastReceiver {
             if (msg == null) continue;
             if (sender == null) sender = msg.getDisplayOriginatingAddress();
             body.append(msg.getMessageBody());
+            // Detect which SIM received this SMS (API 22+)
+            if (subscriptionId == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                int subId = msg.getSubscriptionId();
+                if (subId >= 1) subscriptionId = subId;
+            }
         }
 
         if (sender == null || body.length() == 0) return;
 
         final String finalSender  = sender;
         final String finalMessage = body.toString();
+        final int finalSubId      = subscriptionId;
 
-        Log.d(TAG, "📨 Inbound SMS from " + finalSender + " — forwarding to server");
+        Log.d(TAG, "📨 Inbound SMS from " + finalSender + " (SIM" + (finalSubId >= 1 ? finalSubId : "?") + ") — forwarding to server");
 
         // Always use a background thread in BroadcastReceiver
-        new Thread(() -> forwardToServer(context, finalSender, finalMessage)).start();
+        new Thread(() -> forwardToServer(context, finalSender, finalMessage, finalSubId)).start();
     }
 
-    private void forwardToServer(Context context, String sender, String message) {
+    private void forwardToServer(Context context, String sender, String message, int simSlot) {
         SharedPreferences prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE);
 
         String token = prefs.getString(PREF_INBOUND_TOKEN, "");
@@ -106,11 +113,13 @@ public class InboundSmsReceiver extends BroadcastReceiver {
                 payload.put("from",    sender);
                 payload.put("body",    message);
                 payload.put("gateway_id", "");
+                if (simSlot >= 1) payload.put("sim_slot", simSlot);
                 Log.d(TAG, "No inbound token — using unauthenticated format");
             } else {
                 // Token available — use authenticated format
                 payload.put("sender",  sender);
                 payload.put("message", message);
+                if (simSlot >= 1) payload.put("sim_slot", simSlot);
             }
             bodyBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
 

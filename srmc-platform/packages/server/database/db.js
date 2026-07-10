@@ -441,6 +441,8 @@ export function initDb() {
     "ALTER TABLE inbound ADD COLUMN gateway_id TEXT",
     // Track who owns/created this gateway (filters listing for non-admin users)
     "ALTER TABLE gateways ADD COLUMN owner_id TEXT",
+    // SIM slot that received this inbound message (1 = SIM1, 2 = SIM2)
+    "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0",
   ];
   for (const sql of migrations) {
     try {

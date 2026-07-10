@@ -59,7 +59,7 @@ router.get('/inbound', authMiddleware, (req, res) => {
     const flag = req.query.flag;
     const unread = req.query.unread;
 
-    let query = 'SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number';
+    let query = 'SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number, gateways.sim_carrier, gateways.sim2_carrier';
     const conditions = [];
     const params = [];
 
@@ -129,7 +129,7 @@ router.get('/inbound', authMiddleware, (req, res) => {
 
 function handleInboundWebhook(req, res) {
   try {
-    let { sender, message, from, body, gateway_id } = req.body;
+    let { sender, message, from, body, gateway_id, sim_slot } = req.body;
 
     let gatewayId = gateway_id;
 
@@ -178,10 +178,18 @@ function handleInboundWebhook(req, res) {
     `).get(finalSender);
     if (senderMsg) agentId = senderMsg.agent_id;
 
-    db.prepare('INSERT INTO inbound (id, from_number, body, flag, agent_id) VALUES (?, ?, ?, ?, ?)')
-      .run(id, finalSender, finalBody, flag, agentId);
+    const simSlot = parseInt(sim_slot) || 0;
 
-    const messageRecord = db.prepare('SELECT * FROM inbound WHERE id = ?').get(id);
+    db.prepare('INSERT INTO inbound (id, from_number, body, flag, agent_id, gateway_id, sim_slot) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, finalSender, finalBody, flag, agentId, gatewayId || null, simSlot);
+
+    const messageRecord = db.prepare(`
+      SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number,
+             gateways.sim_carrier, gateways.sim2_carrier
+      FROM inbound
+      LEFT JOIN gateways ON inbound.gateway_id = gateways.id
+      WHERE inbound.id = ?
+    `).get(id);
     // Enrich the broadcast message so the client gets linked_broadcast on real-time pushes too
     enrichInboundMessages([messageRecord]);
 
@@ -209,7 +217,7 @@ router.post('/webhook/inbound/:gatewayId', webhookLimiter, (req, res) => {
       return fail(res, 'Gateway ID is required', 400);
     }
 
-    let { sender, message, from, body } = req.body;
+    let { sender, message, from, body, sim_slot } = req.body;
     const finalSender = from || sender;
     const finalBody   = body || message;
 
@@ -239,10 +247,18 @@ router.post('/webhook/inbound/:gatewayId', webhookLimiter, (req, res) => {
     `).get(finalSender);
     if (senderMsg) agentId = senderMsg.agent_id;
 
-    db.prepare('INSERT INTO inbound (id, from_number, body, flag, agent_id, gateway_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, finalSender, finalBody, flag, agentId, gatewayId || null);
+    const simSlot = parseInt(sim_slot) || 0;
 
-    const messageRecord = db.prepare('SELECT * FROM inbound WHERE id = ?').get(id);
+    db.prepare('INSERT INTO inbound (id, from_number, body, flag, agent_id, gateway_id, sim_slot) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, finalSender, finalBody, flag, agentId, gatewayId || null, simSlot);
+
+    const messageRecord = db.prepare(`
+      SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number,
+             gateways.sim_carrier, gateways.sim2_carrier
+      FROM inbound
+      LEFT JOIN gateways ON inbound.gateway_id = gateways.id
+      WHERE inbound.id = ?
+    `).get(id);
     enrichInboundMessages([messageRecord]);
 
     broadcast({ type: 'inbound:new', message: messageRecord });

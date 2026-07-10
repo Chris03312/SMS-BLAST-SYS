@@ -324,6 +324,13 @@ export default function Inbound() {
                       </span>
                     </div>
                   )}
+                  {m.gateway_name && (
+                    <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--ink-4)' }}>
+                      <span style={{ fontWeight: 500 }}>{m.gateway_name}</span>
+                      {m.sim_carrier && <span>📱1 {m.sim_carrier}</span>}
+                      {m.sim2_carrier && <span>📱2 {m.sim2_carrier}</span>}
+                    </div>
+                  )}
                   {m.flag && (
                     <div style={{ marginTop: 4 }}>
                       <Pill status={m.flag} label={FLAG_LABELS[m.flag] || m.flag} />

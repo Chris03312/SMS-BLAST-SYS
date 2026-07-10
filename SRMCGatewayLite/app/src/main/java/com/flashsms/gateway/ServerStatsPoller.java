@@ -124,7 +124,7 @@ public class ServerStatsPoller {
 
         try {
             // 1. Sending status
-            String statusJson = httpGet(base + "/api/status");
+            String statusJson = httpGet(base + "/api/stats/status");
             JSONObject statusObj = new JSONObject(statusJson);
             stats.sendingActive  = !statusObj.optBoolean("canceled", false);
             stats.sendingMessage = statusObj.optString("message", "");
@@ -132,7 +132,7 @@ public class ServerStatsPoller {
             // 2. User-scoped stats — sent, failed, queued for THIS user only
             if (!userId.isEmpty()) {
                 try {
-                    String userJson = httpGet(base + "/api/user/stats/" + userId);
+                    String userJson = httpGet(base + "/api/stats/user/stats/" + userId);
                     JSONObject userObj = new JSONObject(userJson);
                     if (userObj.optBoolean("success", false)) {
                         JSONObject uData = userObj.getJSONObject("data");

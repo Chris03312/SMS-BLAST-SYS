@@ -46,23 +46,13 @@ import statsRoutes from './routes/stats.js';
 import activityRoutes from './routes/activity.js';
 import settingsRoutes from './routes/settings.js';
 
-// Read SERVER_HOST (includes protocol, e.g. http://192.168.3.239) and SERVER_PORT.
-// Parse the hostname out for server.listen(). Falls back to 0.0.0.0:3001.
+// Read SERVER_PORT from env. Falls back to 3001.
+// Server always binds to 0.0.0.0 so both LAN (192.168.x.x) and localhost
+// can reach it — this is required for ngrok (which connects to localhost).
+// SERVER_HOST is read separately for URL generation in the desktop app.
 function resolveServerConfig() {
-  const rawHost = process.env.SERVER_HOST || '';
   const port = parseInt(process.env.SERVER_PORT) || 3001;
-  let host = '0.0.0.0';
-  if (rawHost) {
-    try {
-      // If it includes a protocol, parse the hostname from it
-      if (rawHost.includes('://')) {
-        host = new URL(rawHost).hostname;
-      } else {
-        host = rawHost;
-      }
-    } catch { host = rawHost; }
-  }
-  return { host, port };
+  return { host: '0.0.0.0', port };
 }
 
 const { host: HOST, port: PORT } = resolveServerConfig();
@@ -78,8 +68,10 @@ app.use(express.json({ limit: '10mb' }));
 
 // Trust nginx reverse proxy headers (X-Forwarded-For, X-Forwarded-Proto, etc.)
 // so Express sees the real client IP instead of nginx's IP.
+// Set to 1 (single proxy hop) instead of true so express-rate-limit
+// can correctly identify the client IP for rate limiting.
 // This is needed when running behind nginx (both local and Docker).
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // ── Routes ────────────────────────────────────────────────────────────
 
@@ -92,6 +84,7 @@ app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api', statsRoutes); // backward compat: Android ServerStatsPoller calls /api/status and /api/user/stats/:userId
 app.use('/api/activity', activityRoutes);
 app.use('/api/settings', settingsRoutes);
 
