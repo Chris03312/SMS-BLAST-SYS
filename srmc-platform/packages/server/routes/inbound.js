@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
-import db from '../db.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import db from '../database/db.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { broadcast } from '../ws.js';
+import { broadcast } from '../services/ws.js';
 import { validateInboundToken } from '../services/gateway-service.js';
 
 const router = Router();

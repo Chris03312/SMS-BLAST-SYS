@@ -4,6 +4,7 @@ import Modal from '../../components/Modal.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import { formatDateShort } from '../../lib/format.js';
 
 export default function AdminAgents() {
@@ -16,6 +17,7 @@ export default function AdminAgents() {
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmToggleActive, setConfirmToggleActive] = useState(null);
+  const { toast } = useToast();
 
   useEffect(() => { load(); }, []);
 
@@ -50,13 +52,16 @@ export default function AdminAgents() {
       if (editItem) {
         const updated = await api.put(`/agents/${editItem.id}`, { display_name: form.display_name, ...(form.password ? { password: form.password } : {}) });
         setItems(prev => prev.map(a => a.id === editItem.id ? updated.agent : a));
+        toast(`Agent "${form.display_name}" updated`, 'success');
       } else {
         const a = await api.post('/agents', form);
         setItems(prev => [a.agent, ...prev]);
+        toast(`Agent "${form.display_name}" created`, 'success');
       }
       setShowModal(false);
     } catch (e) {
       setError(e.message);
+      toast(e.message, 'error');
     }
     setSaving(false);
   }
@@ -65,8 +70,9 @@ export default function AdminAgents() {
     try {
       await api.del(`/agents/${item.id}`);
       setItems(prev => prev.filter(x => x.id !== item.id));
+      toast(`Agent "${item.display_name}" deleted`, 'success');
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
     setConfirmDelete(null);
   }
@@ -76,8 +82,9 @@ export default function AdminAgents() {
       const newActive = item.active ? 0 : 1;
       const updated = await api.put(`/agents/${item.id}`, { active: newActive });
       setItems(prev => prev.map(a => a.id === item.id ? { ...a, active: updated.agent.active } : a));
+      toast(`Agent "${item.display_name}" ${newActive ? 'activated' : 'deactivated'}`, 'success');
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
     setConfirmToggleActive(null);
   }
@@ -88,11 +95,14 @@ export default function AdminAgents() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">People & Devices</div>
-          <h1>Agents</h1>
-          <div className="page-sub">
-            Manage agent accounts and their broadcast access.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">People & Devices</div>
+            <h1>Agents</h1>
+            <div className="page-sub">
+              Manage agent accounts and their broadcast access.
+            </div>
           </div>
         </div>
         <button className="btn-primary" onClick={openNew}>

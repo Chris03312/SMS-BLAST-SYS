@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
-import db from './db.js';
+import db from '../database/db.js';
 import { broadcast } from './ws.js';
 
 
@@ -15,7 +15,7 @@ function logActivity(userId, action, detail, level = 'info', campaignId = null) 
   try {
     db.prepare('INSERT INTO activity (id, user_id, action, detail, level, campaign_id) VALUES (?, ?, ?, ?, ?, ?)')
       .run(uuidv4(), userId, action, detail, level, campaignId);
-    broadcast({ type: 'activity:new', action, detail, level, campaign_id: campaignId, created_at: new Date().toISOString() });
+    broadcast({ type: 'activity:new', user_id: userId, action, detail, level, campaign_id: campaignId, created_at: new Date().toISOString() });
   } catch (e) {
     console.error('[broadcast-engine] logActivity error:', e.message);
   }
@@ -37,7 +37,7 @@ export async function startBroadcast(broadcastId) {
     logActivity(broadcastRecord.agent_id, 'broadcast:failed',
       `Broadcast ${broadcastId} queued but not started — at max concurrent limit (${maxConcurrent}). Cancel another broadcast first or increase the limit in Settings.`,
       'error', broadcastRecord.campaign_id);
-    broadcast({ type: 'broadcast:complete', broadcastId, status: 'failed', sent: 0, failed: 0, total: broadcastRecord.total, completed_at: new Date().toISOString() });
+    broadcast({ type: 'broadcast:complete', broadcastId, status: 'failed', sent: 0, failed: 0, total: broadcastRecord.total, completed_at: new Date().toISOString(), agent_id: broadcastRecord.agent_id });
     return;
   }
 
@@ -57,6 +57,7 @@ export async function startBroadcast(broadcastId) {
   if (gateways.length === 0) {
     db.prepare("UPDATE broadcasts SET status = 'failed', completed_at = ? WHERE id = ?").run(new Date().toISOString(), broadcastId);
     logActivity(broadcastRecord.agent_id, 'broadcast:failed', `No active gateways available for broadcast ${broadcastId}`, 'error', broadcastRecord.campaign_id);
+    broadcast({ type: 'broadcast:complete', broadcastId, status: 'failed', sent: 0, failed: 0, total: broadcastRecord.total, completed_at: new Date().toISOString(), agent_id: broadcastRecord.agent_id });
     return;
   }
 
@@ -86,6 +87,7 @@ export async function startBroadcast(broadcastId) {
 
   broadcast({
     type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt,
+    agent_id: broadcastRecord.agent_id,
     gateways: gateways.map(g => ({ id: g.id, name: g.name }))
   });
 
@@ -174,7 +176,7 @@ export async function startBroadcast(broadcastId) {
           if (gpRow && gpRow.value === 'true') {
             state.paused = true;
             db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
-            broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
+            broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused', agent_id: broadcastRecord.agent_id });
             logActivity(broadcastRecord.agent_id, 'broadcast:paused',
               `Broadcast paused — globally paused by admin.`,
               'warn', broadcastRecord.campaign_id);
@@ -196,10 +198,10 @@ export async function startBroadcast(broadcastId) {
         // Check pause
         if (state.paused) {
           db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
-          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
+          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused', agent_id: broadcastRecord.agent_id });
           await new Promise((resolve) => { state._resume = resolve; });
           db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
-          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', agent_id: broadcastRecord.agent_id });
         }
 
         // ── Time window check (global admin window + per-broadcast schedule) ──
@@ -296,7 +298,7 @@ export async function startBroadcast(broadcastId) {
           logActivity(broadcastRecord.agent_id, 'broadcast:queued', `Message queued for ${num} [Turbo]`, 'info', broadcastRecord.campaign_id);
           // ── Real-time progress after EVERY PULL release ──
           saveProgress();
-          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', agent_id: broadcastRecord.agent_id });
         }
 
         // ── PUSH gateways: send ALL in parallel ─
@@ -351,12 +353,12 @@ export async function startBroadcast(broadcastId) {
             }
             // ── Real-time progress after EVERY status change ──
             saveProgress();
-            broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+            broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', agent_id: broadcastRecord.agent_id });
           }
         }
 
         saveProgress();
-        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', agent_id: broadcastRecord.agent_id });
       }
     } catch (e) {
       console.error('[broadcast-engine] Turbo error:', e);
@@ -367,7 +369,7 @@ export async function startBroadcast(broadcastId) {
     if (wasCancelled) {
       db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
         .run(new Date().toISOString(), sent, failed, broadcastId);
-      broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total, completed_at: new Date().toISOString() });
+      broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total, completed_at: new Date().toISOString(), agent_id: broadcastRecord.agent_id });
       logActivity(broadcastRecord.agent_id, 'broadcast:cancel',
         `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent [Turbo]`,
         'warn', broadcastRecord.campaign_id);
@@ -417,7 +419,7 @@ export async function startBroadcast(broadcastId) {
       if (state.cancel) {
         db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
           .run(new Date().toISOString(), sent, failed, broadcastId);
-        broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total, completed_at: new Date().toISOString() });
+        broadcast({ type: 'broadcast:complete', broadcastId, status: 'cancelled', sent, failed, total, completed_at: new Date().toISOString(), agent_id: broadcastRecord.agent_id });
         logActivity(broadcastRecord.agent_id, 'broadcast:cancel', `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent`, 'warn', broadcastRecord.campaign_id);
         running.delete(broadcastId);
         return;
@@ -429,7 +431,7 @@ export async function startBroadcast(broadcastId) {
         if (gpRow && gpRow.value === 'true') {
           state.paused = true;
           db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
-          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
+          broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused', agent_id: broadcastRecord.agent_id });
           logActivity(broadcastRecord.agent_id, 'broadcast:paused',
             `Broadcast paused — globally paused by admin.`,
             'warn', broadcastRecord.campaign_id);
@@ -470,10 +472,10 @@ export async function startBroadcast(broadcastId) {
       // ── Pause check ────────────────────────────────────────────────────
       if (state.paused) {
         db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
-        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused' });
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'paused', agent_id: broadcastRecord.agent_id });
         await new Promise((resolve) => { state._resume = resolve; });
         db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
-        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending' });
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', agent_id: broadcastRecord.agent_id });
       }
 
       // ── Daily cap check ───────────────────────────────────────────────
@@ -541,13 +543,13 @@ export async function startBroadcast(broadcastId) {
         if (ok) sent++; else failed++;
         // ── Real-time progress after EVERY message ──
         saveProgress();
-        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt });
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt, agent_id: broadcastRecord.agent_id });
       } else {
         // PULL gateway — release to 'pending' so the phone picks it up
         db.prepare("UPDATE messages SET status = 'pending' WHERE id = ? AND status IN ('queued', 'pending')").run(msgRecord.id);
         // ── Real-time progress after EVERY PULL release ──
         saveProgress();
-        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt });
+        broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: 'sending', started_at: startedAt, agent_id: broadcastRecord.agent_id });
       }
       if (broadcastRecord.distribution === 'round-robin' && gateways.length > 1 && broadcastRecord.sim_mode === 'round-robin') {
         normalCombinedPos++;
@@ -594,13 +596,13 @@ export function onMessageAcked(broadcastId) {
   const total = b.total;
 
   db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(sent, failed, broadcastId);
-  broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: b.status });
+  broadcast({ type: 'broadcast:progress', broadcastId, sent, failed, total, status: b.status, agent_id: b.agent_id });
 
   if (open === 0) {
     const completedAt = new Date().toISOString();
     db.prepare("UPDATE broadcasts SET status = 'done', completed_at = ?, sent = ?, failed = ? WHERE id = ?")
       .run(completedAt, sent, failed, broadcastId);
-    broadcast({ type: 'broadcast:complete', broadcastId, status: 'done', sent, failed, total, completed_at: completedAt });
+    broadcast({ type: 'broadcast:complete', broadcastId, status: 'done', sent, failed, total, completed_at: completedAt, agent_id: b.agent_id });
     logActivity(b.agent_id, 'broadcast:done',
       `Broadcast ${broadcastId} done — ${sent}/${total} sent, ${failed} failed`, 'info', b.campaign_id);
   }
@@ -617,9 +619,10 @@ export function pauseBroadcast(broadcastId) {
   if (!state) return false;
   state.paused = true;
   db.prepare("UPDATE broadcasts SET status = 'paused' WHERE id = ?").run(broadcastId);
-  broadcast({ type: 'broadcast:paused', broadcastId });
+  const pauseBcast = db.prepare('SELECT agent_id, campaign_id FROM broadcasts WHERE id = ?').get(broadcastId);
+  broadcast({ type: 'broadcast:paused', broadcastId, agent_id: pauseBcast?.agent_id || null });
   logActivity(
-    db.prepare('SELECT agent_id, campaign_id FROM broadcasts WHERE id = ?').get(broadcastId)?.agent_id || null,
+    pauseBcast?.agent_id || null,
     'broadcast:paused',
     `Broadcast ${broadcastId} paused by user`,
     'info'
@@ -633,9 +636,10 @@ export function resumeBroadcast(broadcastId) {
   state.paused = false;
   if (state._resume) { state._resume(); state._resume = null; }
   db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(broadcastId);
-  broadcast({ type: 'broadcast:resumed', broadcastId });
+  const resumeBcast = db.prepare('SELECT agent_id, campaign_id FROM broadcasts WHERE id = ?').get(broadcastId);
+  broadcast({ type: 'broadcast:resumed', broadcastId, agent_id: resumeBcast?.agent_id || null });
   logActivity(
-    db.prepare('SELECT agent_id, campaign_id FROM broadcasts WHERE id = ?').get(broadcastId)?.agent_id || null,
+    resumeBcast?.agent_id || null,
     'broadcast:resumed',
     `Broadcast ${broadcastId} resumed by user`,
     'info'

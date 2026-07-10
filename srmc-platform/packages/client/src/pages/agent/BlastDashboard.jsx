@@ -8,6 +8,7 @@ import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import { formatTime } from '../../lib/format.js';
 
 const FLAG_LABELS = {
@@ -89,6 +90,7 @@ export default function BlastDashboard() {
 
   // Restore draft from sessionStorage
   const savedDraft = useRef(loadDraft());
+  const lastProgressRef = useRef({});
 
   const [selectedTemplate, setSelectedTemplate] = useState(savedDraft.current?.selectedTemplate ?? null);
   const [selectedCampaign, setSelectedCampaign] = useState(savedDraft.current?.selectedCampaign ?? '');
@@ -113,22 +115,25 @@ export default function BlastDashboard() {
   const [statsFailed, setStatsFailed] = useState(0);
   const [statsTotal, setStatsTotal] = useState(0);
   const [broadcastsPaused, setBroadcastsPaused] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
-    api.get('/templates').then(d => setTemplates(d.templates || [])).catch(() => { });
-    api.get('/gateways').then(d => setGateways(d.gateways || [])).catch(() => { });
-    api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(() => { });
-    api.get('/activity?limit=20').then(d => setActivities(d.activities || [])).catch(() => { });
-    api.get('/inbound?limit=5').then(d => setInboundRecent(d.messages || [])).catch(() => { });
+    api.get('/templates').then(d => setTemplates(d.templates || [])).catch(e => console.error('[compose] Load templates:', e));
+    api.get('/gateways').then(d => setGateways(d.gateways || [])).catch(e => console.error('[compose] Load gateways:', e));
+    api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(e => console.error('[compose] Load campaigns:', e));
+    api.get('/activity?limit=20').then(d => setActivities(d.activities || [])).catch(e => console.error('[compose] Load activity:', e));
+    api.get('/inbound?limit=5').then(d => setInboundRecent(d.messages || [])).catch(e => console.error('[compose] Load inbound:', e));
     api.get('/broadcasts?status=sending&limit=10').then(d => {
       if (d.broadcasts && d.broadcasts.length > 0) {
         const map = {};
         for (const b of d.broadcasts) {
           map[b.id] = { sent: b.sent || 0, failed: b.failed || 0, total: b.total || 0, status: b.status, message: b.message, started_at: b.started_at, completed_at: b.completed_at };
+          // Initialize progress ref so first live update computes correct delta
+          lastProgressRef.current[b.id] = { sent: b.sent || 0, failed: b.failed || 0 };
         }
         setActiveBroadcasts(map);
       }
-    }).catch(() => { });
+    }).catch(e => console.error('[compose] Load active broadcasts:', e));
 
     // Load admin settings (delay default, time window, daily cap, turbo delay, global pause)
     api.get('/settings').then(d => {
@@ -139,14 +144,14 @@ export default function BlastDashboard() {
       setDelayOptions(buildDelayOptions(td));
       // Only set delay from settings if no saved draft
       if (d.delay && !savedDraft.current) setDelayMs(parseInt(d.delay));
-    }).catch(() => { });
+    }).catch(e => console.error('[compose] Load settings:', e));
 
     // Load stats
     api.get('/stats').then(d => {
       setStatsSent(d.sent_today || 0);
       setStatsFailed(d.failed_today || 0);
       setStatsTotal(d.user_total_all_time || 0);
-    }).catch(() => { });
+    }).catch(e => console.error('[compose] Load stats:', e));
 
     setInitialDataLoaded(true);
   }, []);
@@ -181,13 +186,40 @@ export default function BlastDashboard() {
   }, [selectedTemplate, selectedCampaign, message, recipients, selectedGateways, distribution, delayMs, simMode, simRoundStart, initialDataLoaded]);
 
   useWS((event) => {
+    // Only process broadcast events belonging to this agent
+    if (event.agent_id && user?.role === 'agent' && event.agent_id !== user?.id) return;
     if (event.type === 'broadcast:progress' && event.broadcastId) {
+      // Compute delta from last known progress to update live stats cards
+      const prev = lastProgressRef.current[event.broadcastId] || { sent: 0, failed: 0 };
+      const sentDelta = Math.max(0, (event.sent ?? 0) - (prev.sent ?? 0));
+      const failedDelta = Math.max(0, (event.failed ?? 0) - (prev.failed ?? 0));
+      lastProgressRef.current[event.broadcastId] = { sent: event.sent ?? 0, failed: event.failed ?? 0 };
+      if (sentDelta > 0) setStatsSent(s => s + sentDelta);
+      if (failedDelta > 0) setStatsFailed(s => s + failedDelta);
+
       setActiveBroadcasts(prev => ({
         ...prev,
         [event.broadcastId]: { sent: event.sent, failed: event.failed, total: event.total, status: event.status, message: prev[event.broadcastId]?.message, started_at: event.started_at || prev[event.broadcastId]?.started_at },
       }));
     }
     if (event.type === 'broadcast:complete' && event.broadcastId) {
+      // Finalize stats from any remaining delta (catches edge cases where last progress didn't match final)
+      const prev = lastProgressRef.current[event.broadcastId] || { sent: 0, failed: 0 };
+      const sentDelta = Math.max(0, (event.sent ?? 0) - (prev.sent ?? 0));
+      const failedDelta = Math.max(0, (event.failed ?? 0) - (prev.failed ?? 0));
+      if (sentDelta > 0) setStatsSent(s => s + sentDelta);
+      if (failedDelta > 0) setStatsFailed(s => s + failedDelta);
+
+      // Show a toast with broadcast results
+      const total = event.total || 0;
+      const sent = event.sent || 0;
+      const failed = event.failed || 0;
+      if (failed > 0) {
+        toast(`Broadcast complete — ${sent}/${total} sent, ${failed} failed`, 'warning');
+      } else {
+        toast(`Broadcast complete — ${sent}/${total} sent successfully`, 'success');
+      }
+
       setActiveBroadcasts(prev => {
         const next = { ...prev };
         if (next[event.broadcastId]) {
@@ -200,7 +232,7 @@ export default function BlastDashboard() {
         if (d.messages && d.messages.length > 0) {
           setFailedMessages(prev => [...prev, ...d.messages]);
         }
-      }).catch(() => { });
+      }).catch(e => console.error('[compose] Load failed messages:', e));
     }
     if (event.type === 'inbound:new') {
       // Agents only see messages belonging to their own broadcasts
@@ -208,6 +240,8 @@ export default function BlastDashboard() {
       setInboundRecent(prev => [event.message, ...prev].slice(0, 5));
     }
     if (event.type === 'activity:new') {
+      // Agents only see their own activity events
+      if (event.user_id && user?.role === 'agent' && event.user_id !== user?.id) return;
       setActivities(prev => [{ ...event, id: Date.now() }, ...prev].slice(0, 20));
     }
     if (event.type === 'broadcasts:global-pause') {
@@ -282,6 +316,7 @@ export default function BlastDashboard() {
         sim_round_start: (simMode === 'round-robin' || simMode === 'parallel') ? simRoundStart : undefined,
       });
       const bid = result.broadcast.id;
+      lastProgressRef.current[bid] = { sent: 0, failed: 0 };
       setActiveBroadcasts(prev => ({
         ...prev,
         [bid]: { sent: 0, failed: 0, total: result.broadcast.total, status: 'sending', message: result.broadcast.message },
@@ -317,7 +352,9 @@ export default function BlastDashboard() {
         delete next[broadcastId];
         return next;
       });
-    } catch (e) { }
+    } catch (e) {
+      console.error('[compose] Cancel broadcast:', e);
+    }
   }
 
   const activeBcList = Object.entries(activeBroadcasts).filter(([_, b]) => b.status === 'sending' || b.status === 'paused');
@@ -339,8 +376,8 @@ export default function BlastDashboard() {
               {activeBcList.length === 0 && (
                 <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>No active broadcast.</div>
               )}
-              {activeBcList.map(([id, bc]) => {
-                const pct = bc.total > 0 ? Math.round((bc.sent / bc.total) * 100) : 0;
+              {activeBcList.map(([id, bc]) => {                  const done = (bc.sent || 0) + (bc.failed || 0);
+                  const pct = bc.total > 0 ? Math.round((done / bc.total) * 100) : 0;
                 return (
                   <div key={id}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -351,8 +388,11 @@ export default function BlastDashboard() {
                         {bc.sent}/{bc.total}
                       </span>
                     </div>
-                    <div style={{ height: 5, background: 'var(--bg-soft)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: bc.status === 'paused' ? 'var(--warn)' : 'var(--ok)', borderRadius: 3, transition: 'width 0.4s' }} />
+                    <div style={{ height: 5, background: 'var(--bg-soft)', borderRadius: 3, overflow: 'hidden', marginBottom: 4, display: 'flex' }}>
+                      <div style={{ height: '100%', width: `${bc.total > 0 ? Math.round((bc.sent||0) / bc.total * 100) : 0}%`, background: 'var(--ok)', transition: 'width 0.4s' }} />
+                      {(bc.failed||0) > 0 && (
+                        <div style={{ height: '100%', width: `${bc.total > 0 ? Math.round((bc.failed||0) / bc.total * 100) : 0}%`, background: 'var(--err)', transition: 'width 0.4s' }} />
+                      )}
                     </div>
                     <div style={{ fontSize: 9.5, color: 'var(--ink-4)', fontFamily: 'var(--mono)', marginBottom: 4, display: 'flex', gap: 8 }}>
                       {bc.started_at && <span style={{ color: 'var(--ok)' }}>▶ {formatTime(bc.started_at)}</span>}
@@ -825,7 +865,7 @@ export default function BlastDashboard() {
               <button
                 type="button"
                 className="btn-primary"
-                disabled={selectedGateways.length === 0 || !message || recipientList.length === 0}
+                disabled={selectedGateways.length === 0 || !message || recipientList.length === 0 || !selectedCampaign}
                 style={{ width: '100%' }}
                 onClick={() => setShowReview(true)}
               >

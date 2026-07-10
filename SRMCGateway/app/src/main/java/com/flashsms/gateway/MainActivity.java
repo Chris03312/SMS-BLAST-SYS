@@ -525,12 +525,8 @@ public class MainActivity extends AppCompatActivity {
         });
 
         statsPoller.setUserId(loggedInUserId);
-        // Outbound sending runs inside GatewayService (so it works in the
-        // background); MainActivity only drives the stats display.
-
-        if (GatewayService.isRunning) {
-            statsPoller.start();
-        }
+        // Stats are independent of the gateway — show immediately on login
+        statsPoller.start();
     }
 
     // ── View binding ──────────────────────────────────────────────────
@@ -571,7 +567,17 @@ public class MainActivity extends AppCompatActivity {
         etSrmcPort     = findViewById(R.id.etSrmcPort);
         btnCheckServer = findViewById(R.id.btnCheckServer);
         tvSrmcStatus   = findViewById(R.id.tvSrmcStatus);
+
+        // ── Inbound webhook views ─────────────────────────────────
+        tvWebhookUrl       = findViewById(R.id.tvWebhookUrl);
+        btnRegisterWebhook = findViewById(R.id.btnRegisterWebhook);
+        tvWebhookStatus    = findViewById(R.id.tvWebhookStatus);
+
         // Populate webhook URL from stored prefs
+        String storedWebhook = prefs.getString(InboundSmsReceiver.PREF_INBOUND_WEBHOOK, "");
+        tvWebhookUrl.setText(storedWebhook.isEmpty()
+                ? getString(R.string.label_webhook_url_placeholder)
+                : storedWebhook);
     }
 
     private void initRecycler() {
@@ -655,6 +661,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnCheckServer.setOnClickListener(v -> checkSrmcServerNow());
+        btnRegisterWebhook.setOnClickListener(v -> performWebhookTest());
     }
 
     // ── Gateway toggle ────────────────────────────────────────────────
@@ -883,7 +890,7 @@ public class MainActivity extends AppCompatActivity {
         updateStatusUi();
         detectSims();
         refreshLog();
-        if (GatewayService.isRunning) statsPoller.pollNow();
+        statsPoller.pollNow();
     }
 
     @Override

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
-import db from '../db.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import db from '../database/db.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 import { authMiddleware, adminOnly, superAdminOnly } from '../middleware/auth.js';
 
 const router = Router();

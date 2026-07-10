@@ -7,6 +7,7 @@ import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber } from '../../lib/format.js';
+import { useToast } from '../../context/ToastContext.jsx';
 
 const EMPTY_FORM = { name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' };
 
@@ -445,6 +446,7 @@ export default function Gateway() {
   const [serverInfo, setServerInfo] = useState(null);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     api.get('/gateways')
@@ -515,7 +517,7 @@ export default function Gateway() {
       await api.del(`/gateways/${gw.id}`);
       setGateways(prev => prev.filter(g => g.id !== gw.id));
     } catch (e) {
-      alert('Failed to remove: ' + e.message);
+      toast('Failed to remove: ' + e.message, 'error');
     }
     setConfirmDelete(null);
   }
@@ -560,10 +562,13 @@ export default function Gateway() {
 
       {/* Page head */}
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Devices</div>
-          <h1>Gateways</h1>
-          <div className="page-sub">Android relay devices your broadcasts route through.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Devices</div>
+            <h1>Gateways</h1>
+            <div className="page-sub">Android relay devices your broadcasts route through.</div>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <LiveBadge label="Live" />

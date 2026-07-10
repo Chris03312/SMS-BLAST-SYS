@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
+import db from '../database/db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 
 const router = Router();
 

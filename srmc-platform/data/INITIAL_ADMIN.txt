@@ -1,7 +1,7 @@
 SMS Platform — initial admin credentials
-Generated: 2026-07-06T04:41:52.186Z
+Generated: 2026-07-06T11:26:59.212Z
 
   Username: admin
-  Password: uW6OhWP1OyN
+  Password: Z9BodsS7Imzg
 
 Log in with these, then change the password (Agents page). Delete this file afterwards.

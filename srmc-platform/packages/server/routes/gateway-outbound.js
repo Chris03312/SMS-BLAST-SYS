@@ -14,10 +14,10 @@
 
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
-import { broadcast } from '../ws.js';
+import db from '../database/db.js';
+import { broadcast } from '../services/ws.js';
 import { validateInboundToken, trackGatewayResult } from '../services/gateway-service.js';
-import { onMessageAcked } from '../broadcast-engine.js';
+import { onMessageAcked } from '../services/broadcast-engine.js';
 function resolveSender(gateway) {
   if (!gateway) return 'unknown';
   if (gateway.number) return gateway.number;

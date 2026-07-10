@@ -4,8 +4,10 @@ import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import { formatTime } from '../../lib/format.js';
 
 // ── Broadcast Detail Modal ────────────────────────────────────────────────
@@ -26,7 +28,9 @@ function BroadcastDetail({ broadcast, onClose }) {
       const data = await api.get(`/broadcasts/${broadcast.id}/messages?${params}`);
       setMessages(data.messages || []);
       setTotal(data.total || 0);
-    } catch (_) { }
+    } catch (e) {
+      console.error('[agent-dashboard] Load messages:', e);
+    }
   }, [broadcast.id, filter, page]);
 
   // Full load with loading spinner (first load + filter/page change)
@@ -192,9 +196,19 @@ function BroadcastDetail({ broadcast, onClose }) {
           <span>{total} messages · {messages.filter(m => m.status === 'sent').length} sent · {messages.filter(m => m.status === 'failed').length} failed</span>
           <div className="pager" style={{ margin: 0 }}>
             <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>‹</button>
-            {pages > 1 && Array.from({ length: Math.min(pages, 5) }, (_, i) => (
-              <button key={i} className={page === i ? 'on' : ''} onClick={() => setPage(i)}>{i + 1}</button>
-            ))}
+            {pages > 1 && (() => {
+              const maxVisible = 5;
+              const half = Math.floor(maxVisible / 2);
+              let start = Math.max(0, page - half);
+              let end = Math.min(pages, start + maxVisible);
+              if (end - start < maxVisible) start = Math.max(0, end - maxVisible);
+              return Array.from({ length: end - start }, (_, i) => {
+                const p = start + i;
+                return (
+                  <button key={p} className={page === p ? 'on' : ''} onClick={() => setPage(p)}>{p + 1}</button>
+                );
+              });
+            })()}
             <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}>›</button>
           </div>
         </div>
@@ -206,6 +220,7 @@ function BroadcastDetail({ broadcast, onClose }) {
 const STATUSES = ['all', 'sending', 'paused', 'done', 'failed', 'cancelled'];
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [broadcasts, setBroadcasts] = useState([]);
   const [total, setTotal] = useState(0);
@@ -237,7 +252,9 @@ export default function Dashboard() {
         active: list.filter(b => b.status === 'sending').length,
         paused: list.filter(b => b.status === 'paused').length,
       });
-    } catch (e) { }
+    } catch (e) {
+      console.error('[agent-dashboard] Load broadcasts:', e);
+    }
     setLoading(false);
   }
 
@@ -245,6 +262,8 @@ export default function Dashboard() {
 
   // Real-time WebSocket updates
   useWS((event) => {
+    // Only process broadcast events belonging to this agent
+    if (event.agent_id && user?.role === 'agent' && event.agent_id !== user?.id) return;
     if (event.type === 'broadcast:progress' || event.type === 'broadcast:complete') {
       setBroadcasts(prev => {
         const idx = prev.findIndex(b => b.id === event.broadcastId);
@@ -276,6 +295,15 @@ export default function Dashboard() {
       }
       if (event.type === 'broadcast:complete') {
         setStats(s => ({ ...s, active: Math.max(0, s.active - 1) }));
+        // Show toast with results
+        const total = event.total || 0;
+        const sent = event.sent || 0;
+        const failed = event.failed || 0;
+        if (failed > 0) {
+          toast(`Broadcast complete — ${sent}/${total} sent, ${failed} failed`, 'warning');
+        } else {
+          toast(`Broadcast complete — ${sent}/${total} sent successfully`, 'success');
+        }
         // Re-run load to sync from server
         loadBroadcasts();
       }
@@ -338,12 +366,13 @@ export default function Dashboard() {
 
   // ── Helpers ──────────────────────────────────────────────────────
 
-  function pct(sent, total) {
+  function pct(sent, failed, total) {
     if (!total || total === 0) return 0;
-    return Math.round((sent / total) * 100);
+    return Math.round(((sent || 0) + (failed || 0)) / total * 100);
   }
 
-  function progressColor(p) {
+  function progressColor(p, failed) {
+    if ((failed || 0) > 0) return 'var(--err)';
     if (p >= 100) return 'var(--ok)';
     if (p >= 50) return 'var(--brand-1)';
     if (p >= 25) return 'var(--warn)';
@@ -364,6 +393,7 @@ export default function Dashboard() {
 
   const [detailBroadcastId, setDetailBroadcastId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  const { toast } = useToast();
 
   // Derive live-updating detail broadcast from the broadcasts array
   const detailBroadcast = detailBroadcastId
@@ -398,12 +428,15 @@ export default function Dashboard() {
         <BroadcastDetail broadcast={detailBroadcast} onClose={() => setDetailBroadcastId(null)} />
       )}
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Overview</div>
-          <h1>Dashboard</h1>
-          <div className="page-sub">
-            Real-time broadcast monitoring and control center.
-            Broadcasts run in the background — navigate freely while they send.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Overview</div>
+            <h1>Dashboard</h1>
+            <div className="page-sub">
+              Real-time broadcast monitoring and control center.
+              Broadcasts run in the background — navigate freely while they send.
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -517,8 +550,8 @@ export default function Dashboard() {
             )}
             {broadcasts.map(b => {
               // Count both sent and delivered as progress (engine stores both in b.sent)
-              const progress = pct(b.sent, b.total);
-              const color = progressColor(progress);
+              const progress = pct(b.sent, b.failed, b.total);
+              const color = progressColor(progress, b.failed);
               const isSending = b.status === 'sending';
               const isPaused = b.status === 'paused';
               const isActive = isSending || isPaused;
@@ -595,16 +628,25 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{
                         flex: 1, height: 8, background: 'var(--bg-soft)',
-                        borderRadius: 4, overflow: 'hidden',
+                        borderRadius: 4, overflow: 'hidden', display: 'flex',
                       }}>
                         <div style={{
-                          height: '100%', width: `${Math.max(progress, isActive ? 2 : 0)}%`,
-                          background: color,
-                          borderRadius: 4,
-                          transition: 'width 0.5s ease, background 0.3s',
-                          minWidth: isActive ? 4 : 0,
-                          boxShadow: isSending ? `0 0 6px ${color}40` : 'none',
+                          height: '100%',
+                          width: `${Math.max(b.total > 0 ? Math.round((b.sent||0) / b.total * 100) : 0, isSending ? 2 : 0)}%`,
+                          background: 'var(--ok)',
+                          transition: 'width 0.5s ease',
+                          minWidth: isSending ? 4 : 0,
+                          boxShadow: isSending ? '0 0 6px rgba(5,150,105,0.4)' : 'none',
                         }} />
+                        {(b.failed||0) > 0 && (
+                          <div style={{
+                            height: '100%',
+                            width: `${Math.max(b.total > 0 ? Math.round((b.failed||0) / b.total * 100) : 0, isSending ? 2 : 0)}%`,
+                            background: 'var(--err)',
+                            transition: 'width 0.5s ease',
+                            minWidth: isSending ? 4 : 0,
+                          }} />
+                        )}
                       </div>
                       <span className="num" style={{
                         fontSize: 11, fontWeight: 600, minWidth: 36, textAlign: 'left',
@@ -795,9 +837,19 @@ export default function Dashboard() {
           </span>
           <div className="pager">
             <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>‹</button>
-            {Array.from({ length: Math.min(pages, 5) }, (_, i) => (
-              <button key={i} className={page === i ? 'on' : ''} onClick={() => setPage(i)}>{i + 1}</button>
-            ))}
+            {(() => {
+              const maxVisible = 5;
+              const half = Math.floor(maxVisible / 2);
+              let start = Math.max(0, page - half);
+              let end = Math.min(pages, start + maxVisible);
+              if (end - start < maxVisible) start = Math.max(0, end - maxVisible);
+              return Array.from({ length: end - start }, (_, i) => {
+                const p = start + i;
+                return (
+                  <button key={p} className={page === p ? 'on' : ''} onClick={() => setPage(p)}>{p + 1}</button>
+                );
+              });
+            })()}
             <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}>›</button>
           </div>
         </div>

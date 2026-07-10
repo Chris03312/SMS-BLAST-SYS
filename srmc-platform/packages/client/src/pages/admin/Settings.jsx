@@ -3,6 +3,7 @@ import AdminShell from '../../components/AdminShell.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import { setTimezone } from '../../lib/format.js';
 
 // All sections in display order
@@ -28,6 +29,7 @@ export default function Settings() {
   const [ngrok, setNgrok]       = useState({ running: false, url: null, webhookUrl: null });
   const [ngrokBusy, setNgrokBusy] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const { toast } = useToast();
 
   // One ref per section
   const sectionRefs = useRef({});
@@ -98,8 +100,9 @@ export default function Settings() {
       if (updated.timezone) setTimezone(updated.timezone);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      toast('Settings saved', 'success');
     } catch (err) {
-      alert('Failed to save: ' + err.message);
+      toast('Failed to save: ' + err.message, 'error');
     }
     setSaving(false);
   }
@@ -119,9 +122,10 @@ export default function Settings() {
       if (d.success) {
         setNgrok({ running: true, url: d.url, webhookUrl: d.webhookUrl });
         setForm(p => ({ ...p, public_url: d.url }));
+        toast('Ngrok tunnel started', 'success');
       }
     } catch (e) {
-      alert('Failed to start ngrok: ' + e.message);
+      toast('Failed to start ngrok: ' + e.message, 'error');
     }
     setNgrokBusy(false);
   }
@@ -131,8 +135,9 @@ export default function Settings() {
     try {
       await api.post('/ngrok/stop', {});
       setNgrok({ running: false, url: null, webhookUrl: null });
+      toast('Ngrok tunnel stopped', 'info');
     } catch (e) {
-      alert('Failed to stop ngrok: ' + e.message);
+      toast('Failed to stop ngrok: ' + e.message, 'error');
     }
     setNgrokBusy(false);
   }
@@ -204,10 +209,13 @@ export default function Settings() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0, paddingBottom: 72 }}>
 
             {/* Page heading */}
-            <div style={{ marginBottom: 24 }}>
-              <div className="eyebrow">System</div>
-              <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', marginTop: 4 }}>Settings</h1>
-              <div className="page-sub">Platform configuration for your SMS workspace.</div>
+            <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14 }}>
+              <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+              <div>
+                <div className="eyebrow">System</div>
+                <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', marginTop: 4 }}>Settings</h1>
+                <div className="page-sub">Platform configuration for your SMS workspace.</div>
+              </div>
             </div>
 
             {/* ── Account ── */}
@@ -356,7 +364,8 @@ export default function Settings() {
                       try {
                         await api.post('/settings/toggle-pause', { paused: !isPaused });
                         setForm(p => ({ ...p, broadcasts_globally_paused: String(!isPaused) }));
-                      } catch (e) { alert('Failed: ' + e.message); }
+                        toast(isPaused ? 'Broadcasting resumed' : 'Broadcasting paused', isPaused ? 'success' : 'warning');
+                      } catch (e) { toast('Failed: ' + e.message, 'error'); }
                     }}
                     style={{
                       padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer',
@@ -561,7 +570,7 @@ export default function Settings() {
                     type="button"
                     className="btn-ghost"
                     style={{ fontSize: 11, borderRadius: '0 8px 8px 0', borderLeft: 'none', whiteSpace: 'nowrap' }}
-                    onClick={() => navigator.clipboard.writeText(webhookUrl).then(() => alert('Copied!')).catch(() => {})}
+                    onClick={() => navigator.clipboard.writeText(webhookUrl).then(() => toast('Copied to clipboard', 'info')).catch(() => {})}
                   >
                     Copy
                   </button>
@@ -588,7 +597,7 @@ export default function Settings() {
                           type="button"
                           className="btn-ghost"
                           style={{ fontSize: 11, padding: '5px 10px', whiteSpace: 'nowrap' }}
-                          onClick={() => navigator.clipboard.writeText(webhookUrl).then(() => alert('Webhook URL copied!')).catch(() => {})}
+                          onClick={() => navigator.clipboard.writeText(webhookUrl).then(() => toast('Webhook URL copied', 'info')).catch(() => {})}
                         >
                           Copy URL
                         </button>
@@ -635,8 +644,8 @@ export default function Settings() {
                     onConfirm: async () => {
                       try {
                         await api.post('/settings/purge-activity');
-                        alert('Activity log purged.');
-                      } catch (e) { alert('Failed: ' + e.message); }
+                        toast('Activity log purged', 'success');
+                      } catch (e) { toast('Failed: ' + e.message, 'error'); }
                       setConfirmAction(null);
                     },
                   })}
@@ -657,8 +666,8 @@ export default function Settings() {
                           setForm(res.settings);
                           if (res.settings.timezone) setTimezone(res.settings.timezone);
                         }
-                        alert('Settings reset to factory defaults.');
-                      } catch (e) { alert('Failed: ' + e.message); }
+                        toast('Settings reset to factory defaults', 'success');
+                      } catch (e) { toast('Failed: ' + e.message, 'error'); }
                       setConfirmAction(null);
                     },
                   })}
@@ -674,8 +683,8 @@ export default function Settings() {
                     onConfirm: async () => {
                       try {
                         await api.post('/settings/revoke-sessions');
-                        alert('All sessions revoked. Gateways must log in again.');
-                      } catch (e) { alert('Failed: ' + e.message); }
+                        toast('All sessions revoked — gateways must log in again', 'success');
+                      } catch (e) { toast('Failed: ' + e.message, 'error'); }
                       setConfirmAction(null);
                     },
                   })}

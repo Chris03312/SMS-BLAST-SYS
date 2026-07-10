@@ -1,6 +1,11 @@
-# SRMC Platform — Development Guide
+# SystemBlast — Development Guide
 
 How to work on this project efficiently without rebuilding Docker containers every time.
+
+---
+
+> This guide applies to the SystemBlast monorepo (`srmc-platform/`).  
+> **Production deployment:** SRMC Credit Collection Services
 
 ---
 
@@ -221,22 +226,22 @@ srmc-platform/
 
 ## Central Monitoring Server
 
-The optional central server aggregates stats from **multiple remote SRMC installations** — useful when you have servers deployed at different locations (branches, clients).
+The optional central server aggregates stats from **multiple remote SystemBlast installations** — useful when you have servers deployed at different locations (branches, clients).
 
 ### How it works
 
 ```
-┌──────────────────────┐     Every 5 minutes      ┌──────────────────────┐
-│  SRMC Installation   │  ─── POST /api/stats/report ──►  │  Central Monitor   │
-│  (Branch A - Manila) │  { messages_sent_today,    │  Port 4000           │
-│                      │    gateways_online, ... }  │                      │
-├──────────────────────┤                           │  Dashboard shows:    │
-│  SRMC Installation   │  ─── POST /api/stats/report ──►  │  - All installations  │
-│  (Branch B - Cebu)   │                           │  - Online/offline     │
-├──────────────────────┤                           │  - Messages today     │
-│  SRMC Installation   │  ─── POST /api/stats/report ──►  │  - All-time totals    │
-│  (Branch C - Davao)  │                           │  - Per-install stats  │
-└──────────────────────┘                           └──────────────────────┘
+┌────────────────────────┐   Every 5 minutes    ┌──────────────────────┐
+│  SystemBlast Installation│ ─── POST /api/stats/report ──►  │  Central Monitor   │
+│  (Branch A - Manila)    │ { messages_sent_today,  │  Port 4000           │
+│                         │   gateways_online, ... }│                      │
+├────────────────────────┤                       │  Dashboard shows:    │
+│  SystemBlast Installation│ ─── POST /api/stats/report ──►  │  - All installations  │
+│  (Branch B - Cebu)      │                       │  - Online/offline     │
+├────────────────────────┤                       │  - Messages today     │
+│  SystemBlast Installation│ ─── POST /api/stats/report ──►  │  - All-time totals    │
+│  (Branch C - Davao)     │                       │  - Per-install stats  │
+└────────────────────────┘                       └──────────────────────┘
 ```
 
 ### Endpoints
@@ -263,7 +268,7 @@ docker compose -f apps/web/docker-compose.yml up -d srmc-central
 
 ### Connecting a remote server
 
-Set `CENTRAL_SERVER_URL` on the remote SRMC server to point it at this central server:
+Set `CENTRAL_SERVER_URL` on the remote SystemBlast server to point it at this central server:
 
 ```bash
 # In .env or docker-compose.yml on the remote machine:

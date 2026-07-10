@@ -7,6 +7,7 @@ import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatTime } from '../../lib/format.js';
+import { useToast } from '../../context/ToastContext.jsx';
 
 export default function Numbers() {
   const [gateways, setGateways] = useState([]);
@@ -18,6 +19,7 @@ export default function Numbers() {
   const [error, setError] = useState('');
   const [testing, setTesting] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const { toast } = useToast();
 
   useEffect(() => { load(); }, []);
 
@@ -83,7 +85,7 @@ export default function Numbers() {
       await api.del(`/gateways/${g.id}`);
       setGateways(prev => prev.filter(x => x.id !== g.id));
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
     setConfirmDelete(null);
   }
@@ -94,7 +96,7 @@ export default function Numbers() {
       const result = await api.post(`/gateways/${g.id}/test`);
       setGateways(prev => prev.map(x => x.id === g.id ? result.gateway : x));
     } catch (e) {
-      alert('Test failed: ' + e.message);
+      toast('Test failed: ' + e.message, 'error');
     }
     setTesting(prev => ({ ...prev, [g.id]: false }));
   }
@@ -110,15 +112,19 @@ export default function Numbers() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">People & Devices</div>
-          <h1>Gateway Numbers</h1>
-          <div className="page-sub">Android SMS gateways connected to the broadcast network.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">People & Devices</div>
+            <h1>Gateway Numbers</h1>
+            <div className="page-sub">Android SMS gateways connected to the broadcast network.</div>
+          </div>
         </div>
         <button className="btn-primary" onClick={openNew}>Add gateway</button>
       </div>
 
       <div className="card">
+        <div style={{ maxHeight: 520, overflowY: 'auto' }}>
         <table>
           <thead>
             <tr>
@@ -184,6 +190,7 @@ export default function Numbers() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="footer">
           <span>{gateways.length} gateways</span>
         </div>

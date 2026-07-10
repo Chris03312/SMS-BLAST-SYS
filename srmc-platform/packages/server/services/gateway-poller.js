@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import db from './db.js';
+import db from '../database/db.js';
 import { broadcast } from './ws.js';
 
 async function checkGateway(gateway) {

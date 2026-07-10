@@ -7,9 +7,9 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
-import db from '../db.js';
-import { broadcast } from '../ws.js';
-import { JWT_SECRET } from '../secrets.js';
+import db from '../database/db.js';
+import { broadcast } from './ws.js';
+import { JWT_SECRET } from '../configurations/secrets.js';
 
 const INBOUND_TOKEN_EXPIRY = '30d';
 
@@ -68,7 +68,8 @@ export function validateInboundToken(token) {
 }
 
 /**
- * Mark a gateway as online.
+ * Mark a gateway as online. Auto-creates the gateway if it doesn't exist,
+ * supporting both SRMCGateway (has login) and SRMCGatewayLite (no login).
  *
  * @param {string} userId     - Gateway user ID
  * @param {string} deviceInfo - Device model / info string
@@ -76,6 +77,14 @@ export function validateInboundToken(token) {
 export function gatewayOnline(userId, deviceId, deviceInfo, number, simCarrier, number2, sim2Carrier) {
   const now = new Date().toISOString();
   const gwId = deviceId || userId;
+
+  // Auto-create gateway if it doesn't exist (SRMCGatewayLite has no login flow)
+  const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(gwId);
+  if (!existing) {
+    const name = deviceInfo || 'Lite Gateway';
+    db.prepare('INSERT OR IGNORE INTO gateways (id, name, url, status, last_beat, last_online, device_info, mode, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
+      .run(gwId, name, '', 'online', now, now, deviceInfo || '', 'pull', now);
+  }
 
   // Build update — only set fields that are provided
   const updates = ["status = ?", "last_online = ?", "device_info = ?"];
@@ -130,14 +139,24 @@ export function gatewayOffline(userId, deviceId) {
 }
 
 /**
- * Process a gateway heartbeat.
+ * Process a gateway heartbeat. Auto-creates the gateway if it doesn't exist,
+ * supporting both SRMCGateway (has login) and SRMCGatewayLite (no login).
  *
  * @param {string} userId - Gateway user ID
- * @returns {boolean} - Whether the gateway was found
+ * @returns {boolean} - Whether the gateway was found / created
  */
 export function gatewayHeartbeat(userId, deviceId, extra = {}) {
   const now = new Date().toISOString();
   const gwId = deviceId || userId;
+
+  // Auto-create gateway if it doesn't exist (SRMCGatewayLite has no login flow)
+  // This is how Lite devices register themselves with the server.
+  const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(gwId);
+  if (!existing) {
+    const name = extra.deviceName || extra.deviceInfo || 'Lite Gateway';
+    db.prepare('INSERT OR IGNORE INTO gateways (id, name, url, status, last_beat, last_online, device_info, mode, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
+      .run(gwId, name, '', 'online', now, now, extra.deviceInfo || '', 'pull', now);
+  }
 
   // Build update — always set status/beat/online, optionally update SIM fields
   const updates = ["status = ?", "last_beat = ?", "last_online = ?"];
@@ -213,7 +232,7 @@ function logActivity(userId, action, detail, level = 'info') {
   try {
     db.prepare('INSERT INTO activity (id, user_id, action, detail, level) VALUES (?, ?, ?, ?, ?)')
       .run(uuidv4(), userId || null, action, detail, level);
-    broadcast({ type: 'activity:new', action, detail, level, created_at: new Date().toISOString() });
+    broadcast({ type: 'activity:new', user_id: userId || null, action, detail, level, created_at: new Date().toISOString() });
   } catch (_) {}
 }
 

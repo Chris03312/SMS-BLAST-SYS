@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
-import db from '../db.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import db from '../database/db.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { checkGatewayNow } from '../gateway-poller.js';
+import { checkGatewayNow } from '../services/gateway-poller.js';
 
 const router = Router();
 
@@ -16,15 +16,24 @@ function fail(res, error, status = 400) {
   return res.status(status).json({ success: false, error });
 }
 
+// Helper: check if the user owns the gateway or is admin.
+function canAccess(user, gatewayId) {
+  if (!gatewayId) return false;
+  if (user.role === 'admin' || user.role === 'super_admin') return true;
+  const gw = db.prepare('SELECT owner_id FROM gateways WHERE id = ?').get(gatewayId);
+  return gw && gw.owner_id === user.id;
+}
+
 router.use(authMiddleware);
 
 router.get('/', (req, res) => {
   try {
     let gateways;
-    if (req.user.role === 'admin') {
+    if (req.user.role === 'admin' || req.user.role === 'super_admin') {
       gateways = db.prepare('SELECT * FROM gateways ORDER BY created_at DESC').all();
     } else {
-      gateways = db.prepare('SELECT * FROM gateways WHERE active = 1 ORDER BY created_at DESC').all();
+      // Agents only see gateways they own
+      gateways = db.prepare('SELECT * FROM gateways WHERE active = 1 AND owner_id = ? ORDER BY created_at DESC').all(req.user.id);
     }
 
     // Collect all gateway IDs that are referenced in active (sending/paused) broadcasts
@@ -68,8 +77,8 @@ router.post('/', (req, res) => {
     const normalizedToken = token ? token.toLowerCase() : null;
 
     const id = uuidv4();
-    db.prepare('INSERT INTO gateways (id, name, url, token, sim_carrier, number, number2) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, name, url, normalizedToken, sim_carrier || null, number || null, number2 || null);
+    db.prepare('INSERT INTO gateways (id, name, url, token, sim_carrier, number, number2, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, url, normalizedToken, sim_carrier || null, number || null, number2 || null, req.user.id);
 
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(id);
     return ok(res, { gateway }, 201);
@@ -81,6 +90,9 @@ router.post('/', (req, res) => {
 
 router.put('/:id', (req, res) => {
   try {
+    if (!canAccess(req.user, req.params.id)) {
+      return fail(res, 'Forbidden — you do not own this gateway', 403);
+    }
     const { name, url, token, sim_carrier, sim2_carrier, number, number2, active } = req.body;
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(req.params.id);
     if (!gateway) {
@@ -111,6 +123,9 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
+    if (!canAccess(req.user, req.params.id)) {
+      return fail(res, 'Forbidden — you do not own this gateway', 403);
+    }
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(req.params.id);
     if (!gateway) {
       return fail(res, 'Gateway not found', 404);
@@ -125,6 +140,9 @@ router.delete('/:id', (req, res) => {
 
 router.post('/:id/test', async (req, res) => {
   try {
+    if (!canAccess(req.user, req.params.id)) {
+      return fail(res, 'Forbidden — you do not own this gateway', 403);
+    }
     const { token } = req.body; // optional — use form token instead of DB token
     const updated = await checkGatewayNow(req.params.id, token);
     if (!updated) {
@@ -139,6 +157,9 @@ router.post('/:id/test', async (req, res) => {
 
 router.delete('/:id/log', async (req, res) => {
   try {
+    if (!canAccess(req.user, req.params.id)) {
+      return fail(res, 'Forbidden — you do not own this gateway', 403);
+    }
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(req.params.id);
     if (!gateway) {
       return fail(res, 'Gateway not found', 404);
@@ -170,6 +191,9 @@ router.delete('/:id/log', async (req, res) => {
 // ── Test SIM load by sending a test SMS through the gateway ────────────────
 router.post('/:id/test-sim', async (req, res) => {
   try {
+    if (!canAccess(req.user, req.params.id)) {
+      return fail(res, 'Forbidden — you do not own this gateway', 403);
+    }
     const { sim } = req.body; // 'sim1' or 'sim2'
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(req.params.id);
     if (!gateway) {

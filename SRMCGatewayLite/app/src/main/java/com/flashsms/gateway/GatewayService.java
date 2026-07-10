@@ -15,6 +15,12 @@ import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
@@ -35,6 +41,14 @@ public class GatewayService extends Service {
     private GatewayHttpServer    httpServer;
     private NotificationManager notificationManager;
     private PowerManager.WakeLock wakeLock;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private Handler wakeLockHandler;
+    private Runnable wakeLockRenewRunnable;
+
+    // Periodic heartbeat for Lite app (no login, but needs keepalive)
+    private Handler heartbeatHandler;
+    private Runnable heartbeatRunnable;
+    private static final long HEARTBEAT_INTERVAL_MS = 60_000;
 
     public static volatile boolean isRunning = false;
     private static volatile String sHttpUrl = "";
@@ -69,15 +83,22 @@ public class GatewayService extends Service {
             catch (Exception ignored) {}
         }
 
-        // Push-only mode: just start the HTTP server and listen for incoming
-        // SMS send requests from the central platform.
-        // No server check needed — the admin adds this gateway manually.
         if (!isRunning) {
             try {
                 isRunning = true;
+
+                // ── Start PULL outbound poller ───────────────────────────
+                outboundPoller = new OutboundPoller(getApplicationContext());
+                outboundPoller.start();
+
+                // ── Start PUSH HTTP server ────────────────────────────────
                 startHttpServer();
+
+                // ── Start periodic heartbeat ──────────────────────────────
+                startHeartbeat();
+
                 updateNotification("\u2713 Gateway running");
-                Log.d(TAG, "Gateway started — push mode");
+                Log.d(TAG, "Gateway started — push + pull mode");
                 sendBroadcast(new Intent(ACTION_GATEWAY_STARTED));
             } catch (Exception e) {
                 Log.e(TAG, "Failed to start gateway: " + e.getMessage(), e);
@@ -86,6 +107,8 @@ public class GatewayService extends Service {
                 stopSelf();
             }
         }
+
+        registerConnectivityReceiver();
 
         return START_STICKY;
     }
@@ -113,6 +136,9 @@ public class GatewayService extends Service {
 
     @Override
     public void onDestroy() {
+        stopWakeLockRenewal();
+        stopHeartbeat();
+        unregisterConnectivityReceiver();
         if (outboundPoller != null) {
             outboundPoller.stop();
             outboundPoller = null;
@@ -134,18 +160,45 @@ public class GatewayService extends Service {
     private void acquireWakeLock() {
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm == null) return;
-        if (wakeLock == null) {
-            wakeLock = pm.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK,
-                    "SMSGateway::GatewayWakeLock");
-            // Acquire with a timeout so the lock doesn't run indefinitely
-            // on low-end devices where battery is precious. 10 min = 600000ms
-            wakeLock.acquire(600_000);
-            Log.d(TAG, "WakeLock acquired (10 min timeout)");
+        if (wakeLock == null || !wakeLock.isHeld()) {
+            if (wakeLock == null) {
+                wakeLock = pm.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "SMSGateway::GatewayWakeLock");
+            }
+            // Acquire permanently — renewal timer re-acquires every 5 minutes
+            // as a safety net against OS-induced release.
+            wakeLock.acquire();
+            Log.d(TAG, "WakeLock acquired (permanent)");
+        }
+        startWakeLockRenewal();
+    }
+
+    private void startWakeLockRenewal() {
+        stopWakeLockRenewal();
+        wakeLockHandler = new Handler(Looper.getMainLooper());
+        wakeLockRenewRunnable = () -> {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                try {
+                    wakeLock.release();
+                } catch (Exception ignored) {}
+            }
+            acquireWakeLock();
+            wakeLockHandler.postDelayed(wakeLockRenewRunnable, 5 * 60 * 1000L);
+        };
+        wakeLockHandler.postDelayed(wakeLockRenewRunnable, 5 * 60 * 1000L);
+        Log.d(TAG, "WakeLock renewal scheduled (every 5 min)");
+    }
+
+    private void stopWakeLockRenewal() {
+        if (wakeLockHandler != null) {
+            wakeLockHandler.removeCallbacks(wakeLockRenewRunnable);
+            wakeLockHandler = null;
         }
     }
 
     private void releaseWakeLock() {
+        stopWakeLockRenewal();
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
             wakeLock = null;
@@ -180,6 +233,137 @@ public class GatewayService extends Service {
                 .setOngoing(true)
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build();
+    }
+
+    // ── Periodic heartbeat ────────────────────────────────────────────
+    // Keeps the gateway marked as online on the server.
+
+    private void startHeartbeat() {
+        stopHeartbeat();
+        heartbeatHandler = new Handler(Looper.getMainLooper());
+        heartbeatRunnable = new Runnable() {
+            @Override
+            public void run() {
+                sendHeartbeat();
+                heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS);
+            }
+        };
+        // Send first heartbeat immediately
+        new Thread(this::sendHeartbeat).start();
+        heartbeatHandler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS);
+        Log.d(TAG, "Heartbeat started (every " + (HEARTBEAT_INTERVAL_MS / 1000) + "s)");
+    }
+
+    private void stopHeartbeat() {
+        if (heartbeatHandler != null) {
+            heartbeatHandler.removeCallbacks(heartbeatRunnable);
+            heartbeatHandler = null;
+        }
+    }
+
+    private void sendHeartbeat() {
+        try {
+            SharedPreferences prefs = getSharedPreferences("settings", MODE_PRIVATE);
+            String serverUrl = prefs.getString("server_url", "");
+            if (serverUrl.isEmpty()) return;
+
+            String deviceId = prefs.getString("device_id", "");
+            if (deviceId.isEmpty()) {
+                deviceId = java.util.UUID.randomUUID().toString();
+                prefs.edit().putString("device_id", deviceId).apply();
+            }
+
+            String sim1 = prefs.getString(SmsSender.PREF_SIM1_CARRIER, "");
+            String sim2 = prefs.getString(SmsSender.PREF_SIM2_CARRIER, "");
+
+            org.json.JSONObject body = new org.json.JSONObject();
+            body.put("userId", deviceId);
+            body.put("deviceId", deviceId);
+            if (!sim1.isEmpty()) body.put("sim_carrier", sim1);
+            if (!sim2.isEmpty()) body.put("sim2_carrier", sim2);
+
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
+                    new java.net.URL(serverUrl + "/api/auth/gateway/heartbeat").openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(8_000);
+            conn.setReadTimeout(8_000);
+            try (java.io.OutputStream os = conn.getOutputStream()) {
+                os.write(body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+
+            int code = conn.getResponseCode();
+            if (code < 400) {
+                // Try to extract webhook URL from response
+                try {
+                    java.io.BufferedReader reader = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(conn.getInputStream(),
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    String responseBody = sb.toString();
+                    org.json.JSONObject resp = new org.json.JSONObject(responseBody);
+                    String webhookUrl = resp.optString("inbound_webhook_url", "");
+                    if (!webhookUrl.isEmpty()) {
+                        prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
+                    }
+                } catch (Exception ignored) {}
+            }
+            conn.disconnect();
+        } catch (Exception e) {
+            Log.w(TAG, "Heartbeat failed: " + e.getMessage());
+        }
+    }
+
+    // ── Connectivity change receiver ─────────────────────────────────
+    // Detects WiFi / mobile data reconnection and ensures the gateway
+    // re-registers with the server.
+
+    private void registerConnectivityReceiver() {
+        unregisterConnectivityReceiver();
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                Log.d(TAG, "Network available \u2014 sending heartbeat");
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (isRunning) {
+                        sendHeartbeat();
+                        if (outboundPoller != null) {
+                            outboundPoller.onNetworkAvailable();
+                        }
+                    }
+                }, 2000);
+            }
+
+            @Override
+            public void onLost(Network network) {
+                Log.w(TAG, "Network lost");
+                updateNotification("\u26a0 Network lost \u2014 waiting for reconnection");
+            }
+        };
+        NetworkRequest request = new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build();
+        cm.registerNetworkCallback(request, networkCallback);
+        Log.d(TAG, "Connectivity callback registered");
+    }
+
+    private void unregisterConnectivityReceiver() {
+        if (networkCallback != null) {
+            try {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (cm != null) {
+                    cm.unregisterNetworkCallback(networkCallback);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Unregister connectivity: " + e.getMessage());
+            }
+            networkCallback = null;
+        }
     }
 
     // ── HTTP server (PUSH mode) ──────────────────────────────────────

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import db from '../db.js';
+import db from '../database/db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 import { getGlobalStats, getUserStats, getSendingStatus } from '../services/stats-service.js';
 
@@ -20,14 +20,34 @@ function fail(res, error, status = 400) {
 router.get('/', authMiddleware, (req, res) => {
   try {
     const stats = getGlobalStats();
-    // If the requesting user is an agent, include their own all-time message count
+    // If the requesting user is an agent, scope stats to their own broadcasts
     if (req.user.role === 'agent') {
-      const userTotal = db.prepare(
-        `SELECT COUNT(*) as total FROM messages m
-         JOIN broadcasts b ON b.id = m.broadcast_id
-         WHERE b.agent_id = ?
-           AND m.status IN ('sent', 'delivered')`
-      ).get(req.user.id);
+      const userId = req.user.id;
+      // Agent's sent today
+      const agentSentToday = db.prepare(`
+        SELECT COUNT(*) as total FROM messages m
+        JOIN broadcasts b ON b.id = m.broadcast_id
+        WHERE b.agent_id = ?
+          AND m.status IN ('sent', 'delivered')
+          AND date(m.sent_at) = date('now')
+      `).get(userId);
+      // Agent's failed today
+      const agentFailedToday = db.prepare(`
+        SELECT COUNT(*) as total FROM messages m
+        JOIN broadcasts b ON b.id = m.broadcast_id
+        WHERE b.agent_id = ?
+          AND m.status = 'failed'
+          AND date(m.created_at) = date('now')
+      `).get(userId);
+      // Agent's all-time total
+      const userTotal = db.prepare(`
+        SELECT COUNT(*) as total FROM messages m
+        JOIN broadcasts b ON b.id = m.broadcast_id
+        WHERE b.agent_id = ?
+          AND m.status IN ('sent', 'delivered')
+      `).get(userId);
+      stats.sent_today = agentSentToday ? agentSentToday.total : 0;
+      stats.failed_today = agentFailedToday ? agentFailedToday.total : 0;
       stats.user_total_all_time = userTotal ? userTotal.total : 0;
     }
     return ok(res, stats);

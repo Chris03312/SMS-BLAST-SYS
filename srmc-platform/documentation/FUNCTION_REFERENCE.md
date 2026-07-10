@@ -1,7 +1,9 @@
-# SRMC Platform — Complete Function Reference
+# SystemBlast — Complete Function Reference
 
 > Covers all functions, classes, and endpoints across the four components:
 > **Web App (React) · Server (Express) · Desktop (Electron) · Android Gateway (Java)**
+
+> **Note:** The package namespace `@srmc/` and directory name `srmc-platform/` remain unchanged for code compatibility. This document refers to the product as SystemBlast.
 
 ---
 
@@ -73,6 +75,8 @@
 ---
 
 ## 2. Server — Express (`packages/server/`)
+
+> **Product:** SystemBlast (package namespace: `@srmc/server`)
 
 ### 2.1 Entry & Config
 
@@ -360,6 +364,8 @@ databases via ALTER TABLE.
 
 ## 3. Desktop App — Electron (`apps/desktop/electron/`)
 
+> **Product:** SystemBlast Desktop App
+
 ### 3.1 Main Process (`main.js`)
 
 | Function | Description |
@@ -395,6 +401,8 @@ databases via ALTER TABLE.
 ---
 
 ## 4. Android Gateway — Java (`SRMCGateway/`)
+
+> **Product:** SystemBlast Gateway (directory: `SRMCGateway/`)
 
 ### 4.1 Activities
 
@@ -569,6 +577,8 @@ _Note: The embedded HTTP server (SmsHttpServer / NanoHTTPD) has been removed._
 ---
 
 ## 5. Central Monitoring Server (`apps/web/central-server/`)
+
+> **Product:** SystemBlast Central Monitor
 
 ### 5.1 Server (`index.js`)
 

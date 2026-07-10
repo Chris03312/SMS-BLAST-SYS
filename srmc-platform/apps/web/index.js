@@ -13,15 +13,16 @@ import { createServer } from 'http';
 import { initWss } from '@srmc/server/ws.js';
 import { startPoller } from '@srmc/server/gateway-poller.js';
 import { startNgrok, startNgrokAutoRetry, hasAuthtoken } from '@srmc/server/ngrok-tunnel.js';
-import app, { PORT, NGROK_URL, NGROK_AUTHTOKEN } from '@srmc/server/app.js';
+import { flushDb } from '@srmc/server/db.js';
+import app, { HOST, PORT, NGROK_URL, NGROK_AUTHTOKEN } from '@srmc/server/app.js';
 
 const server = createServer(app);
 
 // WebSocket
 initWss(server);
 
-server.listen(PORT, async () => {
-  console.log(`[server] SMS Platform running on http://localhost:${PORT}`);
+server.listen(PORT, HOST, async () => {
+  console.log(`[server] SMS Platform running on http://${HOST}:${PORT}`);
 
   if (NGROK_URL) {
     console.log(`[server] Ngrok webhook URL: ${NGROK_URL}/api/webhook/inbound`);
@@ -43,7 +44,20 @@ server.listen(PORT, async () => {
 });
 
 // ── Graceful shutdown ────────────────────────────────────────────────
-process.on('SIGINT',  () => process.exit(0));
-process.on('SIGTERM', () => process.exit(0));
+// Flush the SQLite database to disk before exiting so no data is lost.
+
+function handleShutdown(signal) {
+  console.log(`[server] Received ${signal} — flushing DB and shutting down…`);
+  try { flushDb(); } catch (e) { console.error('[server] Flush error:', e.message); }
+  server.close(() => {
+    console.log('[server] Server closed');
+    process.exit(0);
+  });
+  // Force exit if graceful close takes too long
+  setTimeout(() => process.exit(1), 5000);
+}
+
+process.on('SIGINT',  () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
 export default app;

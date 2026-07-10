@@ -3,6 +3,7 @@ import AdminShell from '../../components/AdminShell.jsx';
 import Modal from '../../components/Modal.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
+import { useToast } from '../../context/ToastContext.jsx';
 
 export default function AdminTemplates() {
   const [templates, setTemplates] = useState([]);
@@ -13,6 +14,7 @@ export default function AdminTemplates() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const { toast } = useToast();
 
   useEffect(() => { load(); }, []);
 
@@ -62,7 +64,7 @@ export default function AdminTemplates() {
       await api.del(`/templates/${t.id}`);
       setTemplates(prev => prev.filter(x => x.id !== t.id));
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
     setConfirmDelete(null);
   }
@@ -75,10 +77,13 @@ export default function AdminTemplates() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1>Templates</h1>
-          <div className="page-sub">Manage all SMS message templates.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Operations</div>
+            <h1>Templates</h1>
+            <div className="page-sub">Manage all SMS message templates.</div>
+          </div>
         </div>
         <button className="btn-primary" onClick={openNew}>New template</button>
       </div>

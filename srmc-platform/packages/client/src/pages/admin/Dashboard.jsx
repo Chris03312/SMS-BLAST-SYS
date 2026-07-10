@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber, formatDate } from '../../lib/format.js';
 
@@ -47,7 +49,28 @@ export default function AdminDashboard() {
   const [agents, setAgents] = useState([]);
   const [inbound, setInbound] = useState([]);
   const [runningBroadcasts, setRunningBroadcasts] = useState([]);
+  const [confirmCancelAll, setConfirmCancelAll] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // ── Debounced data refresh ───────────────────────────────────────────
+  // Avoids hammering the server when WS events fire rapidly (e.g. every
+  // broadcast:progress or gateway:heartbeat). Only re-fetches at most once
+  // every 3 seconds, and the last call always wins.
+  const refreshRef = useRef(null);
+
+  async function handleCancelAll() {
+    try {
+      const result = await api.post('/broadcasts/cancel-all');
+      const count = result.cancelled || 0;
+      toast(`Cancelled ${count} active broadcast${count !== 1 ? 's' : ''}`, 'info');
+      setConfirmCancelAll(false);
+      // Refresh immediately to clear the list
+      await loadData();
+    } catch (e) {
+      toast('Failed to cancel all: ' + e.message, 'error');
+      setConfirmCancelAll(false);
+    }
+  }
 
   async function loadData() {
     try {
@@ -67,16 +90,44 @@ export default function AdminDashboard() {
     setLoading(false);
   }
 
+  /** Debounced refresh: if called multiple times within 3s, only the last triggers */
+  function debouncedRefresh() {
+    if (refreshRef.current) clearTimeout(refreshRef.current);
+    refreshRef.current = setTimeout(loadData, 3000);
+  }
+
   useEffect(() => { loadData(); }, []);
 
   useWS((event) => {
-    if (event.type === 'broadcast:progress' || event.type === 'broadcast:complete' || event.type === 'gateway:status') {
-      loadData();
+    if (event.type === 'broadcast:progress' || event.type === 'gateway:status') {
+      debouncedRefresh();
+    }
+    if (event.type === 'broadcast:complete') {
+      const total = event.total || 0;
+      const sent = event.sent || 0;
+      const failed = event.failed || 0;
+      if (failed > 0) {
+        toast(`Broadcast complete — ${sent}/${total} sent, ${failed} failed`, 'warning');
+      } else {
+        toast(`Broadcast complete — ${sent}/${total} sent successfully`, 'success');
+      }
+      debouncedRefresh();
     }
     if (event.type === 'inbound:new') {
       setInbound(prev => [event.message, ...prev].slice(0, 5));
+      // Also debounce refresh to update counts
+      debouncedRefresh();
     }
   });
+
+  const { toast } = useToast();
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (refreshRef.current) clearTimeout(refreshRef.current);
+    };
+  }, []);
 
   const dailyData = stats?.daily || [];
   const sentSeries = dailyData.map(d => d.sent);
@@ -128,10 +179,13 @@ export default function AdminDashboard() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Overview</div>
-          <h1>Dashboard</h1>
-          <div className="page-sub">Real-time platform overview across all gateways and agents.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Overview</div>
+            <h1>Dashboard</h1>
+            <div className="page-sub">Real-time platform overview across all gateways and agents.</div>
+          </div>
         </div>
         <LiveBadge />
       </div>
@@ -182,6 +236,23 @@ export default function AdminDashboard() {
               Active Broadcasts
               <span style={{ marginLeft: 10 }}><LiveBadge label={`${runningBroadcasts.length} running`} /></span>
             </h3>
+            <button
+              onClick={() => setConfirmCancelAll(true)}
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 600,
+                border: '1px solid var(--err-line)', borderRadius: 6,
+                background: 'var(--err-bg)', color: 'var(--err)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                transition: 'all 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--err)'; e.currentTarget.style.color = '#fff'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+              Cancel All
+            </button>
           </div>
           <div style={{ maxHeight: 220, overflowY: 'auto' }}>
             <table>
@@ -198,7 +269,8 @@ export default function AdminDashboard() {
               </thead>
               <tbody>
                 {runningBroadcasts.map(b => {
-                  const pct = b.total > 0 ? Math.round((b.sent / b.total) * 100) : 0;
+                  const done = (b.sent || 0) + (b.failed || 0);
+                  const pct = b.total > 0 ? Math.round((done / b.total) * 100) : 0;
                   const isPaused = b.status === 'paused';
                   return (
                     <tr key={b.id}>
@@ -219,15 +291,24 @@ export default function AdminDashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div style={{
                             flex: 1, height: 7, background: 'var(--bg-soft)',
-                            borderRadius: 4, overflow: 'hidden',
+                            borderRadius: 4, overflow: 'hidden', display: 'flex',
                           }}>
                             <div style={{
-                              height: '100%', width: `${Math.max(pct, 2)}%`,
+                              height: '100%',
+                              width: `${Math.max(b.total > 0 ? Math.round((b.sent||0) / b.total * 100) : 0, 2)}%`,
                               background: isPaused ? 'var(--warn)' : 'var(--ok)',
-                              borderRadius: 4,
                               transition: 'width 0.5s ease',
                               minWidth: 4,
                             }} />
+                            {(b.failed||0) > 0 && (
+                              <div style={{
+                                height: '100%',
+                                width: `${Math.max(b.total > 0 ? Math.round((b.failed||0) / b.total * 100) : 0, 2)}%`,
+                                background: 'var(--err)',
+                                transition: 'width 0.5s ease',
+                                minWidth: 4,
+                              }} />
+                            )}
                           </div>
                           <span className="num" style={{ fontSize: 11, fontWeight: 600, minWidth: 32, textAlign: 'right' }}>{pct}%</span>
                         </div>
@@ -297,11 +378,11 @@ export default function AdminDashboard() {
         </div>
 
         {/* Gateways status */}
-        <div className="card">
-          <div className="card-head">
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Gateways</h3>
           </div>
-          <div>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
             {(stats?.gateways_status || []).map(g => (
               <div key={g.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-soft)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -323,75 +404,79 @@ export default function AdminDashboard() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 340px', gap: 16 }}>
         {/* Campaigns */}
-        <div className="card">
-          <div className="card-head">
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Active Campaigns</h3>
             <a href="/admin/campaigns" style={{ color: 'var(--brand-1)', fontSize: 12, fontWeight: 500 }}>View all →</a>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Campaign</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Sent</th>
-              </tr>
-            </thead>
-            <tbody>
-              {campaigns.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No campaigns.</td></tr>}
-              {campaigns.map(c => (
-                <tr key={c.id}>
-                  <td>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</div>
-                    <div className="cell-id">{c.owner_name}</div>
-                  </td>
-                  <td><Pill status={c.status} label={c.status} /></td>
-                  <td className="num">{c.total_sent}</td>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Campaign</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Sent</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {campaigns.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No campaigns.</td></tr>}
+                {campaigns.map(c => (
+                  <tr key={c.id}>
+                    <td>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</div>
+                      <div className="cell-id">{c.owner_name}</div>
+                    </td>
+                    <td><Pill status={c.status} label={c.status} /></td>
+                    <td className="num">{c.total_sent}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Agents */}
-        <div className="card">
-          <div className="card-head">
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Agents</h3>
             <a href="/admin/agents" style={{ color: 'var(--brand-1)', fontSize: 12, fontWeight: 500 }}>View all →</a>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Agent</th>
-                <th style={{ textAlign: 'right' }}>Today</th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.length === 0 && <tr><td colSpan={2} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No agents.</td></tr>}
-              {agents.map(a => (
-                <tr key={a.id}>
-                  <td>
-                    <div className="cell-name">
-                      <div className="row-avatar">{a.display_name?.slice(0, 2).toUpperCase()}</div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{a.display_name}</div>
-                        <div className="cell-id">{a.username}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="num">{a.sent_today || 0}</td>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th style={{ textAlign: 'right' }}>Today</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {agents.length === 0 && <tr><td colSpan={2} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No agents.</td></tr>}
+                {agents.map(a => (
+                  <tr key={a.id}>
+                    <td>
+                      <div className="cell-name">
+                        <div className="row-avatar">{a.display_name?.slice(0, 2).toUpperCase()}</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500 }}>{a.display_name}</div>
+                          <div className="cell-id">{a.username}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="num">{a.sent_today || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Recent inbound */}
-        <div className="card">
-          <div className="card-head">
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Recent Inbound</h3>
             <a href="/admin/inbound" style={{ color: 'var(--brand-1)', fontSize: 12, fontWeight: 500 }}>View all →</a>
           </div>
-          <div>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
             {inbound.length === 0 && <div style={{ padding: '16px 18px', fontSize: 13, color: 'var(--ink-3)' }}>No inbound messages.</div>}
             {inbound.map(m => (
               <div key={m.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-soft)' }}>
@@ -406,6 +491,15 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {confirmCancelAll && (
+        <ConfirmModal
+          title="Cancel All Broadcasts"
+          message={`This will cancel all ${runningBroadcasts.length} active broadcast${runningBroadcasts.length !== 1 ? 's' : ''}. Already sent messages will be kept, and pending messages will be marked as cancelled. Continue?`}
+          confirmLabel="Cancel All"
+          onConfirm={handleCancelAll}
+          onCancel={() => setConfirmCancelAll(false)}
+        />
+      )}
     </AdminShell>
   );
 }

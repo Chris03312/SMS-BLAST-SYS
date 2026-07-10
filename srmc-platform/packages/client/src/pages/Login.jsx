@@ -31,7 +31,7 @@ export default function Login() {
         <div className="grid-overlay" />
         <div className="orb" />
         <div className="brand-inner">
-          <img src="/assets/LOGO.svg" alt="SMS Platform" className="brand-logo" style={{ width: 80, marginBottom: 32 }} />
+          <img src="/assets/SRMC_LOGO.jpg" alt="SMS Platform" className="brand-logo" style={{ width: 80, marginBottom: 32 }} />
           <div className="eyebrow">SMS Broadcast Platform</div>
           <h1>
             Broadcast.<br />

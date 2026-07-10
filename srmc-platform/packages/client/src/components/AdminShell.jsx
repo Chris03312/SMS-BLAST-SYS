@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../lib/api.js';
+import { useConnectionStatus } from '../lib/ws.js';
 
 const NAV_ITEMS = [
   { section: 'Overview', items: [
@@ -86,6 +87,7 @@ export default function AdminShell({ children }) {
   const location = useLocation();
   const [connectivity, setConnectivity] = useState(null);
   const [showNetInfo, setShowNetInfo] = useState(false);
+  const wsStatus = useConnectionStatus();
 
   const fetchConnectivity = useCallback(() => {
     api.get('/server/connectivity')
@@ -112,7 +114,7 @@ export default function AdminShell({ children }) {
         {/* ── Sidebar header (brand) ── */}
         <Link to="/admin" className="sb-header" style={{ textDecoration: 'none', cursor: 'pointer' }}>
           <div className="brand-mark">
-            <img src="/assets/LOGO.svg" alt="SMS Platform" style={{ width: 36, height: 36 }} />
+            <img src="/assets/SRMC_LOGO.jpg" alt="SMS Platform" style={{ width: 36, height: 36 }} />
           </div>
           <div>
             <div className="brand-title">SMS Admin</div>
@@ -177,6 +179,15 @@ export default function AdminShell({ children }) {
               <span className="ok-dot" />
               System
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>WebSocket</span>
+              <span style={{
+                fontSize: 10, fontWeight: 600,
+                color: wsStatus === 'open' ? 'var(--ok)' : wsStatus === 'connecting' ? 'var(--warn)' : 'var(--err)',
+              }}>
+                {wsStatus === 'open' ? 'Connected' : wsStatus === 'connecting' ? 'Connecting…' : 'Disconnected'}
+              </span>
+            </div>
             <div className="sys-row"><span>v1.0.0</span></div>
           </div>
         </div>
@@ -189,16 +200,3 @@ export default function AdminShell({ children }) {
   );
 }
 
-function InfoRow({ label, value, good }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-      <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>{label}</span>
-      <span style={{
-        fontSize: 10, fontWeight: 500,
-        color: good ? 'var(--ok)' : 'var(--warn)',
-      }}>
-        {value}
-      </span>
-    </div>
-  );
-}

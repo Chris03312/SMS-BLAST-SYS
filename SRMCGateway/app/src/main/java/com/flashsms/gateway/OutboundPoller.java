@@ -51,6 +51,11 @@ public class OutboundPoller {
     /** Pause between individual sends so the SIM/carrier isn't flooded (ms). */
     private static final long SEND_GAP_MS = 1_200;
 
+    /** Exponential backoff: max poll interval when server is unreachable (ms). */
+    private static final long MAX_BACKOFF_MS = 30_000;
+    private long currentBackoffMs = 0;
+    private int consecutiveFailures = 0;
+
     /** Unique request code counter for PendingIntents (per-process). */
     private final AtomicInteger requestCodeSeq = new AtomicInteger(1000);
     /** Dynamically registered receiver for sent/delivery intents. */
@@ -68,7 +73,9 @@ public class OutboundPoller {
             if (executor != null && !executor.isShutdown()) {
                 executor.execute(OutboundPoller.this::pollOnce);
             }
-            main.postDelayed(this, POLL_INTERVAL_MS);
+            // Use backoff interval if we've had consecutive failures
+            long interval = currentBackoffMs > 0 ? currentBackoffMs : POLL_INTERVAL_MS;
+            main.postDelayed(this, interval);
         }
     };
 
@@ -133,12 +140,19 @@ public class OutboundPoller {
         try {
             String json = httpGet(base + "/api/gateway/outbound?max=" + BATCH_MAX, token);
             JSONObject obj = new JSONObject(json);
-            if (!obj.optBoolean("success", false)) return;
+            if (!obj.optBoolean("success", false)) {
+                recordFailure();
+                return;
+            }
             messages = obj.optJSONArray("messages");
         } catch (Exception e) {
             Log.w(TAG, "Claim failed: " + e.getMessage());
+            recordFailure();
             return;
         }
+        // Success — reset backoff
+        consecutiveFailures = 0;
+        currentBackoffMs = 0;
         if (messages == null || messages.length() == 0) return;
 
         JSONArray results = new JSONArray();
@@ -221,6 +235,26 @@ public class OutboundPoller {
                 Log.w(TAG, "Ack failed: " + e.getMessage());
             }
         }
+    }
+
+    /**
+     * Called by GatewayService when network becomes available after a drop.
+     * Resets the backoff timer so the next poll happens immediately.
+     */
+    public void onNetworkAvailable() {
+        if (consecutiveFailures > 0) {
+            Log.d(TAG, "Network restored — resetting backoff");
+            consecutiveFailures = 0;
+            currentBackoffMs = 0;
+        }
+    }
+
+    private void recordFailure() {
+        consecutiveFailures++;
+        // Exponential backoff: 5s -> 10s -> 20s -> 30s (max)
+        long backoff = POLL_INTERVAL_MS * (long) Math.pow(2, Math.min(consecutiveFailures - 1, 3));
+        currentBackoffMs = Math.min(backoff, MAX_BACKOFF_MS);
+        Log.w(TAG, consecutiveFailures + " consecutive failure(s), backoff=" + currentBackoffMs + "ms");
     }
 
     private String token() {

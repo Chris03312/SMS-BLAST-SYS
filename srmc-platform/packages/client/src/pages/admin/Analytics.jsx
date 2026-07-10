@@ -14,37 +14,97 @@ const PERIODS = [
 
 function MiniLine({ data, color = 'var(--brand-1)', labels }) {
   if (!data || data.length === 0) return null;
-  const w = 300, h = 100, pad = 4;
+  const w = 300, h = 130, pad = 34, bottomPad = 28;
+  const plotH = h - pad - bottomPad;
   const max = Math.max(...data, 1);
-  const stepX = (w - pad * 2) / (data.length - 1 || 1);
+  const stepX = data.length > 1 ? (w - pad * 2) / (data.length - 1) : 0;
+
+  // Build line points
   const pts = data.map((v, i) => {
     const x = pad + i * stepX;
-    const y = h - pad - (v / max) * (h - pad * 2);
+    const y = pad + plotH - (v / max) * plotH;
     return `${x},${y}`;
   });
-  const area = `${pad},${h - pad} ${pts.join(' ')} ${pad + (data.length - 1) * stepX},${h - pad}`;
+
+  // Area fill polygon
+  const area = `${pad},${pad + plotH} ${pts.join(' ')} ${pad + (data.length - 1) * stepX},${pad + plotH}`;
+
+  // Y-axis reference lines + labels (4 horizontal grid lines)
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map(pct => ({
+    y: pad + plotH - pct * plotH,
+    label: Math.round(pct * max),
+  }));
+
+  // Show value labels only if few enough points to be readable
+  const showValueLabels = data.length <= 20;
+  // Show intermediate date labels when there are many points
+  const dateLabels = [];
+  if (labels && labels.length > 0) {
+    const maxDateLabels = Math.min(labels.length, data.length > 30 ? 4 : data.length > 14 ? 6 : labels.length);
+    const step = Math.max(1, Math.floor(labels.length / maxDateLabels));
+    for (let i = 0; i < labels.length; i += step) {
+      const label = labels[i];
+      // Truncate label to short format (e.g., "Jun 15" or "2024-06")
+      const short = label.length > 7 ? label.slice(5) : label;
+      dateLabels.push({ index: i, label: short });
+    }
+    // Always include the last label
+    if (dateLabels[dateLabels.length - 1]?.index !== labels.length - 1) {
+      dateLabels.push({ index: labels.length - 1, label: labels[labels.length - 1].length > 7 ? labels[labels.length - 1].slice(5) : labels[labels.length - 1] });
+    }
+  }
+
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%' }}>
+    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', display: 'block' }}>
+      {/* Grid lines */}
+      {gridLines.map((gl, i) => (
+        <g key={i}>
+          <line x1={pad} y1={gl.y} x2={w - pad} y2={gl.y} stroke="var(--line)" strokeWidth={i === 0 ? 0.5 : 0.5} opacity={i === 0 ? 0.3 : 0.15} />
+          <text x={pad - 6} y={gl.y + 3} textAnchor="end" fill="var(--ink-4)" fontSize={9} fontFamily="var(--mono)" opacity={0.7}>{gl.label}</text>
+        </g>
+      ))}
+
       {/* Area fill */}
       <polygon points={area} fill={color} fillOpacity={0.08} />
+
       {/* Line */}
       <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-      {/* Dots */}
+
+      {/* Dots + value labels (only shown when readable) */}
       {data.map((v, i) => {
         const cx = pad + i * stepX;
-        const cy = h - pad - (v / max) * (h - pad * 2);
+        const cy = pad + plotH - (v / max) * plotH;
+        const showLabel = showValueLabels || i === 0 || i === data.length - 1 || v === max;
         return (
           <g key={i}>
             <circle cx={cx} cy={cy} r={2.5} fill={color} />
-            <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--ink-2)" fontSize={10} fontWeight={600}>{v}</text>
+            {showLabel && (
+              <text x={cx} y={cy - 7} textAnchor="middle" fill="var(--ink-2)" fontSize={9} fontWeight={600}>{v}</text>
+            )}
           </g>
         );
       })}
+
       {/* Date labels */}
-      {labels && labels.length > 0 && (
+      {dateLabels.length > 0 && (
         <g>
-          <text x={pad} y={h + 10} textAnchor="start" fill="var(--ink-4)" fontSize={9} fontFamily="var(--mono)">{labels[0]}</text>
-          <text x={pad + (labels.length - 1) * stepX} y={h + 10} textAnchor="end" fill="var(--ink-4)" fontSize={9} fontFamily="var(--mono)">{labels[labels.length - 1]}</text>
+          {dateLabels.map((dl, i) => {
+            const x = pad + dl.index * stepX;
+            return (
+              <text
+                key={i}
+                x={x}
+                y={h - 4}
+                textAnchor="middle"
+                fill="var(--ink-4)"
+                fontSize={8.5}
+                fontFamily="var(--mono)"
+                opacity={0.8}
+              >
+                {dl.label}
+              </text>
+            );
+          })}
         </g>
       )}
     </svg>
@@ -61,7 +121,7 @@ export default function AdminAnalytics() {
 
   // Load campaigns list on mount
   useEffect(() => {
-    api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(() => {});
+    api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(e => console.error('[analytics] Load campaigns:', e));
   }, []);
 
   useEffect(() => {
@@ -106,10 +166,13 @@ export default function AdminAnalytics() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1>Analytics</h1>
-          <div className="page-sub">Historical message volume, delivery trends, and per-agent breakdowns.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Operations</div>
+            <h1>Analytics</h1>
+            <div className="page-sub">Historical message volume, delivery trends, and per-agent breakdowns.</div>
+          </div>
         </div>
         <LiveBadge />
       </div>
@@ -236,6 +299,7 @@ export default function AdminAnalytics() {
                 <h3>By Campaign</h3>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byCampaign.length} campaigns</span>
               </div>
+              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
               <table>
                 <thead>
                   <tr>
@@ -266,6 +330,7 @@ export default function AdminAnalytics() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
             {/* Per-user table */}
             <div className="card">
@@ -273,6 +338,7 @@ export default function AdminAnalytics() {
                 <h3>By Agent</h3>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byUser.length} agents</span>
               </div>
+              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
               <table>
                 <thead>
                   <tr>
@@ -308,6 +374,7 @@ export default function AdminAnalytics() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
 
             {/* Per-gateway table */}
@@ -316,6 +383,7 @@ export default function AdminAnalytics() {
                 <h3>By Gateway</h3>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byGateway.length} devices</span>
               </div>
+              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
               <table>
                 <thead>
                   <tr>
@@ -346,6 +414,7 @@ export default function AdminAnalytics() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
 

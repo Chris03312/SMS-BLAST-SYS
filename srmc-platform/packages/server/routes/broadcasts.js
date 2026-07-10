@@ -1,12 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import db from '../database/db.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { startBroadcast, cancelBroadcast, pauseBroadcast, resumeBroadcast, getRunningCount } from '../broadcast-engine.js';
-import { normalizePhone } from '../phone.js';
-// TODO: import your actual event emitter here, e.g.:
-// import { emitEvent } from '../sockets.js';
+import { startBroadcast, cancelBroadcast, pauseBroadcast, resumeBroadcast, getRunningCount } from '../services/broadcast-engine.js';
+import { normalizePhone } from '../utils/phone.js';
+import { broadcast as emitEvent } from '../services/ws.js';
 
 const router = Router();
 
@@ -88,8 +87,8 @@ router.get('/', (req, res) => {
 
 router.get('/running/list', (req, res) => {
   try {
-    const running = db.prepare(
-      `SELECT b.id, b.status, b.sent, b.failed, b.total, b.message, b.delay_ms, b.created_at,
+    let runningSql = `
+      SELECT b.id, b.status, b.sent, b.failed, b.total, b.message, b.delay_ms, b.created_at,
               u.display_name as agent_name,
               c.name as campaign_name,
               g.name as gateway_name, g.number as gateway_number, g.number2 as gateway_number2
@@ -98,8 +97,14 @@ router.get('/running/list', (req, res) => {
        LEFT JOIN campaigns c ON b.campaign_id = c.id
        LEFT JOIN gateways g ON b.gateway_id = g.id
        WHERE b.status IN ('pending', 'sending', 'paused')
-       ORDER BY b.created_at DESC`
-    ).all();
+    `;
+    const params = [];
+    if (req.user.role === 'agent') {
+      runningSql += ' AND b.agent_id = ?';
+      params.push(req.user.id);
+    }
+    runningSql += ' ORDER BY b.created_at DESC';
+    const running = db.prepare(runningSql).all(...params);
     return ok(res, { broadcasts: fixTimestamps(running) });
   } catch (e) {
     console.error('[broadcasts] GET /running error:', e);
@@ -358,20 +363,55 @@ router.delete('/:id', (req, res) => {
     db.prepare('DELETE FROM broadcasts WHERE id = ?').run(req.params.id);
 
     // Notify frontend so it can update UIs
-    if (typeof emitEvent === 'function') {
-      emitEvent({
-        type: 'broadcast:complete',
-        broadcastId: req.params.id,
-        status: 'cancelled',
-        sent: bcast.sent || 0,
-        failed: bcast.failed || 0,
-        total: bcast.total || 0,
-      });
-    }
+    emitEvent({
+      type: 'broadcast:complete',
+      broadcastId: req.params.id,
+      status: 'cancelled',
+      sent: bcast.sent || 0,
+      failed: bcast.failed || 0,
+      total: bcast.total || 0,
+    });
 
     return ok(res, { success: true });
   } catch (e) {
     console.error('[broadcasts] DELETE error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Cancel ALL active broadcasts (admin only) ───────────────────────
+
+router.post('/cancel-all', (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return fail(res, 'Access denied', 403);
+    }
+
+    const activeBcasts = db.prepare("SELECT * FROM broadcasts WHERE status IN ('sending', 'paused')").all();
+
+    for (const bcast of activeBcasts) {
+      // Stop the engine
+      cancelBroadcast(bcast.id);
+
+      // Mark as cancelled — keep data for history
+      db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?").run(bcast.id);
+      db.prepare("UPDATE messages SET status = 'cancelled' WHERE broadcast_id = ? AND status NOT IN ('sent', 'delivered')").run(bcast.id);
+
+      // Notify frontend
+      emitEvent({
+        type: 'broadcast:complete',
+        broadcastId: bcast.id,
+        status: 'cancelled',
+        sent: bcast.sent || 0,
+        failed: bcast.failed || 0,
+        total: bcast.total || 0,
+        agent_id: bcast.agent_id,
+      });
+    }
+
+    return ok(res, { success: true, cancelled: activeBcasts.length });
+  } catch (e) {
+    console.error('[broadcasts] CANCEL ALL error:', e);
     return fail(res, 'Internal server error', 500);
   }
 });
@@ -397,16 +437,14 @@ router.post('/:id/cancel', (req, res) => {
     // Mark non-sent messages as cancelled (keep already sent/delivered as-is)
     db.prepare("UPDATE messages SET status = 'cancelled' WHERE broadcast_id = ? AND status NOT IN ('sent', 'delivered')").run(req.params.id);
 
-    if (typeof emitEvent === 'function') {
-      emitEvent({
-        type: 'broadcast:complete',
-        broadcastId: req.params.id,
-        status: 'cancelled',
-        sent: bcast.sent || 0,
-        failed: bcast.failed || 0,
-        total: bcast.total || 0,
-      });
-    }
+    emitEvent({
+      type: 'broadcast:complete',
+      broadcastId: req.params.id,
+      status: 'cancelled',
+      sent: bcast.sent || 0,
+      failed: bcast.failed || 0,
+      total: bcast.total || 0,
+    });
 
     return ok(res, { success: true, status: 'cancelled' });
   } catch (e) {

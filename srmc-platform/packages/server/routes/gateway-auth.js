@@ -13,7 +13,7 @@
 
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import db from '../db.js';
+import db from '../database/db.js';
 import {
   gatewayLogin,
   gatewayOnline,

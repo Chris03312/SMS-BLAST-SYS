@@ -33,7 +33,9 @@ export default function AdminInbound() {
       const data = await api.get(`/inbound?${params}`);
       setMessages(data.messages || []);
       setTotal(data.total || 0);
-    } catch (e) {}
+    } catch (e) {
+      console.error('[admin-inbound] Load:', e);
+    }
     setLoading(false);
   }
 
@@ -50,7 +52,9 @@ export default function AdminInbound() {
     try {
       const updated = await api.put(`/inbound/${id}`, { flag: newFlag });
       setMessages(prev => prev.map(m => m.id === id ? { ...m, flag: (updated.message || updated).flag } : m));
-    } catch (e) {}
+    } catch (e) {
+      console.error('[admin-inbound] Flag change:', e);
+    }
   }
 
   async function openConversation(m) {
@@ -60,14 +64,18 @@ export default function AdminInbound() {
     try {
       const data = await api.get(`/inbound/conversation/${encodeURIComponent(m.from_number)}`);
       setConversation(data.messages || []);
-    } catch (_) {}
+    } catch (e) {
+      console.error('[admin-inbound] Load conversation:', e);
+    }
     setConvLoading(false);
     // Mark as read
     if (!m.read_at) {
       try {
         await api.put(`/inbound/${m.id}`, { read: true });
         setMessages(prev => prev.map(x => x.id === m.id ? { ...x, read_at: new Date().toISOString() } : x));
-      } catch (e) {}
+      } catch (e) {
+        console.error('[admin-inbound] Mark read:', e);
+      }
     }
   }
 
@@ -81,10 +89,13 @@ export default function AdminInbound() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1>Inbound Messages</h1>
-          <div className="page-sub">All inbound replies received across all gateways.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Operations</div>
+            <h1>Inbound Messages</h1>
+            <div className="page-sub">All inbound replies received across all gateways.</div>
+          </div>
         </div>
       </div>
 

@@ -15,6 +15,12 @@ import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
@@ -35,6 +41,13 @@ public class GatewayService extends Service {
     private GatewayHttpServer    httpServer;
     private NotificationManager notificationManager;
     private PowerManager.WakeLock wakeLock;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private Handler wakeLockHandler;
+    private Runnable wakeLockRenewRunnable;
+    private boolean serverCheckFailed = false;
+    private Handler retryHandler;
+    private Runnable retryRunnable;
+    private int retryBackoffSec = 5;
 
     public static volatile boolean isRunning = false;
     private static volatile String sHttpUrl = "";
@@ -74,43 +87,9 @@ public class GatewayService extends Service {
             catch (Exception ignored) {}
         }
 
-        ServerChecker.check(getApplicationContext(), (online, message) -> {
-            if (!online) {
-                Log.w(TAG, "SMS server offline \u2014 gateway blocked. " + message);
-                updateNotification("\u26a0 SMS server offline \u2014 gateway stopped");
-                isRunning = false;
-                Intent bc = new Intent(ACTION_SERVER_OFFLINE);
-                bc.putExtra("reason", message);
-                sendBroadcast(bc);
-                stopSelf();
-                return;
-            }
+        checkServerWithRetry();
 
-            if (!isRunning) {
-                try {
-                    isRunning = true;
-                    String srvAddr = ServerConfig.getBaseUrl(getApplicationContext());
-                    updateNotification("\u2713 Connected to: " + srvAddr);
-                    Log.d(TAG, "Gateway started — SMS server OK @ " + srvAddr);
-
-                    // ── Start PULL outbound poller ───────────────────────────
-                    outboundPoller = new OutboundPoller(getApplicationContext());
-                    outboundPoller.start();
-
-                    // ── Start PUSH HTTP server ────────────────────────────────
-                    // Listens for incoming POST /send and GET /health requests
-                    // from the central server (URL + token mode).
-                    startHttpServer();
-
-                    sendBroadcast(new Intent(ACTION_GATEWAY_STARTED));
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to start gateway: " + e.getMessage(), e);
-                    isRunning = false;
-                    updateNotification("\u26a0 Failed: " + e.getMessage());
-                    stopSelf();
-                }
-            }
-        });
+        registerConnectivityReceiver();
 
         return START_STICKY;
     }
@@ -138,6 +117,8 @@ public class GatewayService extends Service {
 
     @Override
     public void onDestroy() {
+        stopWakeLockRenewal();
+        unregisterConnectivityReceiver();
         if (outboundPoller != null) {
             outboundPoller.stop();
             outboundPoller = null;
@@ -159,18 +140,50 @@ public class GatewayService extends Service {
     private void acquireWakeLock() {
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm == null) return;
-        if (wakeLock == null) {
-            wakeLock = pm.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK,
-                    "SMSGateway::GatewayWakeLock");
-            // Acquire with a timeout so the lock doesn't run indefinitely
-            // on low-end devices where battery is precious. 10 min = 600000ms
-            wakeLock.acquire(600_000);
-            Log.d(TAG, "WakeLock acquired (10 min timeout)");
+        if (wakeLock == null || !wakeLock.isHeld()) {
+            if (wakeLock == null) {
+                wakeLock = pm.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "SMSGateway::GatewayWakeLock");
+            }
+            // Acquire permanently — the SMS gateway must stay awake to
+            // receive and send SMS. A renewal timer re-acquires every
+            // 5 minutes as a safety net against OS-induced release.
+            wakeLock.acquire();
+            Log.d(TAG, "WakeLock acquired (permanent)");
+        }
+        startWakeLockRenewal();
+    }
+
+    private void startWakeLockRenewal() {
+        stopWakeLockRenewal();
+        wakeLockHandler = new Handler(Looper.getMainLooper());
+        wakeLockRenewRunnable = () -> {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                try {
+                    wakeLock.release();
+                } catch (Exception ignored) {}
+            }
+            acquireWakeLock();
+            wakeLockHandler.postDelayed(wakeLockRenewRunnable, 5 * 60 * 1000L);
+        };
+        wakeLockHandler.postDelayed(wakeLockRenewRunnable, 5 * 60 * 1000L);
+        Log.d(TAG, "WakeLock renewal scheduled (every 5 min)");
+    }
+
+    private void stopWakeLockRenewal() {
+        if (wakeLockHandler != null) {
+            wakeLockHandler.removeCallbacks(wakeLockRenewRunnable);
+            wakeLockHandler = null;
+        }
+        if (retryHandler != null) {
+            retryHandler.removeCallbacks(retryRunnable);
+            retryHandler = null;
         }
     }
 
     private void releaseWakeLock() {
+        stopWakeLockRenewal();
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
             wakeLock = null;
@@ -205,6 +218,132 @@ public class GatewayService extends Service {
                 .setOngoing(true)
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build();
+    }
+
+    // ── Server check with retry ────────────────────────────────────
+
+    private void checkServerWithRetry() {
+        serverCheckFailed = false;
+        retryBackoffSec = 5;
+        doServerCheck();
+    }
+
+    private void doServerCheck() {
+        ServerChecker.check(getApplicationContext(), (online, message) -> {
+            if (!online) {
+                Log.w(TAG, "SMS server unreachable: " + message);
+                updateNotification("\u26a0 Server unreachable — retrying in " + retryBackoffSec + "s");
+                if (!isRunning) {
+                    serverCheckFailed = true;
+                    // Don't kill the service — retry with exponential backoff
+                    scheduleServerRetry();
+                }
+                return;
+            }
+
+            // Reset retry backoff on any successful server contact
+            retryBackoffSec = 5;
+
+            if (!isRunning) {
+                try {
+                    isRunning = true;
+                    serverCheckFailed = false;
+                    String srvAddr = ServerConfig.getBaseUrl(getApplicationContext());
+                    updateNotification("\u2713 Connected to: " + srvAddr);
+                    Log.d(TAG, "Gateway started \u2014 SMS server OK @ " + srvAddr);
+
+                    // \u2500\u2500 Start PULL outbound poller \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                    outboundPoller = new OutboundPoller(getApplicationContext());
+                    outboundPoller.start();
+
+                    // \u2500\u2500 Start PUSH HTTP server \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                    startHttpServer();
+
+                    sendBroadcast(new Intent(ACTION_GATEWAY_STARTED));
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to start gateway: " + e.getMessage(), e);
+                    isRunning = false;
+                    updateNotification("\u26a0 Failed: " + e.getMessage());
+                    scheduleServerRetry();
+                }
+            } else {
+                // Already running but server check passed — just update notification
+                serverCheckFailed = false;
+                updateNotification("\u2713 " + (GatewayService.getHttpUrl().isEmpty() ? "" : GatewayService.getHttpUrl() + " | ") + ServerConfig.getBaseUrl(getApplicationContext()));
+            }
+        });
+    }
+
+    private void scheduleServerRetry() {
+        if (retryHandler == null) {
+            retryHandler = new Handler(Looper.getMainLooper());
+        }
+        retryHandler.removeCallbacks(retryRunnable);
+        retryRunnable = () -> {
+            Log.d(TAG, "Retrying server check (backoff: " + retryBackoffSec + "s)");
+            doServerCheck();
+            // Exponential backoff: 5s -> 10s -> 20s -> 30s (max)
+            retryBackoffSec = Math.min(retryBackoffSec * 2, 30);
+        };
+        retryHandler.postDelayed(retryRunnable, retryBackoffSec * 1000L);
+    }
+
+    // \u2500\u2500 Connectivity change receiver \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // Detects WiFi / mobile data reconnection and re-checks the server.
+
+    private void registerConnectivityReceiver() {
+        unregisterConnectivityReceiver();
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                Log.d(TAG, "Network available \u2014 re-checking server");
+                // Brief delay to let the network stack settle
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (!isRunning) {
+                        doServerCheck();
+                    } else {
+                        // Re-notify outbound poller that network is back
+                        if (outboundPoller != null) {
+                            outboundPoller.onNetworkAvailable();
+                        }
+                    }
+                }, 2000);
+            }
+
+            @Override
+            public void onLost(Network network) {
+                Log.w(TAG, "Network lost");
+                updateNotification("\u26a0 Network lost \u2014 waiting for reconnection");
+            }
+
+            @Override
+            public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                    Log.d(TAG, "Internet capability restored");
+                }
+            }
+        };
+        NetworkRequest request = new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build();
+        cm.registerNetworkCallback(request, networkCallback);
+        Log.d(TAG, "Connectivity callback registered");
+    }
+
+    private void unregisterConnectivityReceiver() {
+        if (networkCallback != null) {
+            try {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (cm != null) {
+                    cm.unregisterNetworkCallback(networkCallback);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Unregister connectivity: " + e.getMessage());
+            }
+            networkCallback = null;
+        }
     }
 
     // ── HTTP server (PUSH mode) ──────────────────────────────────────

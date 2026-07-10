@@ -9,8 +9,8 @@
  */
 
 import ngrok from '@ngrok/ngrok';
-import db from './db.js';
-import { registerNgrokWebhook, getInboundWebhookUrl } from './services/gateway-service.js';
+import db from '../database/db.js';
+import { registerNgrokWebhook, getInboundWebhookUrl } from './gateway-service.js';
 
 let activeListener = null;
 let currentUrl     = null;

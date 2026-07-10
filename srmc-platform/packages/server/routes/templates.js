@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
+import db from '../database/db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 
 const router = Router();
 
@@ -18,12 +18,33 @@ router.use(authMiddleware);
 
 router.get('/', (req, res) => {
   try {
-    const templates = db.prepare(`
-      SELECT t.*, u.display_name as creator_name
-      FROM templates t
-      LEFT JOIN users u ON t.created_by = u.id
-      ORDER BY t.created_at DESC
-    `).all();
+    // Agents see only their own templates + templates created by admins.
+    // Admins see every template.
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+
+    let sql;
+    let params;
+    if (isAdmin) {
+      sql = `
+        SELECT t.*, u.display_name as creator_name
+        FROM templates t
+        LEFT JOIN users u ON t.created_by = u.id
+        ORDER BY t.created_at DESC
+      `;
+      params = [];
+    } else {
+      sql = `
+        SELECT t.*, u.display_name as creator_name
+        FROM templates t
+        LEFT JOIN users u ON t.created_by = u.id
+        WHERE t.created_by = ?
+           OR t.created_by IN (SELECT id FROM users WHERE role IN ('admin', 'super_admin'))
+        ORDER BY t.created_at DESC
+      `;
+      params = [req.user.id];
+    }
+
+    const templates = db.prepare(sql).all(...params);
     return ok(res, { templates: fixTimestamps(templates) });
   } catch (e) {
     console.error('[templates] GET error:', e);

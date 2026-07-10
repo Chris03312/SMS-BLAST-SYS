@@ -14,7 +14,7 @@ public class ServerConfig {
     private static final String KEY_PORT = "srmc_server_port";
 
     public static final String DEFAULT_IP   = "192.168.3.239";
-    public static final int    DEFAULT_PORT = 3001;
+    public static final int    DEFAULT_PORT = 3003;
 
     public static String getIp(Context ctx) {
         return prefs(ctx).getString(KEY_IP, DEFAULT_IP);

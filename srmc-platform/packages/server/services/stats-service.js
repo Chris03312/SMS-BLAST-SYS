@@ -4,7 +4,7 @@
  * Centralises all dashboard / stats SQL so route files stay thin.
  */
 
-import db from '../db.js';
+import db from '../database/db.js';
 
 /**
  * Global 7-day stats (admin dashboard).

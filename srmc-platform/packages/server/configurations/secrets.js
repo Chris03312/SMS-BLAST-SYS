@@ -41,7 +41,7 @@ function loadOrGenerateSecrets() {
     }
   }
 
-  const envJwt     = process.env.JWT_SECRET;
+  const envJwt = process.env.JWT_SECRET;
   const envWebhook = process.env.WEBHOOK_SECRET;
 
   // Determine JWT_SECRET:
@@ -85,7 +85,7 @@ function persistSecret(key, value) {
     if (existsSync(SECRETS_FILE)) {
       try {
         secrets = JSON.parse(readFileSync(SECRETS_FILE, 'utf-8'));
-      } catch (_) {}
+      } catch (_) { }
     }
     secrets[key] = value;
     writeFileSync(SECRETS_FILE, JSON.stringify(secrets, null, 2));

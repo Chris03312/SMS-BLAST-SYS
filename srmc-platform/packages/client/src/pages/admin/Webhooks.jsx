@@ -32,10 +32,13 @@ export default function Webhooks() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">People & Devices</div>
-          <h1>Webhooks</h1>
-          <div className="page-sub">Inbound webhook endpoint for receiving messages from Android gateways.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">People & Devices</div>
+            <h1>Webhooks</h1>
+            <div className="page-sub">Inbound webhook endpoint for receiving messages from Android gateways.</div>
+          </div>
         </div>
       </div>
 

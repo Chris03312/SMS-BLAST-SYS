@@ -24,10 +24,10 @@ import path from 'path';
 import os from 'os';
 import { createSocket } from 'dgram';
 import { fileURLToPath } from 'url';
-import { initDb } from './db.js';
-import db from './db.js';
+import { initDb } from './database/db.js';
+import db from './database/db.js';
 import { registerNgrokWebhook } from './services/gateway-service.js';
-import { startNgrok, stopNgrok, getNgrokStatus } from './ngrok-tunnel.js';
+import { startNgrok, stopNgrok, getNgrokStatus } from './services/ngrok-tunnel.js';
 import { authMiddleware, adminOnly } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,7 +45,27 @@ import statsRoutes from './routes/stats.js';
 import activityRoutes from './routes/activity.js';
 import settingsRoutes from './routes/settings.js';
 
-export const PORT = parseInt(process.env.PORT) || 3001;
+// Read SERVER_HOST (includes protocol, e.g. http://192.168.3.239) and SERVER_PORT.
+// Parse the hostname out for server.listen(). Falls back to 0.0.0.0:3001.
+function resolveServerConfig() {
+  const rawHost = process.env.SERVER_HOST || '';
+  const port = parseInt(process.env.SERVER_PORT) || 3001;
+  let host = '0.0.0.0';
+  if (rawHost) {
+    try {
+      // If it includes a protocol, parse the hostname from it
+      if (rawHost.includes('://')) {
+        host = new URL(rawHost).hostname;
+      } else {
+        host = rawHost;
+      }
+    } catch { host = rawHost; }
+  }
+  return { host, port };
+}
+
+const { host: HOST, port: PORT } = resolveServerConfig();
+export { HOST, PORT };
 export const NGROK_URL = process.env.NGROK_URL || '';
 export const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || process.env.NGROK_TOKEN || '';
 
@@ -71,7 +91,6 @@ app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/stats', statsRoutes);
-app.use('/api', statsRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/settings', settingsRoutes);
 
@@ -182,8 +201,6 @@ async function checkInternet() {
   }
 }
 
-let online;
-
 app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
   const tunnelStatus = getNgrokStatus();
   const addresses = listLanIps();
@@ -191,11 +208,7 @@ app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
   if (!primaryIp && addresses.length) primaryIp = addresses[0].ip;
   const hasNgrokConfig = !!NGROK_URL || !!NGROK_AUTHTOKEN;
 
-
-  if (hasNgrokConfig) {
-    online = await checkInternet();
-  }
-
+  const online = hasNgrokConfig ? await checkInternet() : true;
 
   return res.json({
     success: true,

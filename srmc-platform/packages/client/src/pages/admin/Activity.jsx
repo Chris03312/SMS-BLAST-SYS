@@ -49,10 +49,13 @@ export default function Activity() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">System</div>
-          <h1>Activity Log</h1>
-          <div className="page-sub">Audit trail of all platform actions across agents and broadcasts.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">System</div>
+            <h1>Activity Log</h1>
+            <div className="page-sub">Audit trail of all platform actions across agents and broadcasts.</div>
+          </div>
         </div>
         <button
           type="button"

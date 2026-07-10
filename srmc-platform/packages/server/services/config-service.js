@@ -5,7 +5,7 @@
  * to clients (web UI and Android gateways).
  */
 
-import db from '../db.js';
+import db from '../database/db.js';
 import { getInboundWebhookUrl } from './gateway-service.js';
 
 /**

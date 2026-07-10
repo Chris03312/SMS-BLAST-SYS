@@ -3,13 +3,18 @@ import AdminShell from '../../components/AdminShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import Modal from '../../components/Modal.jsx';
 import { api } from '../../lib/api.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import { formatDateShort } from '../../lib/format.js';
 
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const { toast } = useToast();
   const [form, setForm] = useState({ name: '', status: 'active' });
+  const [editForm, setEditForm] = useState({ name: '', status: 'active' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -33,8 +38,35 @@ export default function Campaigns() {
       setCampaigns(prev => [c.campaign, ...prev]);
       setShowModal(false);
       setForm({ name: '', status: 'active' });
+      toast(`Campaign "${form.name}" created`, 'success');
     } catch (e) {
       setError(e.message);
+      toast(e.message, 'error');
+    }
+    setSaving(false);
+  }
+
+  function handleEdit(c) {
+    setEditItem(c);
+    setEditForm({ name: c.name, status: c.status });
+    setError('');
+    setShowEditModal(true);
+  }
+
+  async function handleSaveEdit(e) {
+    e.preventDefault();
+    if (!editItem) return;
+    setSaving(true);
+    setError('');
+    try {
+      const updated = await api.put(`/campaigns/${editItem.id}`, editForm);
+      setCampaigns(prev => prev.map(c => c.id === editItem.id ? updated.campaign : c));
+      setShowEditModal(false);
+      setEditItem(null);
+      toast(`Campaign "${editForm.name}" updated`, 'success');
+    } catch (e) {
+      setError(e.message);
+      toast(e.message, 'error');
     }
     setSaving(false);
   }
@@ -43,8 +75,9 @@ export default function Campaigns() {
     try {
       const updated = await api.put(`/campaigns/${id}`, { status });
       setCampaigns(prev => prev.map(c => c.id === id ? updated.campaign : c));
+      toast(`Campaign status changed to "${status}"`, 'success');
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
   }
 
@@ -56,10 +89,13 @@ export default function Campaigns() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1>Campaigns</h1>
-          <div className="page-sub">Manage and track bulk SMS campaigns across all agents.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Operations</div>
+            <h1>Campaigns</h1>
+            <div className="page-sub">Manage and track bulk SMS campaigns across all agents.</div>
+          </div>
         </div>
         <button className="btn-primary" onClick={() => setShowModal(true)}>New campaign</button>
       </div>
@@ -96,7 +132,18 @@ export default function Campaigns() {
                 <td className="num">{c.total_sent || 0}</td>
                 <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>{formatDate(c.created_at)}</td>
                 <td>
-                  <div className="row-actions">
+                  <div className="row-actions" style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+                    <button
+                      onClick={() => handleEdit(c)}
+                      className="btn-ghost"
+                      style={{ fontSize: 11, padding: '4px 10px', border: '1px solid var(--line)', borderRadius: 6 }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 3, verticalAlign: 'middle' }}>
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      Edit
+                    </button>
                     <select
                       className="input"
                       value={c.status}
@@ -145,6 +192,39 @@ export default function Campaigns() {
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
                 <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Creating...' : 'Create campaign'}</button>
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showEditModal && editItem && (
+        <Modal title="Edit Campaign" onClose={() => { setShowEditModal(false); setEditItem(null); }}>
+          <form onSubmit={handleSaveEdit}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Campaign name</label>
+                <input
+                  className="input"
+                  value={editForm.name}
+                  onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Q3 EMI Recovery Drive"
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Status</label>
+                <select className="input" value={editForm.status} onChange={e => setEditForm(prev => ({ ...prev, status: e.target.value }))}>
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="done">Done</option>
+                  <option value="scheduled">Scheduled</option>
+                </select>
+              </div>
+              {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-ghost" onClick={() => { setShowEditModal(false); setEditItem(null); }}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button>
               </div>
             </div>
           </form>

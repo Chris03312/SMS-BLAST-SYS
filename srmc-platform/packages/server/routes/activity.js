@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import db from '../db.js';
+import db from '../database/db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 
 const router = Router();
 
@@ -39,6 +39,10 @@ router.get('/', (req, res) => {
     if (userId) {
       conditions.push('a.user_id = ?');
       params.push(userId);
+    } else if (req.user.role === 'agent') {
+      // Agents can only see their own activity
+      conditions.push('a.user_id = ?');
+      params.push(req.user.id);
     }
 
     if (conditions.length > 0) {

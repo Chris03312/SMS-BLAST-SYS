@@ -3,6 +3,7 @@
  */
 
 import * as XLSX from 'xlsx-js-style';
+import { api } from './api.js';
 
 /**
  * Trigger a browser download of a blob/file.
@@ -97,7 +98,6 @@ export function exportAnalyticsXlsx(data, periodLabel) {
  * @param {object} filters - { level?, limit? } to pass to the API
  */
 export async function exportActivityXlsx(filters = {}) {
-  const { api } = await import('./api.js');
   const params = new URLSearchParams({ limit: 10000, ...(filters.level && filters.level !== 'all' ? { level: filters.level } : {}) });
   const data = await api.get(`/activity?${params}`);
   const activities = data.activities || [];

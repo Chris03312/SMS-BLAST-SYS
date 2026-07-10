@@ -80,33 +80,46 @@ public class InboundSmsReceiver extends BroadcastReceiver {
         SharedPreferences prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE);
 
         String token = prefs.getString(PREF_INBOUND_TOKEN, "");
-        if (token.isEmpty()) {
-            Log.w(TAG, "No inbound_token stored — user not logged in yet, skipping");
-            return;
-        }
 
-        // Prefer the webhook URL fetched from /api/config (supports ngrok / mobile data).
-        // Fall back to LAN URL if not available.
+        // Resolve webhook URL: prefer stored URL (from heartbeat), fall back to LAN
         String webhookUrl = prefs.getString(PREF_INBOUND_WEBHOOK, "");
-        // Guard against an empty or malformed (no scheme) cached URL — fall
-        // back to the LAN endpoint so we never throw "no protocol".
         if (!webhookUrl.startsWith("http://") && !webhookUrl.startsWith("https://")) {
             webhookUrl = ServerConfig.getBaseUrl(context) + "/api/inbound";
-            Log.w(TAG, "No usable webhook URL stored — using LAN fallback: " + webhookUrl);
         }
 
         Log.d(TAG, "→ POST " + webhookUrl);
 
         try {
             JSONObject payload = new JSONObject();
-            payload.put("sender",  sender);
-            payload.put("message", message);
-            byte[] bodyBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] bodyBytes;
+
+            // Two payload formats supported by the server:
+            //   1. Authenticated (requires Bearer token): { sender, message }
+            //   2. Unauthenticated (no token needed):      { from, body }
+            //
+            // The Lite gateway has no login flow, so it never gets an inbound_token.
+            // Use the unauthenticated format ({ from, body }) when no token is stored.
+            // When a token IS available (e.g. configured via external setup), use the
+            // authenticated format for better security.
+            if (token.isEmpty()) {
+                // No token — use unauthenticated format (server skips auth validation)
+                payload.put("from",    sender);
+                payload.put("body",    message);
+                payload.put("gateway_id", "");
+                Log.d(TAG, "No inbound token — using unauthenticated format");
+            } else {
+                // Token available — use authenticated format
+                payload.put("sender",  sender);
+                payload.put("message", message);
+            }
+            bodyBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
 
             HttpURLConnection conn = (HttpURLConnection) new URL(webhookUrl).openConnection();
             conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type",  "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + token);
+            conn.setRequestProperty("Content-Type", "application/json");
+            if (!token.isEmpty()) {
+                conn.setRequestProperty("Authorization", "Bearer " + token);
+            }
             conn.setDoOutput(true);
             conn.setConnectTimeout(15_000);
             conn.setReadTimeout(15_000);
@@ -116,11 +129,31 @@ public class InboundSmsReceiver extends BroadcastReceiver {
             }
 
             int code = conn.getResponseCode();
-            Log.d(TAG, "✅ Server responded HTTP " + code);
+            String responseBody = code >= 400 ? readErrorBody(conn) : "";
+            if (code < 400) {
+                Log.d(TAG, "✅ Server responded HTTP " + code);
+            } else {
+                Log.w(TAG, "⚠ Server responded HTTP " + code + " — " + responseBody);
+            }
             conn.disconnect();
 
         } catch (Exception e) {
             Log.e(TAG, "❌ Failed to forward inbound SMS: " + e.getMessage(), e);
+        }
+    }
+
+    /** Read error stream for debug logging. */
+    private String readErrorBody(HttpURLConnection conn) {
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line);
+            reader.close();
+            return sb.toString().length() > 200 ? sb.substring(0, 200) : sb.toString();
+        } catch (Exception e) {
+            return "";
         }
     }
 }

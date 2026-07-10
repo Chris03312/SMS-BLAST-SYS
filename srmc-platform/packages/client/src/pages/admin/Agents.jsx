@@ -5,6 +5,7 @@ import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
 import { formatDateShort } from '../../lib/format.js';
+import { useToast } from '../../context/ToastContext.jsx';
 
 export default function Admins() {
   const [items, setItems] = useState([]);
@@ -16,6 +17,7 @@ export default function Admins() {
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmToggleActive, setConfirmToggleActive] = useState(null);
+  const { toast } = useToast();
 
   useEffect(() => { load(); }, []);
 
@@ -67,7 +69,7 @@ export default function Admins() {
       await api.del(`/agents/admins/${item.id}`);
       setItems(prev => prev.filter(x => x.id !== item.id));
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
     setConfirmDelete(null);
   }
@@ -78,7 +80,7 @@ export default function Admins() {
       const updated = await api.put(`/agents/admins/${item.id}`, { active: newActive });
       setItems(prev => prev.map(a => a.id === item.id ? { ...a, active: updated.admin.active } : a));
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
     setConfirmToggleActive(null);
   }
@@ -89,11 +91,14 @@ export default function Admins() {
   return (
     <AdminShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">People & Devices</div>
-          <h1>Admins</h1>
-          <div className="page-sub">
-            Manage admin accounts. Super admins can create and manage other admins.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">People & Devices</div>
+            <h1>Admins</h1>
+            <div className="page-sub">
+              Manage admin accounts. Super admins can create and manage other admins.
+            </div>
           </div>
         </div>
         <button className="btn-primary" onClick={openNew}>

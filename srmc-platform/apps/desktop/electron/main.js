@@ -24,6 +24,31 @@ const { autoUpdater } = require('electron-updater');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 
+// ── Load .env for default server URL ───────────────────────────────────────
+// Reads the .env file from the monorepo root so the desktop app picks up
+// the same HOST / PORT used by the web server.
+function loadDotenv() {
+  try {
+    const envPath = path.join(ROOT, '.env');
+    if (fs.existsSync(envPath)) {
+      const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const eqIndex = trimmed.indexOf('=');
+        const key = trimmed.slice(0, eqIndex).trim();
+        const val = trimmed.slice(eqIndex + 1).trim();
+        if (key && val && !process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  } catch (_) {
+    // Best-effort
+  }
+}
+loadDotenv();
+
 let mainWindow = null;
 let tray = null;
 let logStream = null;
@@ -33,7 +58,9 @@ let ngrokUrl = null;
 // ── Settings ───────────────────────────────────────────────────────────────
 
 const SETTINGS_FILE = 'settings.json';
-let settings = { serverUrl: 'http://localhost:3001' };
+const envHost = (process.env.SERVER_HOST || 'http://192.168.3.239').replace(/\/+$/, '');
+const envPort = process.env.SERVER_PORT || '3003';
+let settings = { serverUrl: `${envHost}:${envPort}` };
 
 function settingsPath() {
   return path.join(app.getPath('userData'), SETTINGS_FILE);

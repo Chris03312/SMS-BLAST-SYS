@@ -237,10 +237,13 @@ export default function History() {
       )}
 
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1>Broadcast History</h1>
-          <div className="page-sub">All SMS broadcasts sent from your account.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Operations</div>
+            <h1>Broadcast History</h1>
+            <div className="page-sub">All SMS broadcasts sent from your account.</div>
+          </div>
         </div>
       </div>
 

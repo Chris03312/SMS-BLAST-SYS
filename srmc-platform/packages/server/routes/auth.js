@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import db from '../db.js';
+import db from '../database/db.js';
 import { authMiddleware, JWT_SECRET } from '../middleware/auth.js';
-import { fixTimestamps } from '../fix-timestamps.js';
+import { fixTimestamps } from '../utils/fix-timestamps.js';
 
 const router = Router();
 

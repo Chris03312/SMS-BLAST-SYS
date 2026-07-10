@@ -101,7 +101,7 @@ export default function Inbound() {
   const chatRef = useRef(null);
 
   useEffect(() => {
-    api.get('/gateways').then(d => setGateways(d.gateways || [])).catch(() => {});
+    api.get('/gateways').then(d => setGateways(d.gateways || [])).catch(e => console.error('[inbound] Load gateways:', e));
     refreshCounts();
   }, []);
 
@@ -146,7 +146,9 @@ export default function Inbound() {
         'opt-out':     optout.total       || 0,
         'needs-reply': needsReply.total   || 0,
       });
-    } catch (e) {}
+    } catch (e) {
+      console.error('[inbound] Refresh counts:', e);
+    }
   }
 
   async function loadMessages() {
@@ -157,7 +159,9 @@ export default function Inbound() {
       if (search.trim())            params.set('search', search.trim());
       const data = await api.get(`/inbound?${params}`);
       setMessages(data.messages || []);
-    } catch (e) {}
+    } catch (e) {
+      console.error('[inbound] Load messages:', e);
+    }
   }
 
   /** Check if a gateway has dual-SIM capability */
@@ -183,7 +187,9 @@ export default function Inbound() {
         await api.put(`/inbound/${m.id}`, { read: true });
         setMessages(prev => prev.map(x => x.id === m.id ? { ...x, read_at: new Date().toISOString() } : x));
         setCounts(c => ({ ...c, unread: Math.max(0, c.unread - 1) }));
-      } catch (e) {}
+      } catch (e) {
+      console.error('[inbound] Mark read:', e);
+    }
     }
   }
 
@@ -194,7 +200,9 @@ export default function Inbound() {
       setMessages(prev => prev.map(m => m.id === selected.id ? { ...m, flag: updated.flag } : m));
       setSelected(s => ({ ...s, flag: updated.flag }));
       refreshCounts();
-    } catch (e) {}
+    } catch (e) {
+      console.error('[inbound] Flag update:', e);
+    }
   }
 
   async function handleReply(e) {

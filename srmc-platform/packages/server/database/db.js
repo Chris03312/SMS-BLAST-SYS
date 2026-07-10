@@ -20,20 +20,20 @@ import initSqlJs from 'sql.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from 'fs';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const require   = createRequire(import.meta.url);
+const require = createRequire(import.meta.url);
 
 // Writable data directory.
 //   - Electron (packaged): main.js sets SRMC_DATA_DIR to app.getPath('userData')
 //     because the app folder (app.asar / Program Files) is read-only.
 //   - Standalone / dev: falls back to <repo>/data.
 const DATA_DIR = process.env.SRMC_DATA_DIR || join(__dirname, '..', '..', 'data');
-const DB_PATH  = join(DATA_DIR, 'srmc.db');
+const DB_PATH = join(DATA_DIR, 'srmc.db');
 
 mkdirSync(DATA_DIR, { recursive: true });
 
@@ -55,9 +55,72 @@ function scheduleFlush() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
+    flushDb();
+  }, 200);
+}
+
+/**
+ * Immediately flush the in-memory database to disk.
+ * Can be called externally for graceful shutdown or manual backup.
+ */
+export function flushDb() {
+  try {
     const data = rawDb.export();
     writeFileSync(DB_PATH, Buffer.from(data));
-  }, 200);
+  } catch (e) {
+    console.error('[db] Flush failed:', e.message);
+  }
+}
+
+// ── Periodic backups ─────────────────────────────────────────────────
+// Every 15 minutes, write a copy of the DB to a numbered backup file.
+// Keeps the last 6 backups (90 minutes of history).
+const BACKUP_INTERVAL_MS = 15 * 60 * 1000;
+const MAX_BACKUPS = 6;
+
+function startBackupSchedule() {
+  setInterval(() => {
+    try {
+      // Rotate backups: remove oldest, shift others
+      for (let i = MAX_BACKUPS - 1; i >= 1; i--) {
+        const oldPath = DB_PATH.replace('.db', `.backup.${i}.db`);
+        const newPath = DB_PATH.replace('.db', `.backup.${i + 1}.db`);
+        if (existsSync(oldPath)) {
+          try {
+            renameSync(oldPath, newPath);
+          } catch (_) {
+            // If rename fails (cross-device), copy + delete
+            try {
+              copyFileSync(oldPath, newPath);
+              unlinkSync(oldPath);
+            } catch (_) { }
+          }
+        }
+      }
+      // Write new backup
+      const data = rawDb.export();
+      const backupPath = DB_PATH.replace('.db', '.backup.1.db');
+      writeFileSync(backupPath, Buffer.from(data));
+      console.log('[db] Backup saved to', backupPath.replace(DATA_DIR, ''));
+    } catch (e) {
+      console.error('[db] Backup failed:', e.message);
+    }
+  }, BACKUP_INTERVAL_MS);
+}
+
+// ── Backup on boot (migrate old backups) ─────────────────────────────
+// If no backups exist yet, create one immediately
+function createInitialBackup() {
+  const backupPath = DB_PATH.replace('.db', '.backup.1.db');
+  if (!existsSync(backupPath)) {
+    try {
+      const data = rawDb.export();
+      writeFileSync(backupPath, Buffer.from(data));
+      console.log('[db] Initial backup created');
+    } catch (e) {
+      console.error('[db] Initial backup failed:', e.message);
+    }
+  }
 }
 
 // ── Statement wrapper ────────────────────────────────────────────────────────
@@ -143,7 +206,7 @@ class Database {
   }
 
   /** No-op — WAL journal mode is not meaningful for an in-memory WASM DB. */
-  pragma() {}
+  pragma() { }
 }
 
 const db = new Database();
@@ -310,24 +373,24 @@ export function initDb() {
   if (!existing || existing.c === 0) {
     // Default settings
     for (const [key, value] of [
-      ['org_name',       'SMS Platform'],
-      ['sender_id',      'SMSGATEWAY'],
-      ['delay',          '6000'],
-      ['window_start',   '00:00'],
-      ['window_end',     '23:59'],
+      ['org_name', 'SMS Platform'],
+      ['sender_id', 'SMSGATEWAY'],
+      ['delay', '6000'],
+      ['window_start', '00:00'],
+      ['window_end', '23:59'],
       ['webhook_secret', 'whsec_' + uuidv4().replace(/-/g, '')],
-      ['ngrok_url',       ''],
-      ['daily_cap',               '10000'],
+      ['ngrok_url', ''],
+      ['daily_cap', '10000'],
       ['max_concurrent_broadcasts', '0'],
-      ['max_broadcasts_per_agent',     '5'],
-      ['max_recipients_per_broadcast',  '0'],
-      ['max_broadcast_duration_minutes','0'],
-      ['max_broadcasts_per_day_per_agent','0'],
-      ['broadcasts_globally_paused',    'false'],
-      ['turbo_delay',               '100'],
-      ['turbo_batch_size',           '5'],
-      ['timezone',                  'Asia/Manila'],
-      ['public_url',     ''],
+      ['max_broadcasts_per_agent', '5'],
+      ['max_recipients_per_broadcast', '0'],
+      ['max_broadcast_duration_minutes', '0'],
+      ['max_broadcasts_per_day_per_agent', '0'],
+      ['broadcasts_globally_paused', 'false'],
+      ['turbo_delay', '100'],
+      ['turbo_batch_size', '5'],
+      ['timezone', 'Asia/Manila'],
+      ['public_url', ''],
     ]) {
       db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
     }
@@ -376,6 +439,8 @@ export function initDb() {
     "ALTER TABLE broadcasts ADD COLUMN sim_round_start TEXT DEFAULT 'sim1'",
     // Which gateway received this inbound message
     "ALTER TABLE inbound ADD COLUMN gateway_id TEXT",
+    // Track who owns/created this gateway (filters listing for non-admin users)
+    "ALTER TABLE gateways ADD COLUMN owner_id TEXT",
   ];
   for (const sql of migrations) {
     try {
@@ -388,13 +453,17 @@ export function initDb() {
   // Create indexes that depend on migration-added columns
   try {
     db.exec("CREATE INDEX IF NOT EXISTS idx_gateways_active_mode ON gateways(active, mode)");
-  } catch (_) {}
+  } catch (_) { }
   try {
     db.exec("CREATE INDEX IF NOT EXISTS idx_inbound_agent_id ON inbound(agent_id)");
-  } catch (_) {}
+  } catch (_) { }
 
   // Guarantee a known admin login on EVERY boot (fresh DB or reinstall).
   ensureAdminAccount();
+
+  // Start periodic database backups
+  createInitialBackup();
+  startBackupSchedule();
 
   console.log('[db] Database ready at', DB_PATH);
 }
@@ -411,7 +480,7 @@ export function initDb() {
  */
 function ensureAdminAccount() {
   const adminUser = process.env.ADMIN_USERNAME || 'admin';
-  const envPass   = process.env.ADMIN_PASSWORD;
+  const envPass = process.env.ADMIN_PASSWORD;
   const row = db.prepare('SELECT id FROM users WHERE username = ?').get(adminUser);
 
   if (envPass) {
@@ -439,7 +508,7 @@ function ensureAdminAccount() {
       `  Username: ${adminUser}\n` +
       `  Password: ${pass}\n\n` +
       `Log in with these, then change the password (Agents page). Delete this file afterwards.\n`;
-    try { writeFileSync(credFile, note); } catch (_) {}
+    try { writeFileSync(credFile, note); } catch (_) { }
     console.warn(`[db] Generated initial admin "${adminUser}". Credentials written to ${credFile}`);
   }
 }

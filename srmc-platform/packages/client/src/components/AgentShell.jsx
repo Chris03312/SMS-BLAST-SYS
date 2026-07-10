@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../lib/api.js';
-import { useWS } from '../lib/ws.js';
+import { useWS, useConnectionStatus } from '../lib/ws.js';
 
 const TABS = [
   { label: 'Broadcast Task', path: '/dashboard' },
@@ -20,6 +20,7 @@ export default function AgentShell({ children }) {
   const [connectivity, setConnectivity] = useState(null); // null = loading, object = status
   const [showNetInfo, setShowNetInfo] = useState(false);
   const [broadcastsPaused, setBroadcastsPaused] = useState(false);
+  const wsStatus = useConnectionStatus();
 
   const fetchConnectivity = useCallback(() => {
     api.get('/server/connectivity')
@@ -81,7 +82,7 @@ export default function AgentShell({ children }) {
       <div className="nav">
         <Link to="/dashboard" className="nav-left" style={{ textDecoration: 'none', cursor: 'pointer' }}>
           <div className="brand-mark">
-            <img src="/assets/LOGO.svg" alt="SMS Platform" style={{ width: 32, height: 32 }} />
+            <img src="/assets/SRMC_LOGO.jpg" alt="SMS Platform" style={{ width: 32, height: 32 }} />
           </div>
           <div>
             <div className="brand-title">SMS Platform</div>
@@ -114,6 +115,18 @@ export default function AgentShell({ children }) {
               <div className="user-role">agent</div>
             </div>
           </div>
+          {/* WebSocket status indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} title={`WebSocket: ${wsStatus}`}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: wsStatus === 'open' ? 'var(--ok)'
+                : wsStatus === 'connecting' ? 'var(--warn)'
+                : 'var(--err)',
+              transition: 'background 0.3s',
+              flexShrink: 0,
+            }} />
+          </div>
+
           {/* Network status indicator */}
           <div style={{ position: 'relative' }}>
             <button

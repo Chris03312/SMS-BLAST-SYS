@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 import { getAllSettings, updateSettings } from '../services/config-service.js';
-import db from '../db.js';
-import { broadcast } from '../ws.js';
+import db from '../database/db.js';
+import { broadcast } from '../services/ws.js';
 
 const router = Router();
 

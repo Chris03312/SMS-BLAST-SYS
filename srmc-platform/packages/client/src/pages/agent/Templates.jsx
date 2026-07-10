@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
+import { useToast } from '../../context/ToastContext.jsx';
 
 export default function AgentTemplates() {
   const [templates, setTemplates] = useState([]);
@@ -12,6 +13,7 @@ export default function AgentTemplates() {
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     load();
@@ -74,7 +76,7 @@ export default function AgentTemplates() {
       setSelected(null);
       setEditing({ name: '', body: '' });
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
     setConfirmDelete(null);
   }
@@ -90,7 +92,7 @@ export default function AgentTemplates() {
       setTemplates(prev => [t.template, ...prev]);
       selectTemplate(t.template);
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
   }
 
@@ -105,10 +107,13 @@ export default function AgentTemplates() {
   return (
     <AgentShell>
       <div className="page-head">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1>Templates</h1>
-          <div className="page-sub">Manage reusable SMS message templates.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="/assets/SRMC_LOGO.jpg" alt="SystemBlast" style={{ width: 36, height: 36, flexShrink: 0 }} />
+          <div>
+            <div className="eyebrow">Operations</div>
+            <h1>Templates</h1>
+            <div className="page-sub">Manage reusable SMS message templates.</div>
+          </div>
         </div>
         <button className="btn-primary" onClick={startNew}>New template</button>
       </div>

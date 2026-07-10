@@ -251,6 +251,24 @@ public class MainActivity extends AppCompatActivity {
         }
         prefs.edit().putString("server_url", url).apply();
         etServerUrl.setText(url);
+
+        // Sync with ServerConfig so InboundSmsReceiver's LAN fallback
+        // uses the correct host and port (not the default 3001).
+        try {
+            java.net.URI parsed = new java.net.URI(url);
+            String host = parsed.getHost();
+            int port = parsed.getPort();
+            if (host != null && !host.isEmpty()) {
+                if (port > 0) {
+                    // LAN URL with explicit port — store host + port separately
+                    ServerConfig.setIp(MainActivity.this, host);
+                    ServerConfig.setPort(MainActivity.this, port);
+                } else {
+                    // ngrok URL (no port) — store full URL so getBaseUrl() uses it as-is
+                    ServerConfig.setIp(MainActivity.this, url);
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     // ── Heartbeat / Registration ─────────────────────────────────────
