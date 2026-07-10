@@ -7,6 +7,7 @@ import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatTime } from '../../lib/format.js';
+import { exportGatewaysXlsx } from '../../lib/export.js';
 import { useToast } from '../../context/ToastContext.jsx';
 
 export default function Numbers() {
@@ -120,7 +121,15 @@ export default function Numbers() {
             <div className="page-sub">Android SMS gateways connected to the broadcast network.</div>
           </div>
         </div>
-        <button className="btn-primary" onClick={openNew}>Add gateway</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-ghost" onClick={() => exportGatewaysXlsx(gateways)} disabled={gateways.length === 0}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: 'middle' }}>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export
+          </button>
+          <button className="btn-primary" onClick={openNew}>Add gateway</button>
+        </div>
       </div>
 
       <div className="card">

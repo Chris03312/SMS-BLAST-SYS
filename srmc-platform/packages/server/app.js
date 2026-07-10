@@ -29,6 +29,7 @@ import db from './database/db.js';
 import { registerNgrokWebhook } from './services/gateway-service.js';
 import { startNgrok, stopNgrok, getNgrokStatus } from './services/ngrok-tunnel.js';
 import { authMiddleware, adminOnly } from './middleware/auth.js';
+import { loginLimiter, broadcastLimiter, webhookLimiter, gatewayOutboundLimiter, ngrokLimiter } from './middleware/rate-limit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -114,7 +115,7 @@ app.get('/api/ngrok/status', authMiddleware, (req, res) => {
   return res.json({ success: true, ...status, saved_url: savedUrl ? savedUrl.value : '' });
 });
 
-app.post('/api/ngrok/start', authMiddleware, adminOnly, async (req, res) => {
+app.post('/api/ngrok/start', ngrokLimiter, authMiddleware, adminOnly, async (req, res) => {
   try {
     // No explicit token — startNgrok resolves this device's own token/domain
     // from settings (set in the Settings page), falling back to env.
@@ -125,7 +126,7 @@ app.post('/api/ngrok/start', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-app.post('/api/ngrok/stop', authMiddleware, adminOnly, async (req, res) => {
+app.post('/api/ngrok/stop', ngrokLimiter, authMiddleware, adminOnly, async (req, res) => {
   try {
     await stopNgrok();
     return res.json({ success: true, message: 'Tunnel closed' });

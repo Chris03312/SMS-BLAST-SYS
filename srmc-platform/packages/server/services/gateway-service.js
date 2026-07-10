@@ -68,23 +68,21 @@ export function validateInboundToken(token) {
 }
 
 /**
- * Mark a gateway as online. Auto-creates the gateway if it doesn't exist,
- * supporting both SRMCGateway (has login) and SRMCGatewayLite (no login).
+ * Mark a gateway as online. Only updates gateways that were manually added
+ * by an admin in the gateway management page. Returns false if the gateway
+ * has not been registered yet.
  *
  * @param {string} userId     - Gateway user ID
  * @param {string} deviceInfo - Device model / info string
+ * @returns {boolean} - Whether the gateway was found and updated
  */
 export function gatewayOnline(userId, deviceId, deviceInfo, number, simCarrier, number2, sim2Carrier) {
   const now = new Date().toISOString();
   const gwId = deviceId || userId;
 
-  // Auto-create gateway if it doesn't exist (SRMCGatewayLite has no login flow)
+  // Only update if gateway was manually added by admin
   const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(gwId);
-  if (!existing) {
-    const name = deviceInfo || 'Lite Gateway';
-    db.prepare('INSERT OR IGNORE INTO gateways (id, name, url, status, last_beat, last_online, device_info, mode, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
-      .run(gwId, name, '', 'online', now, now, deviceInfo || '', 'pull', now);
-  }
+  if (!existing) return false;
 
   // Build update — only set fields that are provided
   const updates = ["status = ?", "last_online = ?", "device_info = ?"];
@@ -118,6 +116,8 @@ export function gatewayOnline(userId, deviceId, deviceInfo, number, simCarrier, 
     sim_carrier: simCarrier || null,
     sim2_carrier: sim2Carrier || null,
   });
+
+  return true;
 }
 
 /**
@@ -149,14 +149,9 @@ export function gatewayHeartbeat(userId, deviceId, extra = {}) {
   const now = new Date().toISOString();
   const gwId = deviceId || userId;
 
-  // Auto-create gateway if it doesn't exist (SRMCGatewayLite has no login flow)
-  // This is how Lite devices register themselves with the server.
+  // Only update if gateway was manually added by admin
   const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(gwId);
-  if (!existing) {
-    const name = extra.deviceName || extra.deviceInfo || 'Lite Gateway';
-    db.prepare('INSERT OR IGNORE INTO gateways (id, name, url, status, last_beat, last_online, device_info, mode, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
-      .run(gwId, name, '', 'online', now, now, extra.deviceInfo || '', 'pull', now);
-  }
+  if (!existing) return false;
 
   // Build update — always set status/beat/online, optionally update SIM fields
   const updates = ["status = ?", "last_beat = ?", "last_online = ?"];

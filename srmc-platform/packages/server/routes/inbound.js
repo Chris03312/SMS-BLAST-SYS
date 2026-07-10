@@ -4,6 +4,7 @@ import fetch from 'node-fetch';
 import db from '../database/db.js';
 import { fixTimestamps } from '../utils/fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { webhookLimiter } from '../middleware/rate-limit.js';
 import { broadcast } from '../services/ws.js';
 import { validateInboundToken } from '../services/gateway-service.js';
 
@@ -195,13 +196,13 @@ function handleInboundWebhook(req, res) {
 }
 
 // Main webhook endpoint (used by ngrok URL via /api/webhook/inbound)
-router.post('/webhook/inbound', handleInboundWebhook);
+router.post('/webhook/inbound', webhookLimiter, handleInboundWebhook);
 
 // Per-gateway webhook endpoint — each gateway gets its own URL with its ID
 // e.g. POST /api/webhook/inbound/gateway_abc123
 // This allows the server to identify the gateway from the URL path, making
 // multiple gateways share a single ngrok tunnel.
-router.post('/webhook/inbound/:gatewayId', (req, res) => {
+router.post('/webhook/inbound/:gatewayId', webhookLimiter, (req, res) => {
   try {
     const { gatewayId } = req.params;
     if (!gatewayId) {
@@ -254,7 +255,7 @@ router.post('/webhook/inbound/:gatewayId', (req, res) => {
 });
 
 // LAN fallback endpoint (used by Android when no ngrok via /api/inbound)
-router.post('/inbound', handleInboundWebhook);
+router.post('/inbound', webhookLimiter, handleInboundWebhook);
 
 // ── Mark inbound message read / update ───────────────────────────────
 

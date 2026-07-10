@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '../database/db.js';
 import { fixTimestamps } from '../utils/fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { broadcastLimiter } from '../middleware/rate-limit.js';
 import { startBroadcast, cancelBroadcast, pauseBroadcast, resumeBroadcast, getRunningCount } from '../services/broadcast-engine.js';
 import { normalizePhone } from '../utils/phone.js';
 import { broadcast as emitEvent } from '../services/ws.js';
@@ -198,7 +199,7 @@ router.get('/:id', (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', broadcastLimiter, async (req, res) => {
   try {
     const { gateway_ids, gateway_id, template_id, message, recipients, delay_ms, campaign_id, distribution, sim_mode, sim_round_start, send_start_at, send_end_at } = req.body;
     const distMode = distribution === 'linear' ? 'linear' : 'round-robin';

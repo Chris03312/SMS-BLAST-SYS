@@ -16,6 +16,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../database/db.js';
 import { broadcast } from '../services/ws.js';
+import { gatewayOutboundLimiter } from '../middleware/rate-limit.js';
 import { validateInboundToken, trackGatewayResult } from '../services/gateway-service.js';
 import { onMessageAcked } from '../services/broadcast-engine.js';
 function resolveSender(gateway) {
@@ -56,7 +57,7 @@ function authGateway(req, res) {
 }
 
 // ── Claim pending outbound messages for this gateway ──────────────────────
-router.get('/gateway/outbound', (req, res) => {
+router.get('/gateway/outbound', gatewayOutboundLimiter, (req, res) => {
   const gatewayId = authGateway(req, res);
   if (!gatewayId) return;
 
@@ -114,7 +115,7 @@ router.get('/gateway/outbound', (req, res) => {
 
 // ── Report results for claimed messages ───────────────────────────────────
 // ── Delivery report from phone (carrier delivery status) ────────────────
-router.post('/gateway/delivery-report', (req, res) => {
+router.post('/gateway/delivery-report', gatewayOutboundLimiter, (req, res) => {
   const gatewayId = authGateway(req, res);
   if (!gatewayId) return;
 
@@ -172,7 +173,7 @@ router.post('/gateway/delivery-report', (req, res) => {
   }
 });
 
-router.post('/gateway/outbound/ack', (req, res) => {
+router.post('/gateway/outbound/ack', gatewayOutboundLimiter, (req, res) => {
   const gatewayId = authGateway(req, res);
   if (!gatewayId) return;
 

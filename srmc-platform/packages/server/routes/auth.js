@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../database/db.js';
 import { authMiddleware, JWT_SECRET } from '../middleware/auth.js';
+import { loginLimiter } from '../middleware/rate-limit.js';
 import { fixTimestamps } from '../utils/fix-timestamps.js';
 
 const router = Router();
@@ -17,7 +18,7 @@ function fail(res, error, status = 400) {
 
 // ── User login (web clients) ─────────────────────────────────────────
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {

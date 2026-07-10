@@ -90,6 +90,41 @@ export function exportAnalyticsXlsx(data, periodLabel) {
 }
 
 /**
+ * Build and download an XLSX export of gateways.
+ *
+ * @param {Array} gateways - Array of gateway objects from the API
+ */
+export function exportGatewaysXlsx(gateways) {
+  if (!gateways?.length) return;
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const wb = XLSX.utils.book_new();
+
+  const rows = gateways.map(g => ({
+    Name: g.name,
+    'Device ID': g.id,
+    URL: g.url,
+    'SIM Carrier': g.sim_carrier || '—',
+    'SIM 1 Number': g.number || '—',
+    'SIM 2 Number': g.number2 || '—',
+    Status: g.status || 'unknown',
+    'Last Beat': g.last_beat || 'Never',
+    'Sent Today': g.sent_today || 0,
+    'Consecutive Fails': g.consecutive_fails || 0,
+    'Last Error': g.last_error || '',
+    Active: g.active ? 'Yes' : 'No',
+    'In Use': g.in_use ? 'Yes' : 'No',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Gateways');
+
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  downloadFile(blob, `gateways-${dateStr}.xlsx`);
+}
+
+/**
  * Build and download an XLSX export of the activity log.
  *
  * Fetches all activity entries from the API (up to 10 000),

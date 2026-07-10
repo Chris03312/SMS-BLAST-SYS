@@ -130,7 +130,8 @@ router.delete('/:id', (req, res) => {
     if (!gateway) {
       return fail(res, 'Gateway not found', 404);
     }
-    db.prepare('UPDATE gateways SET active = 0 WHERE id = ?').run(req.params.id);
+    // Actually delete the gateway row — no soft-delete
+    db.prepare('DELETE FROM gateways WHERE id = ?').run(req.params.id);
     return ok(res, { success: true });
   } catch (e) {
     console.error('[gateways] DELETE error:', e);

@@ -1,0 +1,275 @@
+===============================================================================
+  INBOUND WEBHOOK PROCESS
+  SystemBlast - SMS Broadcast Platform
+  SRMCGateway (Main) & SRMCGatewayLite
+===============================================================================
+
+1. OVERVIEW
+------------------------------------------------------------------------------
+When an Android phone running either SRMCGateway or SRMCGatewayLite receives
+an SMS from an external number (e.g., a debtor replying "STOP"), the app
+intercepts it and forwards it to the central server via an HTTP webhook.
+
+The server then stores the message, auto-flags it (opt-out, confirmed, or
+needs-reply), links it to the relevant agent/broadcast, and broadcasts it
+via WebSocket to the dashboard in real time.
+
+
+
+2. HOW THE WEBHOOK URL IS RESOLVED
+------------------------------------------------------------------------------
+Both gateway apps determine the webhook URL using the same priority order:
+
+   1. PREF_INBOUND_WEBHOOK (stored in SharedPreferences)
+      - Written after login by the server's /api/config response
+      - If ngrok is configured:  https://xxxx.ngrok-free.app/api/webhook/inbound
+        This works over mobile data (cellular network) — from anywhere.
+   2. LAN Fallback
+      - If no webhook URL is stored (or stored URL is malformed):
+        http://<serverIp>:<serverPort>/api/inbound
+        Only works when the phone is on the same WiFi network as the server.
+
+
+
+3. SRMCGateway (Main) — FULL PROCESS
+------------------------------------------------------------------------------
+This gateway has a login flow. The agent logs in with username + password.
+
+   A. LOGIN & CONFIG
+      ───────────────
+      Phone                   Server
+       │                        │
+       │── POST /api/auth/gateway/login ──►  Authenticate (username + pw)
+       │◄── { user, inboundToken } ────────  JWT token (30 days)
+       │                                     Stores inbound_token
+       │── GET  /api/config ────────────────►  Fetch webhook URL
+       │◄── { INBOUND_WEBHOOK_URL } ────────  Ngrok or LAN URL
+       │                                     Stores inbound_webhook_url
+
+   B. SMS RECEIVED — InboundSmsReceiver fires
+      ──────────────────────────────────────
+      1. SMS arrives from cellular network
+      2. Android broadcasts "android.provider.Telephony.SMS_RECEIVED"
+      3. InboundSmsReceiver.onReceive() intercepts it
+      4. Extracts sender number and message body from PDU array
+      5. Spawns background thread to forward to server
+
+   C. FORWARD TO SERVER
+      ──────────────────
+      Phone reads from SharedPreferences:
+        - inbound_token      ← Bearer token from login
+        - inbound_webhook_url ← Webhook URL from /api/config
+
+      Phone constructs payload:
+        { "sender": "+639171234567", "message": "STOP" }
+
+      Phone sends POST request:
+        URL:  <inbound_webhook_url>   (ngrok or LAN)
+        Auth: Authorization: Bearer <inbound_token>
+        Body: { "sender": "+639171234567", "message": "STOP" }
+
+   D. SERVER RECEIVES — routes/inbound.js
+      ──────────────────────────────────
+      Endpoint: POST /api/webhook/inbound   (via ngrok)
+                POST /api/inbound           (via LAN)
+
+      Server validates Bearer token:
+        - Decodes JWT using JWT_SECRET (from configurations/secrets.js)
+        - Extracts gatewayId from token payload
+        - Rejects with 401 if invalid/expired
+
+      Server extracts inbound data:
+        - finalSender = req.body.sender
+        - finalBody   = req.body.message
+
+      Server auto-flags the message:
+        - "STOP"         → flag = "opt-out"
+        - Starts with "YES" → flag = "confirmed"
+        - Everything else  → flag = "needs-reply"
+
+      Server links to agent:
+        - Looks up most recent outbound message sent to this number
+        - Extracts agent_id from the linked broadcast
+        - Associates the inbound message with that agent
+
+      Server stores in database:
+        INSERT INTO inbound (id, from_number, body, flag, agent_id)
+        VALUES (?, finalSender, finalBody, flag, agentId)
+
+      Server broadcasts via WebSocket:
+        broadcast({ type: 'inbound:new', message: messageRecord })
+
+      Server returns:
+        { success: true, message: { id, from_number, body, flag, ... } }
+
+
+
+4. SRMCGatewayLite — FULL PROCESS
+------------------------------------------------------------------------------
+This gateway has NO login flow. It auto-registers via heartbeat.
+
+   A. AUTO-REGISTRATION
+      ──────────────────
+      Phone                   Server
+       │                        │
+       │── Starts immediately   │  (no login screen)
+       │── POST /api/auth/gateway/heartbeat ──►
+       │── { userId, deviceId, sim_carrier }
+       │◄── { inbound_webhook_url } ────────
+       │    Stores inbound_webhook_url
+
+   B. SMS RECEIVED — InboundSmsReceiver fires
+      ──────────────────────────────────────
+      Same interception logic as SRMCGateway.
+      Difference: This gateway MAY NOT have an inbound_token.
+
+   C. FORWARD TO SERVER — TWO FORMATS
+      ─────────────────────────────────
+      Phone checks SharedPreferences:
+
+        IF token exists (has inbound_token):
+          ── Uses AUTHENTICATED format ──
+          POST <webhook_url>
+          Authorization: Bearer <token>
+          Body: { "sender": "+639xx...", "message": "STOP" }
+
+        IF token is empty (no login):
+          ── Uses UNAUTHENTICATED format ──
+          POST <webhook_url>
+          No Authorization header
+          Body: { "from": "+639xx...", "body": "STOP",
+                  "gateway_id": "" }
+
+   D. SERVER RECEIVES — routes/inbound.js
+      ──────────────────────────────────
+      Same endpoint as SRMCGateway.
+
+      For AUTHENTICATED format (has Bearer token):
+        - Validates JWT token
+        - Extracts gatewayId from payload
+
+      For UNAUTHENTICATED format (no token):
+        - Skips auth validation
+        - Uses gateway_id from body if provided
+
+      Server processes rest identically:
+        - Auto-flags (STOP → opt-out, YES → confirmed, etc.)
+        - Links to agent via recent broadcast lookup
+        - Stores in inbound table
+        - Broadcasts via WebSocket
+
+
+
+5. SERVER-SIDE ROUTE MAP
+------------------------------------------------------------------------------
+All inbound SMS routes are defined in:
+  packages/server/routes/inbound.js
+
+Mounted in app.js at:
+  app.use('/api', inboundRoutes)
+
+Available endpoints:
+
+   POST /api/webhook/inbound              Main ngrok webhook (both gateways)
+   POST /api/webhook/inbound/:gatewayId   Per-gateway webhook
+   POST /api/inbound                      LAN fallback (both gateways)
+   GET  /api/inbound                      List inbound messages (with auth)
+   PUT  /api/inbound/:id                  Mark read / update flag (with auth)
+   GET  /api/inbound/conversation/:number  Conversation thread (with auth)
+   POST /api/inbound/:id/reply            Reply to inbound (with auth)
+
+
+
+6. NGORK TUNNEL INTEGRATION
+------------------------------------------------------------------------------
+When ngrok is enabled:
+
+   Server starts ngrok tunnel → gets public URL (e.g., https://abc.ngrok.app)
+   Registers URL in database settings ('ngrok_url')
+   Gateways discover it via:
+     - GET /api/config after login (SRMCGateway)
+     - POST /api/auth/gateway/heartbeat response (SRMCGatewayLite)
+   Server receives inbound SMS at:
+     POST https://abc.ngrok.app/api/webhook/inbound
+    (works over cellular data — no WiFi needed)
+
+When ngrok is NOT enabled:
+   Gateways use LAN fallback:
+     POST http://<serverIp>:<port>/api/inbound
+    (only works on same WiFi network)
+
+
+
+7. DATA FLOW DIAGRAM
+------------------------------------------------------------------------------
+
+  External SMS ──► Android Phone
+                       │
+                       ▼
+              InboundSmsReceiver.onReceive()
+                       │
+                       ├── Extract sender + body from SMS PDU
+                       │
+                       ▼
+              forwardToServer() [background thread]
+                       │
+                       ├── Read webhook URL from SharedPreferences
+                       ├── Read inbound token from SharedPreferences
+                       │
+                       ▼
+              ┌──────────────────────────┐
+              │   HTTP POST to Server    │
+              │                          │
+              │  SRMCGateway:            │
+              │    Auth: Bearer <token>  │
+              │    Body: {sender,message} │
+              │                          │
+              │  SRMCGatewayLite:        │
+              │    Auth: (none or Bearer)│
+              │    Body: {from,body}     │
+              │    or {sender,message}   │
+              └──────────┬───────────────┘
+                         │
+                         ▼
+              ┌──────────────────────────┐
+              │  Server handles inbound  │
+              │  routes/inbound.js       │
+              │                          │
+              │  1. Validate token (if   │
+              │     present)             │
+              │  2. Normalize fields     │
+              │  3. Auto-flag message    │
+              │  4. Link to agent        │
+              │  5. Store in DB          │
+              │  6. Broadcast via WS     │
+              └──────────────────────────┘
+                         │
+                         ▼
+              ┌──────────────────────────┐
+              │  Dashboard receives via  │
+              │  WebSocket (real-time)   │
+              │                          │
+              │  Admin sees ALL inbound  │
+              │  Agent sees OWN inbound  │
+              └──────────────────────────┘
+
+
+
+8. KEY FILES REFERENCE
+------------------------------------------------------------------------------
+
+  ANDROID (Java):
+    SRMCGateway/app/src/main/java/.../InboundSmsReceiver.java
+    SRMCGatewayLite/app/src/main/java/.../InboundSmsReceiver.java
+
+  SERVER (Node.js):
+    packages/server/routes/inbound.js           ← Webhook handler
+    packages/server/services/gateway-service.js  ← Token validation
+    packages/server/services/ngrok-tunnel.js     ← Tunnel management
+    packages/server/configurations/secrets.js    ← JWT secrets
+    packages/server/database/db.js               ← Database layer
+    packages/server/services/ws.js               ← WebSocket broadcast
+
+===============================================================================
+  END OF DOCUMENT
+===============================================================================

@@ -417,6 +417,8 @@ export default function Settings() {
                   No gateways configured. Add them in <strong>Numbers</strong>.
                 </div>
               )}
+              {gateways.length > 0 && (
+              <div style={{ maxHeight: 420, overflowY: 'auto', marginRight: -4, paddingRight: 4 }}>
               {gateways.map(g => (
                 <div key={g.id} style={{
                   display: 'grid', gridTemplateColumns: '32px 1fr auto auto',
@@ -440,6 +442,8 @@ export default function Settings() {
                   </button>
                 </div>
               ))}
+              </div>
+              )}
             </SectionBlock>
 
             <SectionDivider />
@@ -580,7 +584,7 @@ export default function Settings() {
               {/* Per-gateway setup instructions */}
               {gateways.length > 0 && (
                 <Field label="Gateway setup" style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflowY: 'auto', marginRight: -4, paddingRight: 4 }}>
                     {gateways.map(g => (
                       <div key={g.id} style={{
                         background: 'var(--bg-soft)', border: '1px solid var(--line-soft)',

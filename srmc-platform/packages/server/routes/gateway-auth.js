@@ -76,7 +76,10 @@ router.post('/auth/gateway/online', (req, res) => {
     if (!userId) {
       return fail(res, 'userId is required', 400);
     }
-    gatewayOnline(userId, deviceId, deviceInfo, number, sim_carrier, number2, sim2_carrier);
+    const found = gatewayOnline(userId, deviceId, deviceInfo, number, sim_carrier, number2, sim2_carrier);
+    if (found === false) {
+      return fail(res, 'Gateway not found - ask an admin to add it in the Gateway management page first', 404);
+    }
     return ok(res, { message: 'Gateway marked online' });
   } catch (e) {
     console.error('[gateway-auth] Online error:', e);

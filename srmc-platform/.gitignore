@@ -20,5 +20,7 @@ Thumbs.db
 .vscode/
 .idea/
 
+data/
+
 # Stray Windows device file
 nul
