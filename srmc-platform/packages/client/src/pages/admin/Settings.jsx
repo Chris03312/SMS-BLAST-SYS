@@ -647,7 +647,7 @@ export default function Settings() {
                     confirmLabel: 'Purge',
                     onConfirm: async () => {
                       try {
-                        await api.post('/settings/purge-activity');
+                        await api.post('/settings/purge-activity', { confirm: true });
                         toast('Activity log purged', 'success');
                       } catch (e) { toast('Failed: ' + e.message, 'error'); }
                       setConfirmAction(null);
@@ -664,7 +664,7 @@ export default function Settings() {
                     confirmLabel: 'Reset',
                     onConfirm: async () => {
                       try {
-                        const res = await api.post('/settings/reset');
+                        const res = await api.post('/settings/reset', { confirm: true });
                         if (res.settings) {
                           setSettings(res.settings);
                           setForm(res.settings);
@@ -686,7 +686,7 @@ export default function Settings() {
                     confirmLabel: 'Revoke',
                     onConfirm: async () => {
                       try {
-                        await api.post('/settings/revoke-sessions');
+                        await api.post('/settings/revoke-sessions', { confirm: true });
                         toast('All sessions revoked — gateways must log in again', 'success');
                       } catch (e) { toast('Failed: ' + e.message, 'error'); }
                       setConfirmAction(null);

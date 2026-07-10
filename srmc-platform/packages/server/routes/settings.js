@@ -48,6 +48,9 @@ router.put('/', adminOnly, (req, res) => {
  */
 router.post('/purge-activity', adminOnly, (req, res) => {
   try {
+    if (req.body.confirm !== true && req.body.confirm !== 'true') {
+      return fail(res, 'Confirmation required. Set { "confirm": true } to proceed.', 400);
+    }
     db.prepare('DELETE FROM activity').run();
     console.log('[settings] Activity log purged by', req.user.id);
     broadcast({ type: 'activity:purged', purged_by: req.user.id });
@@ -63,6 +66,9 @@ router.post('/purge-activity', adminOnly, (req, res) => {
  */
 router.post('/reset', adminOnly, (req, res) => {
   try {
+    if (req.body.confirm !== true && req.body.confirm !== 'true') {
+      return fail(res, 'Confirmation required. Set { "confirm": true } to proceed.', 400);
+    }
     const defaults = [
       ['org_name',       'SMS Platform'],
       ['sender_id',      'SMSGATEWAY'],
@@ -98,6 +104,9 @@ router.post('/reset', adminOnly, (req, res) => {
  */
 router.post('/revoke-sessions', adminOnly, (req, res) => {
   try {
+    if (req.body.confirm !== true && req.body.confirm !== 'true') {
+      return fail(res, 'Confirmation required. Set { "confirm": true } to proceed.', 400);
+    }
     db.prepare('DELETE FROM gateway_tokens').run();
     console.log('[settings] All sessions revoked by', req.user.id);
     broadcast({ type: 'sessions:revoked', revoked_by: req.user.id });
