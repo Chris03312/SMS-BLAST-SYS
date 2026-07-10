@@ -55,7 +55,10 @@ public class InboundSmsReceiver extends BroadcastReceiver {
 
         StringBuilder body = new StringBuilder();
         String sender = null;
-        int subscriptionId = 0; // 0 = unknown, 1 = SIM1, 2 = SIM2
+
+        // Detect which SIM received this SMS. Android puts the subscription ID
+        // (1 = SIM1, 2 = SIM2) directly in the SMS_RECEIVED intent extras.
+        int subscriptionId = bundle.getInt("subscription", 0);
 
         for (Object pdu : pdus) {
             SmsMessage msg = useNewApi
@@ -64,11 +67,6 @@ public class InboundSmsReceiver extends BroadcastReceiver {
             if (msg == null) continue;
             if (sender == null) sender = msg.getDisplayOriginatingAddress();
             body.append(msg.getMessageBody());
-            // Detect which SIM received this SMS (API 22+)
-            if (subscriptionId == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                int subId = msg.getSubscriptionId();
-                if (subId >= 1) subscriptionId = subId;
-            }
         }
 
         if (sender == null || body.length() == 0) return;
