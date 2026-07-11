@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import db from '../database/db.js';
 import { broadcast } from './ws.js';
+import { logActivity } from './activity.js';
 import { JWT_SECRET } from '../configurations/secrets.js';
 
 const INBOUND_TOKEN_EXPIRY = '30d';
@@ -139,33 +140,20 @@ export function gatewayOffline(userId, deviceId) {
 }
 
 /**
- * Process a gateway heartbeat. Auto-creates the gateway if it doesn't exist,
- * supporting both SRMCGateway (has login) and SRMCGatewayLite (no login).
+ * Process a gateway heartbeat. Only updates existing gateways —
+ * never auto-creates. Gateways must be added manually by an admin
+ * through the gateway management page first.
  *
  * @param {string} userId - Gateway user ID
- * @returns {boolean} - Whether the gateway was found / created
+ * @returns {boolean} - Whether the gateway was found and updated
  */
 export function gatewayHeartbeat(userId, deviceId, extra = {}) {
   const now = new Date().toISOString();
   const gwId = deviceId || userId;
 
-  // Auto-create gateway if it doesn't exist (supports Lite app which has no login)
+  // Only update if gateway was manually added by admin
   const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(gwId);
-  if (!existing) {
-    // Derive display name from device info or use a fallback
-    const deviceName = extra.simCarrier
-      ? `Lite Gateway (${extra.simCarrier}${extra.sim2Carrier ? ' + ' + extra.sim2Carrier : ''})`
-      : `Lite Gateway (${gwId.slice(0, 8)}…)`;
-    db.prepare(
-      'INSERT INTO gateways (id, name, url, token, mode, active, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(gwId, deviceName, '', '', 'pull', 1, 'online', now);
-    broadcast({
-      type: 'gateway:new',
-      gatewayId: gwId,
-      name: deviceName,
-      status: 'online',
-    });
-  }
+  if (!existing) return false;
 
   // Build update — always set status/beat/online, optionally update SIM fields
   const updates = ["status = ?", "last_beat = ?", "last_online = ?"];
@@ -235,14 +223,6 @@ export function gatewayLogout(userId, deviceId) {
   // Revoke all tokens for this gateway
   db.prepare('DELETE FROM gateway_tokens WHERE gateway_id = ?').run(userId);
   gatewayOffline(userId, deviceId);
-}
-
-function logActivity(userId, action, detail, level = 'info') {
-  try {
-    db.prepare('INSERT INTO activity (id, user_id, action, detail, level) VALUES (?, ?, ?, ?, ?)')
-      .run(uuidv4(), userId || null, action, detail, level);
-    broadcast({ type: 'activity:new', user_id: userId || null, action, detail, level, created_at: new Date().toISOString() });
-  } catch (_) {}
 }
 
 /**

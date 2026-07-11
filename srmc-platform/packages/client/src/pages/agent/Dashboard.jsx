@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
@@ -76,7 +76,17 @@ function BroadcastDetail({ broadcast, onClose }) {
           padding: '16px 20px', borderBottom: '1px solid var(--line)',
         }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>Broadcast Details</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Broadcast Details</div>
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+                color: 'var(--ink-4)', background: 'var(--bg)',
+                padding: '2px 7px', borderRadius: 4,
+                letterSpacing: '0.02em',
+              }}>
+                {broadcast.id}
+              </span>
+            </div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
             </div>
@@ -89,6 +99,9 @@ function BroadcastDetail({ broadcast, onClose }) {
               )}
               {!broadcast.completed_at && broadcast.started_at && (
                 <span style={{ color: 'var(--info)' }}>⟳ In progress</span>
+              )}
+              {broadcast.gateway_name && (
+                <span style={{ fontWeight: 600, color: 'var(--ink-2)', marginRight: 2 }}>{broadcast.gateway_name}</span>
               )}
               {broadcast.sim_mode && (
                 <span style={{
@@ -228,6 +241,7 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(0);
   const [stats, setStats] = useState({ sent: 0, failed: 0, delivered: 0, active: 0, paused: 0 });
+  const lastProgressRef = useRef({});
   const limit = 20;
 
   async function loadBroadcasts() {
@@ -252,6 +266,10 @@ export default function Dashboard() {
         active: list.filter(b => b.status === 'sending').length,
         paused: list.filter(b => b.status === 'paused').length,
       });
+      // Initialize progress ref so live deltas are correct
+      for (const b of list) {
+        lastProgressRef.current[b.id] = { sent: b.sent || 0, failed: b.failed || 0 };
+      }
     } catch (e) {
       console.error('[agent-dashboard] Load broadcasts:', e);
     }
@@ -265,6 +283,12 @@ export default function Dashboard() {
     // Only process broadcast events belonging to this agent
     if (event.agent_id && user?.role === 'agent' && event.agent_id !== user?.id) return;
     if (event.type === 'broadcast:progress' || event.type === 'broadcast:complete') {
+      // Compute delta for live stats update
+      const prev = lastProgressRef.current[event.broadcastId] || { sent: 0, failed: 0 };
+      const sentDelta = Math.max(0, (event.sent ?? 0) - (prev.sent ?? 0));
+      const failedDelta = Math.max(0, (event.failed ?? 0) - (prev.failed ?? 0));
+      lastProgressRef.current[event.broadcastId] = { sent: event.sent ?? 0, failed: event.failed ?? 0 };
+
       setBroadcasts(prev => {
         const idx = prev.findIndex(b => b.id === event.broadcastId);
         if (idx >= 0) {
@@ -286,7 +310,14 @@ export default function Dashboard() {
         return prev;
       });
 
-      // Update stats
+      // Update stats — live totals + active/paused counts
+      if (sentDelta > 0 || failedDelta > 0) {
+        setStats(s => ({
+          ...s,
+          sent: s.sent + sentDelta,
+          failed: s.failed + failedDelta,
+        }));
+      }
       if (event.type === 'broadcast:progress') {
         setStats(s => ({
           ...s,
@@ -338,9 +369,9 @@ export default function Dashboard() {
 
   async function handleCancel(broadcast) {
     try {
-      await api.del(`/broadcasts/${broadcast.id}`);
+      await api.post(`/broadcasts/${broadcast.id}/cancel`);
       setBroadcasts(prev => prev.map(b =>
-        b.id === broadcast.id ? { ...b, status: 'cancelled' } : b
+        b.id === broadcast.id ? { ...b, status: 'cancelled', completed_at: new Date().toISOString() } : b
       ));
       setStats(s => ({ ...s, active: Math.max(0, s.active - 1), paused: Math.max(0, s.paused - 1) }));
     } catch (e) {
@@ -591,8 +622,9 @@ export default function Dashboard() {
                     </span>
                   </td>
 
-                  {/* Sender # — show correct number based on sim_mode */}
+                  {/* Sender — gateway name + number based on sim_mode */}
                   <td className="num" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--ink-2)', marginRight: 6 }}>{b.gateway_name || '—'}</span>
                     {b.sim_mode === 'sim2' && b.gateway_number2
                       ? b.gateway_number2
                       : b.sim_mode === 'round-robin'

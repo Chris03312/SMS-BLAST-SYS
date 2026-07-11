@@ -12,102 +12,77 @@ const PERIODS = [
   { key: 'year',  label: 'Yearly' },
 ];
 
-function MiniLine({ data, color = 'var(--brand-1)', labels }) {
+/** Vertical bar chart component */
+function MiniBarChart({ data, color = 'var(--brand-1)', labels }) {
   if (!data || data.length === 0) return null;
-  const w = 300, h = 130, pad = 34, bottomPad = 28;
+  const w = 300, h = 140, pad = 28, bottomPad = 28;
+  const plotW = w - pad * 2;
   const plotH = h - pad - bottomPad;
   const max = Math.max(...data, 1);
-  const stepX = data.length > 1 ? (w - pad * 2) / (data.length - 1) : 0;
+  const barW = Math.max(4, Math.min(20, plotW / data.length * 0.6));
+  const gap = plotW / data.length;
 
-  // Build line points
-  const pts = data.map((v, i) => {
-    const x = pad + i * stepX;
-    const y = pad + plotH - (v / max) * plotH;
-    return `${x},${y}`;
-  });
-
-  // Area fill polygon
-  const area = `${pad},${pad + plotH} ${pts.join(' ')} ${pad + (data.length - 1) * stepX},${pad + plotH}`;
-
-  // Y-axis reference lines + labels (4 horizontal grid lines)
-  const gridLines = [0, 0.25, 0.5, 0.75, 1].map(pct => ({
-    y: pad + plotH - pct * plotH,
-    label: Math.round(pct * max),
-  }));
-
-  // Show value labels only if few enough points to be readable
-  const showValueLabels = data.length <= 20;
-  // Show intermediate date labels when there are many points
+  // Date labels — smart sampling
   const dateLabels = [];
   if (labels && labels.length > 0) {
-    const maxDateLabels = Math.min(labels.length, data.length > 30 ? 4 : data.length > 14 ? 6 : labels.length);
-    const step = Math.max(1, Math.floor(labels.length / maxDateLabels));
+    const maxLabels = data.length > 20 ? 4 : data.length > 10 ? 6 : labels.length;
+    const step = Math.max(1, Math.floor(labels.length / maxLabels));
     for (let i = 0; i < labels.length; i += step) {
-      const label = labels[i];
-      // Truncate label to short format (e.g., "Jun 15" or "2024-06")
-      const short = label.length > 7 ? label.slice(5) : label;
-      dateLabels.push({ index: i, label: short });
+      dateLabels.push({ index: i, label: (labels[i].length > 7 ? labels[i].slice(5) : labels[i]) });
     }
-    // Always include the last label
     if (dateLabels[dateLabels.length - 1]?.index !== labels.length - 1) {
       dateLabels.push({ index: labels.length - 1, label: labels[labels.length - 1].length > 7 ? labels[labels.length - 1].slice(5) : labels[labels.length - 1] });
     }
   }
 
+  // Y-axis reference
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(pct => ({
+    y: pad + plotH - pct * plotH,
+    label: Math.round(pct * max),
+  }));
+
   return (
     <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', display: 'block' }}>
       {/* Grid lines */}
-      {gridLines.map((gl, i) => (
-        <g key={i}>
-          <line x1={pad} y1={gl.y} x2={w - pad} y2={gl.y} stroke="var(--line)" strokeWidth={i === 0 ? 0.5 : 0.5} opacity={i === 0 ? 0.3 : 0.15} />
-          <text x={pad - 6} y={gl.y + 3} textAnchor="end" fill="var(--ink-4)" fontSize={9} fontFamily="var(--mono)" opacity={0.7}>{gl.label}</text>
-        </g>
+      {yTicks.map((t, i) => (
+        <line key={i} x1={pad} y1={t.y} x2={w - pad} y2={t.y} stroke="var(--line)" strokeWidth={0.5} opacity={0.15} />
       ))}
-
-      {/* Area fill */}
-      <polygon points={area} fill={color} fillOpacity={0.08} />
-
-      {/* Line */}
-      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-
-      {/* Dots + value labels (only shown when readable) */}
+      {/* Y-axis labels */}
+      {yTicks.map((t, i) => (
+        <text key={i} x={pad - 5} y={t.y + 3} textAnchor="end" fill="var(--ink-4)" fontSize={8.5} fontFamily="var(--mono)" opacity={0.6}>{t.label}</text>
+      ))}
+      {/* Bars */}
       {data.map((v, i) => {
-        const cx = pad + i * stepX;
-        const cy = pad + plotH - (v / max) * plotH;
-        const showLabel = showValueLabels || i === 0 || i === data.length - 1 || v === max;
+        const cx = pad + i * gap + (gap - barW) / 2;
+        const bh = (v / max) * plotH;
+        const y = pad + plotH - bh;
         return (
           <g key={i}>
-            <circle cx={cx} cy={cy} r={2.5} fill={color} />
-            {showLabel && (
-              <text x={cx} y={cy - 7} textAnchor="middle" fill="var(--ink-2)" fontSize={9} fontWeight={600}>{v}</text>
+            <rect x={cx} y={y} width={barW} height={Math.max(bh, 1)} rx={2} fill={color} opacity={0.85}>
+              <title>{v}</title>
+            </rect>
+            {/* Value label on hover — always show first, last, and max */}
+            {(i === 0 || i === data.length - 1 || v === max || data.length <= 10) && (
+              <text x={cx + barW / 2} y={y - 5} textAnchor="middle" fill="var(--ink-2)" fontSize={8.5} fontWeight={600}>{v}</text>
             )}
           </g>
         );
       })}
-
       {/* Date labels */}
-      {dateLabels.length > 0 && (
-        <g>
-          {dateLabels.map((dl, i) => {
-            const x = pad + dl.index * stepX;
-            return (
-              <text
-                key={i}
-                x={x}
-                y={h - 4}
-                textAnchor="middle"
-                fill="var(--ink-4)"
-                fontSize={8.5}
-                fontFamily="var(--mono)"
-                opacity={0.8}
-              >
-                {dl.label}
-              </text>
-            );
-          })}
-        </g>
-      )}
+      {dateLabels.map((dl, i) => (
+        <text key={i} x={pad + dl.index * gap + gap / 2} y={h - 4} textAnchor="middle" fill="var(--ink-4)" fontSize={8} fontFamily="var(--mono)" opacity={0.7}>{dl.label}</text>
+      ))}
     </svg>
+  );
+}
+
+/** Inline mini progress bar for table rows */
+function MiniBar({ value, max, color = 'var(--brand-1)', bg = 'var(--bg-soft)', height = 5 }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  return (
+    <div style={{ width: '100%', height, background: bg, borderRadius: 3, overflow: 'hidden' }}>
+      <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.3s ease', minWidth: pct > 0 ? 3 : 0 }} />
+    </div>
   );
 }
 
@@ -239,51 +214,46 @@ export default function AdminAnalytics() {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && data && (
         <>
-          {/* KPI cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 18 }}>
+          {/* KPI cards row — 4 cards: Sent, Failed, Rate, Avg Daily */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
             {[
               { label: 'Total Sent', value: formatNumber(totals.sent), color: 'var(--brand-1)' },
               { label: 'Total Failed', value: formatNumber(totals.failed), color: 'var(--err)' },
               { label: 'Delivery Rate', value: `${totals.delivery_rate}%`, color: totals.delivery_rate >= 80 ? 'var(--ok)' : totals.delivery_rate >= 50 ? 'var(--warn)' : 'var(--err)' },
+              { label: 'Avg Daily', value: series.length > 0 ? formatNumber(Math.round(totals.sent / series.length)) : '0', color: 'var(--ink-1)' },
             ].map(k => (
               <div key={k.label} className="card" style={{ padding: '16px 18px' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{k.label}</div>
-                <div className="num" style={{ fontSize: 24, fontWeight: 600, color: k.color }}>{k.value}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{k.label}</div>
+                <div className="num" style={{ fontSize: 26, fontWeight: 700, color: k.color }}>{k.value}</div>
               </div>
             ))}
           </div>
 
-          {/* Main chart area */}
+          {/* Two charts side by side — Sent + Failed */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-            {/* Sent chart — line graph */}
             <div className="card">
               <div className="card-head">
                 <h3>Sent</h3>
+                <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{totals.sent} total</span>
               </div>
-              <div style={{ padding: '16px 18px', minHeight: 130 }}>
+              <div style={{ padding: '8px 12px 4px' }}>
                 {series.length > 0 ? (
-                  <MiniLine data={sentSeries} color="var(--brand-1)" labels={series.map(s => s.date)} />
+                  <MiniBarChart data={sentSeries} color="var(--brand-1)" labels={series.map(s => s.date)} />
                 ) : (
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
                 )}
               </div>
             </div>
-
-            {/* Failed chart — line graph */}
             <div className="card">
               <div className="card-head">
                 <h3>Failed</h3>
-                {series.length > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                    {totals.failed} total
-                  </span>
-                )}
+                <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{totals.failed} total</span>
               </div>
-              <div style={{ padding: '16px 18px', minHeight: 130 }}>
+              <div style={{ padding: '8px 12px 4px' }}>
                 {series.length > 0 ? (
-                  <MiniLine data={failedSeries} color="var(--err)" labels={series.map(s => s.date)} />
+                  <MiniBarChart data={failedSeries} color="var(--err)" labels={series.map(s => s.date)} />
                 ) : (
                   <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
                 )}
@@ -291,134 +261,139 @@ export default function AdminAnalytics() {
             </div>
           </div>
 
-          {/* Data tables */}
+          {/* Tables row — Campaign + Gateway side by side */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-            {/* Per-campaign table */}
-            <div className="card">
-              <div className="card-head">
+            <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head" style={{ flexShrink: 0 }}>
                 <h3>By Campaign</h3>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byCampaign.length} campaigns</span>
               </div>
-              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Campaign</th>
-                    <th style={{ textAlign: 'left' }}>Sent</th>
-                    <th style={{ textAlign: 'left' }}>Failed</th>
-                    <th style={{ textAlign: 'left' }}>Rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byCampaign.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No data.</td></tr>
-                  )}
-                  {byCampaign.map(c => {
-                    const total = c.sent + c.failed;
-                    const rate = total > 0 ? Math.round((c.sent / total) * 100) : 0;
-                    return (
-                      <tr key={c.campaign_id || '__nc__'}>
-                        <td>
-                          <div style={{ fontSize: 13, fontWeight: 500 }}>{c.campaign_name || 'Uncategorized'}</div>
-                          <div className="cell-id">{c.campaign_id?.slice(0, 8) || ''}</div>
-                        </td>
-                        <td className="num">{c.sent}</td>
-                        <td className="num" style={{ color: c.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{c.failed}</td>
-                        <td className="num" style={{ color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div style={{ overflowY: 'auto', maxHeight: 300 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Campaign</th>
+                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
+                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
+                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byCampaign.length === 0 && (
+                      <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
+                    )}
+                    {(() => {
+                      const maxSent = Math.max(...byCampaign.map(c => c.sent), 1);
+                      return byCampaign.map(c => {
+                        const rate = (c.sent + c.failed) > 0 ? Math.round((c.sent / (c.sent + c.failed)) * 100) : 0;
+                        return (
+                          <tr key={c.campaign_id || '__nc__'}>
+                            <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500 }}>
+                              <div>{c.campaign_name || 'Uncategorized'}</div>
+                              <div style={{ marginTop: 3, width: 80 }}><MiniBar value={c.sent} max={maxSent} height={3} /></div>
+                            </td>
+                            <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{c.sent}</td>
+                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: c.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{c.failed}</td>
+                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
               </div>
             </div>
-            {/* Per-user table */}
-            <div className="card">
-              <div className="card-head">
-                <h3>By Agent</h3>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byUser.length} agents</span>
+
+            <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head" style={{ flexShrink: 0 }}>
+                <h3>By Gateway</h3>
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byGateway.length} devices</span>
               </div>
-              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-              <table>
+              <div style={{ overflowY: 'auto', maxHeight: 300 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Gateway</th>
+                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
+                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
+                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byGateway.length === 0 && (
+                      <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
+                    )}
+                    {(() => {
+                      const maxSent = Math.max(...byGateway.map(g => g.sent), 1);
+                      return byGateway.map(g => {
+                        const rate = (g.sent + g.failed) > 0 ? Math.round((g.sent / (g.sent + g.failed)) * 100) : 0;
+                        return (
+                          <tr key={g.gateway_id}>
+                            <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500 }}>
+                              <div>{g.gateway_name}</div>
+                              {g.number && <div className="cell-id num" style={{ fontSize: 10 }}>{g.number}</div>}
+                              <div style={{ marginTop: 3, width: 80 }}><MiniBar value={g.sent} max={maxSent} height={3} /></div>
+                            </td>
+                            <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{g.sent}</td>
+                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: g.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{g.failed}</td>
+                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* By Agent — full-width table at bottom */}
+          <div className="card" style={{ marginBottom: 18 }}>
+            <div className="card-head">
+              <h3>By Agent</h3>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byUser.length} agents</span>
+            </div>
+            <div style={{ overflowY: 'auto', maxHeight: 340 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th>Agent</th>
-                    <th style={{ textAlign: 'left' }}>Sent</th>
-                    <th style={{ textAlign: 'left' }}>Failed</th>
-                    <th style={{ textAlign: 'left' }}>Rate</th>
+                    <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Agent</th>
+                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
+                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
+                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
                   </tr>
                 </thead>
                 <tbody>
                   {byUser.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No data.</td></tr>
+                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
                   )}
-                  {byUser.map(u => {
-                    const total = u.sent + u.failed;
-                    const rate = total > 0 ? Math.round((u.sent / total) * 100) : 0;
-                    return (
-                      <tr key={u.agent_id}>
-                        <td>
-                          <div className="cell-name">
-                            <div className="row-avatar">{u.display_name?.slice(0, 2).toUpperCase() || u.username?.slice(0, 2).toUpperCase()}</div>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 500 }}>{u.display_name || u.username}</div>
-                              <div className="cell-id">{u.username}</div>
+                  {(() => {
+                    const maxSent = Math.max(...byUser.map(u => u.sent), 1);
+                    return byUser.map(u => {
+                      const rate = (u.sent + u.failed) > 0 ? Math.round((u.sent / (u.sent + u.failed)) * 100) : 0;
+                      return (
+                        <tr key={u.agent_id}>
+                          <td style={{ padding: '8px 14px' }}>
+                            <div className="cell-name" style={{ gap: 8 }}>
+                              <div className="row-avatar" style={{ width: 24, height: 24, fontSize: 10 }}>{u.display_name?.slice(0, 2).toUpperCase() || u.username?.slice(0, 2).toUpperCase()}</div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 12, fontWeight: 500 }}>{u.display_name || u.username}</div>
+                                <div className="cell-id" style={{ fontSize: 10 }}>{u.username}</div>
+                              </div>
+                              <div style={{ width: 60 }}><MiniBar value={u.sent} max={maxSent} height={3} /></div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="num">{u.sent}</td>
-                        <td className="num" style={{ color: u.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{u.failed}</td>
-                        <td className="num" style={{ color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{u.sent}</td>
+                          <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: u.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{u.failed}</td>
+                          <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
-              </div>
-            </div>
-
-            {/* Per-gateway table */}
-            <div className="card">
-              <div className="card-head">
-                <h3>By Gateway</h3>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byGateway.length} devices</span>
-              </div>
-              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Gateway</th>
-                    <th style={{ textAlign: 'left' }}>Sent</th>
-                    <th style={{ textAlign: 'left' }}>Failed</th>
-                    <th style={{ textAlign: 'left' }}>Rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byGateway.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No data.</td></tr>
-                  )}
-                  {byGateway.map(g => {
-                    const total = g.sent + g.failed;
-                    const rate = total > 0 ? Math.round((g.sent / total) * 100) : 0;
-                    return (
-                      <tr key={g.gateway_id}>
-                        <td>
-                          <div style={{ fontSize: 13, fontWeight: 500 }}>{g.gateway_name}</div>
-                          {g.number && <div className="cell-id num">{g.number}</div>}
-                        </td>
-                        <td className="num">{g.sent}</td>
-                        <td className="num" style={{ color: g.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{g.failed}</td>
-                        <td className="num" style={{ color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              </div>
             </div>
           </div>
-
-
         </>
       )}
     </AdminShell>

@@ -49,19 +49,10 @@ const rawDb = existsSync(DB_PATH)
   ? new SQL.Database(readFileSync(DB_PATH))
   : new SQL.Database();
 
-// Persist in-memory DB to disk. Called after every write.
-let saveTimer = null;
-function scheduleFlush() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    flushDb();
-  }, 200);
-}
-
 /**
  * Immediately flush the in-memory database to disk.
- * Can be called externally for graceful shutdown or manual backup.
+ * Called after every write so no data is lost on crash.
+ * Can also be called externally for graceful shutdown or manual backup.
  */
 export function flushDb() {
   try {
@@ -166,7 +157,7 @@ class Statement {
     stmt.step();
     const changes = rawDb.getRowsModified();
     stmt.free();
-    scheduleFlush();
+    flushDb();
     return { changes };
   }
 }
@@ -177,7 +168,7 @@ class Database {
   /** Runs one or many SQL statements (DDL, bulk DML, etc.). */
   exec(sql) {
     rawDb.run(sql);
-    scheduleFlush();
+    flushDb();
   }
 
   /** Returns a Statement bound to the given SQL. */
@@ -201,7 +192,7 @@ class Database {
         rawDb.run('ROLLBACK');
         throw e;
       }
-      scheduleFlush();
+      flushDb();
     };
   }
 

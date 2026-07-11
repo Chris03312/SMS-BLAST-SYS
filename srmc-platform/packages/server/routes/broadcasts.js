@@ -58,8 +58,8 @@ router.get('/', (req, res) => {
     }
 
     if (search) {
-      conditions.push('(b.message LIKE ? OR u.display_name LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      conditions.push('(b.message LIKE ? OR u.display_name LIKE ? OR c.name LIKE ? OR g.name LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     if (campaignId) {
@@ -76,7 +76,11 @@ router.get('/', (req, res) => {
 
     const broadcasts = db.prepare(query).all(...params);
     const total = db.prepare(
-      `SELECT COUNT(*) as c FROM broadcasts b ${conditions.length > 0 ? 'WHERE ' + conditions.slice(0, conditions.length).join(' AND ') : ''}`
+      `SELECT COUNT(*) as c FROM broadcasts b
+       LEFT JOIN users u ON b.agent_id = u.id
+       LEFT JOIN gateways g ON b.gateway_id = g.id
+       LEFT JOIN campaigns c ON b.campaign_id = c.id
+       ${conditions.length > 0 ? 'WHERE ' + conditions.slice(0, conditions.length).join(' AND ') : ''}`
     ).get(...params.slice(0, -2));
 
     return ok(res, { broadcasts: fixTimestamps(broadcasts), total: total ? total.c : 0, limit, offset });

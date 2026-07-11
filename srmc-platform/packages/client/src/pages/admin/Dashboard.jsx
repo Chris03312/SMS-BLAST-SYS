@@ -325,58 +325,58 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, marginBottom: 16 }}>
-        {/* Throughput chart — line graph */}
-        <div className="card">
-          <div className="card-head">
-            <h3>Throughput (7 days)</h3>
-          </div>
-          <div style={{ padding: '18px 20px' }}>
-            {stats?.daily && stats.daily.length > 0 ? (() => {
-              const w = 660, h = 180, pad = 28;
-              const data = stats.daily;
-              const max = Math.max(...data.map(d => d.sent), 1);
-              const stepX = (w - pad * 2) / (data.length - 1 || 1);
-              const pts = data.map((d, i) => {
-                const x = pad + i * stepX;
-                const y = h - pad - (d.sent / max) * (h - pad * 2);
-                return `${x},${y}`;
-              });
-              const area = `0,${h - pad} ${pts.join(' ')} ${pad + (data.length - 1) * stepX},${h - pad}`;
-              return (
-                <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 180 }}>
-                  {/* Grid lines */}
-                  <line x1={pad} y1={h - pad} x2={w - pad} y2={h - pad} stroke="var(--line-soft)" strokeWidth="1" />
-                  <line x1={pad} y1={pad} x2={w - pad} y2={pad} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4 4" />
-                  <line x1={pad} y1={pad + (h - pad * 2) / 2} x2={w - pad} y2={pad + (h - pad * 2) / 2} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4 4" />
-                  {/* Area fill */}
-                  <polygon points={area} fill="var(--brand-1)" fillOpacity={0.08} />
-                  {/* Line */}
-                  <polyline points={pts.join(' ')} fill="none" stroke="var(--brand-1)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                  {/* Dots */}
-                  {data.map((d, i) => {
-                    const cx = pad + i * stepX;
-                    const cy = h - pad - (d.sent / max) * (h - pad * 2);
-                    return (
-                      <g key={i}>
-                        <circle cx={cx} cy={cy} r={3} fill="var(--brand-1)" />
-                        <text x={cx} y={h - pad + 16} textAnchor="middle" fill="var(--ink-4)" fontSize={10} fontFamily="var(--mono)">
-                          {d.day?.slice(5)}
-                        </text>
-                        <text x={cx} y={cy - 10} textAnchor="middle" fill="var(--ink-2)" fontSize={11} fontWeight={600}>
-                          {d.sent}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              );
-            })() : (
-              <div style={{ fontSize: 13, color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>No data for the last 7 days.</div>
-            )}
-          </div>
+      {/* Throughput chart — full-width line graph */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h3>Throughput (7 days)</h3>
         </div>
+        <div style={{ padding: '18px 20px' }}>
+          {stats?.daily && stats.daily.length > 0 ? (() => {
+            const w = 800, h = 200, pad = 36;
+            const data = stats.daily;
+            const max = Math.max(...data.map(d => d.sent), 1);
+            const stepX = (w - pad * 2) / (data.length - 1 || 1);
+            const pts = data.map((d, i) => {
+              const x = pad + i * stepX;
+              const y = h - pad - (d.sent / max) * (h - pad * 2);
+              return `${x},${y}`;
+            });
+            const area = `0,${h - pad} ${pts.join(' ')} ${pad + (data.length - 1) * stepX},${h - pad}`;
+            return (
+              <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto', maxHeight: 220 }} preserveAspectRatio="xMidYMid meet">
+                {/* Grid lines */}
+                <line x1={pad} y1={h - pad} x2={w - pad} y2={h - pad} stroke="var(--line-soft)" strokeWidth="1" />
+                <line x1={pad} y1={pad} x2={w - pad} y2={pad} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4 4" />
+                <line x1={pad} y1={pad + (h - pad * 2) / 2} x2={w - pad} y2={pad + (h - pad * 2) / 2} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4 4" />
+                {/* Area fill */}
+                <polygon points={area} fill="var(--brand-1)" fillOpacity={0.08} />
+                {/* Line */}
+                <polyline points={pts.join(' ')} fill="none" stroke="var(--brand-1)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                {/* Dots */}
+                {data.map((d, i) => {
+                  const cx = pad + i * stepX;
+                  const cy = h - pad - (d.sent / max) * (h - pad * 2);
+                  return (
+                    <g key={i}>
+                      <circle cx={cx} cy={cy} r={3} fill="var(--brand-1)" />
+                      <text x={cx} y={h - pad + 16} textAnchor="middle" fill="var(--ink-4)" fontSize={10} fontFamily="var(--mono)">
+                        {d.day?.slice(5)}
+                      </text>
+                      <text x={cx} y={cy - 10} textAnchor="middle" fill="var(--ink-2)" fontSize={11} fontWeight={600}>
+                        {d.sent}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            );
+          })() : (
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>No data for the last 7 days.</div>
+          )}
+        </div>
+      </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, marginBottom: 16 }}>
         {/* Gateways status */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-head" style={{ flexShrink: 0 }}>
@@ -400,10 +400,8 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 340px', gap: 16 }}>
-        {/* Campaigns */}
+        {/* Campaigns — now in the right column */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Active Campaigns</h3>
@@ -434,7 +432,9 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
+      </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16 }}>
         {/* Agents */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-head" style={{ flexShrink: 0 }}>

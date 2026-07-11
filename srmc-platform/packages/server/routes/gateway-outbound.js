@@ -13,12 +13,14 @@
  */
 
 import { Router } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import db from '../database/db.js';
 import { broadcast } from '../services/ws.js';
+import { logActivity } from '../services/activity.js';
 import { gatewayOutboundLimiter } from '../middleware/rate-limit.js';
 import { validateInboundToken, trackGatewayResult } from '../services/gateway-service.js';
 import { onMessageAcked } from '../services/broadcast-engine.js';
+import { resolvePullSimMode } from '../services/sim-utils.js';
+
 function resolveSender(gateway) {
   if (!gateway) return 'unknown';
   if (gateway.number) return gateway.number;
@@ -27,14 +29,6 @@ function resolveSender(gateway) {
     if (s && s.value) return s.value;
   } catch (_) {}
   return gateway.name || 'unknown';
-}
-
-function logActivity(userId, action, detail, level = 'info') {
-  try {
-    db.prepare('INSERT INTO activity (id, user_id, action, detail, level) VALUES (?, ?, ?, ?, ?)')
-      .run(uuidv4(), userId || null, action, detail, level);
-    broadcast({ type: 'activity:new', action, detail, level, created_at: new Date().toISOString() });
-  } catch (_) {}
 }
 
 const router = Router();
@@ -87,21 +81,10 @@ router.get('/gateway/outbound', gatewayOutboundLimiter, (req, res) => {
     claimAll();
 
     // Apply round-robin or parallel alternation per-message
-    const processedRows = rows.map((r, idx) => {
-      if (r.sim_mode === 'round-robin') {
-        const startSim = r.sim_round_start || 'sim1';
-        const isSim2 = startSim === 'sim2' ? (idx % 2 === 0) : (idx % 2 === 1);
-        return { ...r, sim_mode: isSim2 ? 'sim2' : 'sim1' };
-      }
-      if (r.sim_mode === 'parallel') {
-        // First half of messages go to startSim, second half to the other SIM
-        const total = r.broadcast_total || rows.length;
-        const mid = Math.floor(total / 2);
-        const startSim = r.sim_round_start || 'sim1';
-        return { ...r, sim_mode: idx < mid ? startSim : (startSim === 'sim1' ? 'sim2' : 'sim1') };
-      }
-      return r;
-    });
+    const processedRows = rows.map((r, idx) => ({
+      ...r,
+      sim_mode: resolvePullSimMode(r, idx),
+    }));
 
     return res.json({
       success: true,

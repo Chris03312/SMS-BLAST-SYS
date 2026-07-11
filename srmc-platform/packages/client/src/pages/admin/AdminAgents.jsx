@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Modal from '../../components/Modal.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
@@ -6,6 +6,7 @@ import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDateShort } from '../../lib/format.js';
+import { useWS } from '../../lib/ws.js';
 
 export default function AdminAgents() {
   const [items, setItems] = useState([]);
@@ -17,9 +18,32 @@ export default function AdminAgents() {
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmToggleActive, setConfirmToggleActive] = useState(null);
+  const [search, setSearch] = useState('');
+  const broadcastSentRef = useRef({});
   const { toast } = useToast();
 
   useEffect(() => { load(); }, []);
+
+  // Live-update sent_today from broadcast:progress WebSocket events
+  useWS((event) => {
+    if (event.type === 'broadcast:progress' && event.agent_id) {
+      setItems(prev => prev.map(a => {
+        if (a.id === event.agent_id) {
+          const prevSent = broadcastSentRef.current[event.broadcastId] || 0;
+          const delta = event.sent - prevSent;
+          broadcastSentRef.current[event.broadcastId] = event.sent;
+          return delta > 0 ? { ...a, sent_today: (a.sent_today || 0) + delta } : a;
+        }
+        return a;
+      }));
+    }
+  });
+
+  const filtered = items.filter(a =>
+    !search ||
+    a.display_name?.toLowerCase().includes(search.toLowerCase()) ||
+    a.username?.toLowerCase().includes(search.toLowerCase())
+  );
 
   async function load() {
     setLoading(true);
@@ -126,12 +150,24 @@ export default function AdminAgents() {
       </div>
 
       <div className="card">
+        {/* Search bar */}
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 12.5, color: 'var(--ink-1)', flex: 1, fontFamily: 'inherit' }}
+            placeholder="Search agents by name or username..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
         <table>
           <thead>
             <tr>
               <th>Agent</th>
               <th>Sent today</th>
-              <th>Total</th>
+              <th>Total Broadcast</th>
               <th>Status</th>
               <th>Created</th>
               <th style={{ textAlign: 'center' }}>Actions</th>
@@ -139,8 +175,8 @@ export default function AdminAgents() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
-            {!loading && items.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No agents.</td></tr>}
-            {items.map(a => (
+            {!loading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No agents match your search.' : 'No agents.'}</td></tr>}
+            {filtered.map(a => (
               <tr key={a.id}>
                 <td>
                   <div className="cell-name">
@@ -184,7 +220,7 @@ export default function AdminAgents() {
           </tbody>
         </table>
         <div className="footer">
-          <span>{items.length} agents</span>
+          <span>{filtered.length} of {items.length} agents</span>
         </div>
       </div>
 

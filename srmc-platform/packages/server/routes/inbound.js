@@ -58,8 +58,9 @@ router.get('/inbound', authMiddleware, (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
     const flag = req.query.flag;
     const unread = req.query.unread;
+    const unique = req.query.unique === '1';
 
-    let query = 'SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number, gateways.sim_carrier, gateways.sim2_carrier';
+    // Build WHERE conditions
     const conditions = [];
     const params = [];
 
@@ -83,28 +84,55 @@ router.get('/inbound', authMiddleware, (req, res) => {
       params.push(req.user.id);
     }
 
-    let fromClause = ' FROM inbound LEFT JOIN gateways ON inbound.gateway_id = gateways.id';
-    if (conditions.length > 0) {
-      query += fromClause + ' WHERE ' + conditions.join(' AND ');
-    } else {
-      query += fromClause;
+    const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+
+    if (unique) {
+      // ── Unique mode: one row per (phone number + gateway) pair ──
+      // Same number from different gateways shows up as separate rows.
+      // Uses MAX(rowid) per group for reliable dedup (higher rowid = later insert).
+      const uniqueQuery = `
+        SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number,
+               gateways.sim_carrier, gateways.sim2_carrier
+        FROM inbound
+        LEFT JOIN gateways ON inbound.gateway_id = gateways.id
+        WHERE inbound.rowid IN (
+          SELECT MAX(i.rowid)
+          FROM inbound i
+          ${whereClause.replace(/inbound\./g, 'i.')}
+          GROUP BY i.from_number, i.gateway_id
+        )
+        ORDER BY inbound.created_at DESC
+        LIMIT ? OFFSET ?
+      `;
+      const messages = db.prepare(uniqueQuery).all(...params, limit, offset);
+
+      enrichInboundMessages(messages);
+
+      // Count unique (number + gateway) combinations
+      const countUnique = `
+        SELECT COUNT(*) as c FROM (
+          SELECT 1 FROM inbound i
+          ${whereClause.replace(/inbound\./g, 'i.')}
+          GROUP BY i.from_number, i.gateway_id
+        )
+      `;
+      const total = db.prepare(countUnique).get(...params);
+
+      return ok(res, { messages: fixTimestamps(messages), total: total ? total.c : 0 });
     }
 
+    // ── Normal mode: all messages, no dedup ──
+    let query = 'SELECT inbound.*, gateways.name AS gateway_name, gateways.number AS gateway_number, gateways.sim_carrier, gateways.sim2_carrier';
+    let fromClause = ' FROM inbound LEFT JOIN gateways ON inbound.gateway_id = gateways.id';
+    query += fromClause + whereClause;
     query += ' ORDER BY inbound.created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
     const messages = db.prepare(query).all(...params);
 
-    // Enrich each inbound message with the most recent outbound message
-    // sent to the same number, so the operator can see what broadcast the
-    // sender is replying to.
-    // Batched into a single query instead of N+1 per message.
     enrichInboundMessages(messages);
 
-    let countQuery = 'SELECT COUNT(*) as c FROM inbound LEFT JOIN gateways ON inbound.gateway_id = gateways.id';
-    if (conditions.length > 0) {
-      countQuery += ' WHERE ' + conditions.join(' AND ');
-    }
+    let countQuery = 'SELECT COUNT(*) as c FROM inbound LEFT JOIN gateways ON inbound.gateway_id = gateways.id' + whereClause;
     const total = db.prepare(countQuery).get(...params.slice(0, -2));
 
     return ok(res, { messages: fixTimestamps(messages), total: total ? total.c : 0 });
@@ -193,8 +221,13 @@ function handleInboundWebhook(req, res) {
     // Enrich the broadcast message so the client gets linked_broadcast on real-time pushes too
     enrichInboundMessages([messageRecord]);
 
+    // Fix timestamps before broadcasting so the frontend can sort correctly
+    // Raw SQLite dates ("2026-07-12 10:30:00") sort differently from ISO dates
+    // ("2026-07-12T10:30:00Z") when parsed by new Date().
+    const fixedRecord = fixTimestamps(messageRecord);
+
     // Only broadcast to relevant clients — admins get all, agents filter on their side
-    broadcast({ type: 'inbound:new', message: messageRecord });
+    broadcast({ type: 'inbound:new', message: fixedRecord });
 
     return ok(res, { message: messageRecord });
   } catch (e) {
@@ -261,7 +294,10 @@ router.post('/webhook/inbound/:gatewayId', webhookLimiter, (req, res) => {
     `).get(id);
     enrichInboundMessages([messageRecord]);
 
-    broadcast({ type: 'inbound:new', message: messageRecord });
+    // Fix timestamps before broadcasting so the frontend can sort correctly
+    const fixedRecord = fixTimestamps(messageRecord);
+
+    broadcast({ type: 'inbound:new', message: fixedRecord });
 
     return ok(res, { message: messageRecord });
   } catch (e) {
@@ -307,14 +343,15 @@ router.get('/inbound/conversation/:number', authMiddleware, (req, res) => {
   try {
     const number = req.params.number;
 
-    // Inbound messages FROM this number
+    // Inbound messages FROM this number (oldest first)
     const inboundMsgs = db.prepare(`
       SELECT 'inbound' as direction, id, from_number as other_number, body, created_at, flag, read_at, NULL as gateway_name, NULL as sim_mode
       FROM inbound
       WHERE from_number = ?
+      ORDER BY created_at ASC
     `).all(number);
 
-    // Outbound messages SENT to this number
+    // Outbound messages SENT to this number (oldest first)
     const outboundMsgs = db.prepare(`
       SELECT 'outbound' as direction, m.id, m.to_number as other_number, m.message as body,
              COALESCE(m.sent_at, m.created_at) as created_at, NULL as flag, NULL as read_at,
@@ -322,13 +359,15 @@ router.get('/inbound/conversation/:number', authMiddleware, (req, res) => {
       FROM messages m
       LEFT JOIN gateways g ON m.gateway_id = g.id
       WHERE m.to_number = ? AND m.status IN ('sent', 'delivered')
+      ORDER BY created_at ASC
     `).all(number);
 
-    // Combine and sort by time
-    const combined = [...inboundMsgs, ...outboundMsgs]
+    // Fix timestamps FIRST so sort works on consistent ISO dates,
+    // then combine and sort by time
+    const combined = [...fixTimestamps(inboundMsgs), ...fixTimestamps(outboundMsgs)]
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-    return ok(res, { messages: fixTimestamps(combined) });
+    return ok(res, { messages: combined });
   } catch (e) {
     console.error('[inbound] conversation error:', e);
     return fail(res, 'Internal server error', 500);

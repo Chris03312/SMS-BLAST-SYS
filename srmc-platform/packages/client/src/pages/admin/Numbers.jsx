@@ -20,9 +20,19 @@ export default function Numbers() {
   const [error, setError] = useState('');
   const [testing, setTesting] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [search, setSearch] = useState('');
   const { toast } = useToast();
 
   useEffect(() => { load(); }, []);
+
+  const filtered = gateways.filter(g =>
+    !search ||
+    g.name.toLowerCase().includes(search.toLowerCase()) ||
+    g.url.toLowerCase().includes(search.toLowerCase()) ||
+    (g.sim_carrier || '').toLowerCase().includes(search.toLowerCase()) ||
+    (g.number || '').includes(search) ||
+    (g.number2 || '').includes(search)
+  );
 
   useWS((event) => {
     if (event.type === 'gateway:status') {
@@ -133,7 +143,19 @@ export default function Numbers() {
       </div>
 
       <div className="card">
-        <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+        {/* Search bar */}
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 12.5, color: 'var(--ink-1)', flex: 1, fontFamily: 'inherit' }}
+            placeholder="Search gateways by name, URL, carrier or number..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <div style={{ maxHeight: 480, overflowY: 'auto' }}>
         <table>
           <thead>
             <tr>
@@ -151,8 +173,8 @@ export default function Numbers() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
-            {!loading && gateways.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No gateways configured.</td></tr>}
-            {gateways.map(g => (
+            {!loading && filtered.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No gateways match your search.' : 'No gateways configured.'}</td></tr>}
+            {filtered.map(g => (
               <tr key={g.id}>
                 <td>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{g.name}</div>
@@ -201,7 +223,7 @@ export default function Numbers() {
         </table>
         </div>
         <div className="footer">
-          <span>{gateways.length} gateways</span>
+          <span>{filtered.length} of {gateways.length} gateways</span>
         </div>
       </div>
 

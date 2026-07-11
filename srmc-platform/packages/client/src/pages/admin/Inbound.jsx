@@ -23,12 +23,14 @@ export default function AdminInbound() {
   const [convMessage, setConvMessage] = useState(null);
   const [conversation, setConversation] = useState([]);
   const [convLoading, setConvLoading] = useState(false);
+  const [search, setSearch] = useState('');
   const limit = 50;
 
   async function load() {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit, offset: page * limit });
+      // unique=1 groups by phone number — one row per number (latest message)
+      const params = new URLSearchParams({ limit, offset: page * limit, unique: '1' });
       if (flag !== 'all') params.set('flag', flag);
       const data = await api.get(`/inbound?${params}`);
       setMessages(data.messages || []);
@@ -41,10 +43,29 @@ export default function AdminInbound() {
 
   useEffect(() => { load(); }, [flag, page]);
 
+  const filtered = messages.filter(m =>
+    !search ||
+    m.from_number?.includes(search) ||
+    (m.gateway_name || '').toLowerCase().includes(search.toLowerCase()) ||
+    m.body?.toLowerCase().includes(search.toLowerCase())
+  );
+
   useWS((event) => {
     if (event.type === 'inbound:new') {
-      setMessages(prev => [event.message, ...prev]);
-      setTotal(t => t + 1);
+      setMessages(prev => {
+        // Match by (number + gateway) — same number from different gateways = separate rows
+        const key = m => `${m.from_number}|${m.gateway_id || ''}`;
+        const newKey = key(event.message);
+        const idx = prev.findIndex(m => key(m) === newKey);
+        if (idx !== -1) {
+          const updated = [...prev];
+          updated[idx] = event.message;
+          return updated;
+        }
+        // New (number + gateway) pair — prepend to top and increment total
+        setTotal(t => t + 1);
+        return [event.message, ...prev];
+      });
     }
   });
 
@@ -107,6 +128,17 @@ export default function AdminInbound() {
             </button>
           ))}
         </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-soft)', borderRadius: 7, padding: '6px 10px' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 12, color: 'var(--ink-1)', width: 180, fontFamily: 'inherit' }}
+            placeholder="Search by number, gateway or text..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="card">
@@ -123,8 +155,8 @@ export default function AdminInbound() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
-            {!loading && messages.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No inbound messages.</td></tr>}
-            {messages.map(m => (
+            {!loading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No messages match your search.' : 'No inbound messages.'}</td></tr>}
+            {filtered.map(m => (
               <tr
                 key={m.id}
                 onClick={() => openConversation(m)}

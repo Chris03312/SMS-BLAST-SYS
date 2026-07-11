@@ -130,6 +130,22 @@ export default function Inbound() {
       if (user?.role === 'agent' && event.message.agent_id !== user?.id) return;
       setMessages(prev => [event.message, ...prev]);
       setCounts(c => ({ ...c, all: c.all + 1, unread: c.unread + 1 }));
+      // If currently viewing a conversation with this number, append to chat
+      if (selected && selected.from_number === event.message.from_number) {
+        setConversation(prev => {
+          const updated = [...prev, {
+            direction: 'inbound',
+            id: event.message.id,
+            other_number: event.message.from_number,
+            body: event.message.body,
+            created_at: event.message.created_at,
+            gateway_name: event.message.gateway_name,
+          }];
+          // Keep sorted oldest-first so newest appears at bottom
+          updated.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          return updated;
+        });
+      }
     }
   });
 
@@ -224,7 +240,11 @@ export default function Inbound() {
         body: replyText.trim(),
         created_at: new Date().toISOString(),
       };
-      setConversation(prev => [...prev, sentMsg]);
+      setConversation(prev => {
+        const updated = [...prev, sentMsg];
+        updated.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        return updated;
+      });
     } catch (e) {
       setReplyError(e.message || 'Failed to send');
     }
@@ -406,43 +426,84 @@ export default function Inbound() {
                 {selected.flag && <Pill status={selected.flag} label={FLAG_LABELS[selected.flag] || selected.flag} />}
               </div>
 
-              {/* Chat conversation — clean alternating style like standard messaging apps */}
+              {/* ── Chat conversation — messaging-app style bubbles ── */}
               <div ref={chatRef} style={{
                 flex: 1, overflowY: 'auto',
-                padding: '12px 14px',
-                background: 'linear-gradient(180deg, #e8eaef 0%, #dde1e8 100%)',
-                display: 'flex', flexDirection: 'column', gap: 6,
+                padding: '16px 16px 8px',
+                background: 'linear-gradient(165deg, #eef1f5 0%, #e3e8ef 50%, #dde3ec 100%)',
+                display: 'flex', flexDirection: 'column', gap: 3,
               }}>
                 {conversation.length === 0 && (
-                  <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 12, padding: 20 }}>
+                  <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 12, padding: 40 }}>
                     No messages in this conversation.
                   </div>
                 )}
                 {conversation.map((msg, i) => {
                   const isInbound = msg.direction === 'inbound';
+
                   return (
                     <div key={msg.id || i} style={{
                       alignSelf: isInbound ? 'flex-start' : 'flex-end',
                       maxWidth: '80%',
-                      padding: '9px 14px',
-                      borderRadius: isInbound ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
-                      background: isInbound ? '#fff' : '#1a73e8',
-                      color: isInbound ? '#1e293b' : '#fff',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-                      border: isInbound ? '1px solid rgba(0,0,0,0.05)' : 'none',
-                      fontSize: 13, lineHeight: 1.5,
-                      wordBreak: 'break-word',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: isInbound ? 'flex-start' : 'flex-end',
+                      marginTop: (i > 0 && conversation[i - 1].direction !== msg.direction) ? 8 : 0,
                     }}>
-                      {msg.body}
+                      {/* Sender label (only on first message of a group) */}
+                      {i > 0 && conversation[i - 1].direction !== msg.direction && (
+                        <div style={{
+                          fontSize: 10, fontWeight: 600,
+                          color: 'var(--ink-4)',
+                          marginBottom: 3,
+                          marginLeft: isInbound ? 16 : 0,
+                          marginRight: isInbound ? 0 : 16,
+                          letterSpacing: '0.03em',
+                          userSelect: 'none',
+                        }}>
+                          {isInbound
+                            ? (msg.gateway_name || selected.from_number)
+                            : 'You'
+                          }
+                        </div>
+                      )}
+                      {/* Bubble */}
                       <div style={{
-                        fontSize: 9.5,
-                        marginTop: 3,
-                        opacity: 0.6,
-                        fontFamily: 'var(--mono)',
-                        textAlign: 'right',
+                        padding: '10px 14px',
+                        borderRadius: isInbound
+                          ? '4px 16px 16px 16px'
+                          : '16px 4px 16px 16px',
+                        background: isInbound ? '#fff' : '#2563eb',
+                        color: isInbound ? '#1e293b' : '#fff',
+                        boxShadow: isInbound
+                          ? '0 1px 2px rgba(0,0,0,0.06)'
+                          : '0 2px 6px rgba(37,99,235,0.22)',
+                        border: isInbound ? '1px solid rgba(0,0,0,0.06)' : 'none',
+                        fontSize: 13.5, lineHeight: 1.55,
+                        wordBreak: 'break-word',
+                        position: 'relative',
                       }}>
-                        {formatTime(msg.created_at)}
-                        {!isInbound && ' ✓'}
+                        <span>{msg.body}</span>
+                      </div>
+                      {/* Timestamp + status below the bubble */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        marginTop: 2,
+                        padding: '0 4px',
+                        fontSize: 9.5,
+                        color: 'var(--ink-4)',
+                        fontFamily: 'var(--mono)',
+                        userSelect: 'none',
+                      }}>
+                        <span>{formatTime(msg.created_at)}</span>
+                        {!isInbound && (
+                          <>
+                            <span style={{ opacity: 0.4 }}>·</span>
+                            <span style={{ color: '#2563eb', fontWeight: 600 }}>✓</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
