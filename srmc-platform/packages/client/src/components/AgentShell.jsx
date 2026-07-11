@@ -7,6 +7,7 @@ import { useWS, useConnectionStatus } from '../lib/ws.js';
 const TABS = [
   { label: 'Broadcast Task', path: '/dashboard' },
   { label: 'Compose',   path: '/compose'   },
+  { label: 'Recipients', path: '/recipients' },
   { label: 'History',   path: '/history'   },
   { label: 'Templates', path: '/templates' },
   { label: 'Inbound',   path: '/inbound'   },

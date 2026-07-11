@@ -35,14 +35,14 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { name, status } = req.body;
+    const { name, status, boss_numbers } = req.body;
     if (!name) {
       return fail(res, 'Name is required', 400);
     }
 
     const id = uuidv4();
-    db.prepare('INSERT INTO campaigns (id, name, owner_id, status) VALUES (?, ?, ?, ?)')
-      .run(id, name, req.user.id, status || 'active');
+    db.prepare('INSERT INTO campaigns (id, name, owner_id, status, boss_numbers) VALUES (?, ?, ?, ?, ?)')
+      .run(id, name, req.user.id, status || 'active', boss_numbers || '');
 
     return ok(res, { campaign: db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id) }, 201);
   } catch (e) {
@@ -58,9 +58,9 @@ router.put('/:id', (req, res) => {
       return fail(res, 'Campaign not found', 404);
     }
 
-    const { name, status } = req.body;
-    db.prepare('UPDATE campaigns SET name = ?, status = ? WHERE id = ?')
-      .run(name ?? campaign.name, status ?? campaign.status, req.params.id);
+    const { name, status, boss_numbers } = req.body;
+    db.prepare('UPDATE campaigns SET name = ?, status = ?, boss_numbers = ? WHERE id = ?')
+      .run(name ?? campaign.name, status ?? campaign.status, boss_numbers ?? campaign.boss_numbers, req.params.id);
 
     return ok(res, { campaign: db.prepare('SELECT * FROM campaigns WHERE id = ?').get(req.params.id) });
   } catch (e) {

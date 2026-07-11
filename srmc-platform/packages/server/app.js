@@ -45,6 +45,7 @@ import inboundRoutes from './routes/inbound.js';
 import statsRoutes from './routes/stats.js';
 import activityRoutes from './routes/activity.js';
 import settingsRoutes from './routes/settings.js';
+import contactRoutes from './routes/contacts.js';
 
 // Read SERVER_PORT from env. Falls back to 3001.
 // Server always binds to 0.0.0.0 so both LAN (192.168.x.x) and localhost
@@ -87,6 +88,7 @@ app.use('/api/stats', statsRoutes);
 app.use('/api', statsRoutes); // backward compat: Android ServerStatsPoller calls /api/status and /api/user/stats/:userId
 app.use('/api/activity', activityRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api', contactRoutes);
 
 
 // ── Serve React client (built files) ────────────────────────────────

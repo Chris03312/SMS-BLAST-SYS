@@ -169,6 +169,25 @@ export default function BlastDashboard() {
     }
   }, [initialDataLoaded]);
 
+  // ── Auto-fill recipients from Recipients page ──────────────────────
+  useEffect(() => {
+    if (!initialDataLoaded) return;
+    try {
+      const stored = sessionStorage.getItem('srmc_imported_contacts');
+      if (stored) {
+        const nums = JSON.parse(stored);
+        if (Array.isArray(nums) && nums.length > 0) {
+          setRecipients(prev => {
+            const existing = prev.trim() ? prev.trim() + '\n' : '';
+            return existing + nums.join('\n');
+          });
+          toast(`Imported ${nums.length} contacts from Recipients page`, 'info');
+        }
+        sessionStorage.removeItem('srmc_imported_contacts');
+      }
+    } catch (_) {}
+  }, [initialDataLoaded]);
+
   // Save draft on every form state change
   useEffect(() => {
     if (!initialDataLoaded) return;
@@ -285,6 +304,11 @@ export default function BlastDashboard() {
       .filter(s => s.length >= 7);
   }
 
+  function parseBossNumbers(campaign) {
+    if (!campaign?.boss_numbers) return [];
+    return campaign.boss_numbers.split('\n').map(s => s.trim()).filter(Boolean);
+  }
+
   const recipientList = parseRecipients(recipients);
   const charCount = message.length;
   const segments = Math.ceil(charCount / 160) || 1;
@@ -323,11 +347,14 @@ export default function BlastDashboard() {
       }));
       setSending(false);
       // Capture summary data for post-send receipt
+      const campaignObj = campaigns.find(c => c.id === selectedCampaign);
+      const bossNumbers = parseBossNumbers(campaignObj);
       setSentSummary({
         message: result.broadcast.message || message,
         recipients: recipientList,
         gateways: selectedGateways,
-        campaign: campaigns.find(c => c.id === selectedCampaign)?.name || null,
+        campaign: campaignObj?.name || null,
+        bossNumbers,
         distribution,
         delayMs,
         simMode,
@@ -903,6 +930,27 @@ export default function BlastDashboard() {
                     </div>
                   </div>
 
+                  {/* Boss Numbers */}
+                  {parseBossNumbers(campaigns.find(c => c.id === selectedCampaign)).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                        Boss Numbers
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {parseBossNumbers(campaigns.find(c => c.id === selectedCampaign)).map(n => (
+                          <span key={n} style={{
+                            padding: '2px 8px', borderRadius: 4,
+                            background: 'rgba(219,39,119,0.08)',
+                            border: '1px solid rgba(219,39,119,0.2)',
+                            fontSize: 11, fontFamily: 'var(--mono)', color: '#db2777',
+                          }}>
+                            {n}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Recipients */}
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
@@ -1071,6 +1119,27 @@ export default function BlastDashboard() {
                       {sentSummary.campaign || '—'}
                     </div>
                   </div>
+
+                  {/* Boss Numbers */}
+                  {sentSummary.bossNumbers?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                        Boss Numbers
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {sentSummary.bossNumbers.map(n => (
+                          <span key={n} style={{
+                            padding: '2px 8px', borderRadius: 4,
+                            background: 'rgba(219,39,119,0.08)',
+                            border: '1px solid rgba(219,39,119,0.2)',
+                            fontSize: 11, fontFamily: 'var(--mono)', color: '#db2777',
+                          }}>
+                            {n}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Recipients */}
                   <div>

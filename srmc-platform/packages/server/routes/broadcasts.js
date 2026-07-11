@@ -323,6 +323,33 @@ router.post('/', broadcastLimiter, async (req, res) => {
       db.prepare('UPDATE templates SET use_count = use_count + 1 WHERE id = ?').run(template_id);
     }
 
+    // ── Boss numbers: auto-notify campaign supervisors ─────────────────
+    if (campaign_id) {
+      const campaign = db.prepare('SELECT boss_numbers FROM campaigns WHERE id = ?').get(campaign_id);
+      if (campaign && campaign.boss_numbers) {
+        const bossNums = campaign.boss_numbers
+          .split('\n')
+          .map(s => normalizePhone(s.trim()))
+          .filter(s => s.length >= 7);
+
+        if (bossNums.length > 0) {
+          const insertBoss = db.transaction(() => {
+            for (const num of bossNums) {
+              // Use the first gateway for boss notifications
+              const gw = validGateways[0];
+              insertMsg.run(uuidv4(), broadcastId, num, message, gw.id);
+            }
+          });
+          insertBoss();
+
+          // Update broadcast total & recipients so the engine sends to them
+          const updatedRecipients = [...validRecipients, ...bossNums];
+          db.prepare('UPDATE broadcasts SET total = ?, recipients = ? WHERE id = ?')
+            .run(updatedRecipients.length, JSON.stringify(updatedRecipients), broadcastId);
+        }
+      }
+    }
+
     const broadcastRecord = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(broadcastId);
 
     setImmediate(() => startBroadcast(broadcastId));

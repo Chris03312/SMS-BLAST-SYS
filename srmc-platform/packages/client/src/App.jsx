@@ -26,7 +26,9 @@ const Numbers = React.lazy(() => import('./pages/admin/Numbers.jsx'));
 const Webhooks = React.lazy(() => import('./pages/admin/Webhooks.jsx'));
 const Activity = React.lazy(() => import('./pages/admin/Activity.jsx'));
 const AdminAnalytics = React.lazy(() => import('./pages/admin/Analytics.jsx'));
+const AdminContacts = React.lazy(() => import('./pages/admin/Contacts.jsx'));
 const Settings = React.lazy(() => import('./pages/admin/Settings.jsx'));
+const Recipients = React.lazy(() => import('./pages/agent/Recipients.jsx'));
 
 // ── Route guards ───────────────────────────────────────────────────────
 
@@ -102,6 +104,7 @@ export default function App() {
             <Route path="/templates" element={<AgentRoute><AgentTemplates /></AgentRoute>} />
             <Route path="/inbound" element={<AgentRoute><AgentInbound /></AgentRoute>} />
             <Route path="/gateway" element={<AgentRoute><Gateway /></AgentRoute>} />
+            <Route path="/recipients" element={<AgentRoute><Recipients /></AgentRoute>} />
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="/admin/campaigns" element={<AdminRoute><Campaigns /></AdminRoute>} />
             <Route path="/admin/templates" element={<AdminRoute><AdminTemplates /></AdminRoute>} />
@@ -113,6 +116,7 @@ export default function App() {
             <Route path="/admin/activity" element={<AdminRoute><Activity /></AdminRoute>} />
             <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
             <Route path="/admin/settings" element={<AdminRoute><Settings /></AdminRoute>} />
+            <Route path="/admin/contacts" element={<AdminRoute><AdminContacts /></AdminRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

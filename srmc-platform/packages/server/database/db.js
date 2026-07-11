@@ -407,8 +407,17 @@ export function initDb() {
     "ALTER TABLE gateways ADD COLUMN number TEXT",
     // Link inbound messages to the agent who sent the broadcast they reply to.
     "ALTER TABLE inbound ADD COLUMN agent_id TEXT",
-    // Track consecutive failures to detect SIMs with no load.
+    // Agent contact list for admin-distributed recipient numbers
     "ALTER TABLE gateways ADD COLUMN consecutive_fails INTEGER DEFAULT 0",
+    `CREATE TABLE IF NOT EXISTS agent_contacts (
+      id           TEXT PRIMARY KEY,
+      agent_id     TEXT NOT NULL,
+      batch_id     TEXT NOT NULL,
+      phone_number TEXT NOT NULL,
+      used         INTEGER DEFAULT 0,
+      broadcast_id TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
     // Link activity entries to campaigns for the admin Activity Log.
     "ALTER TABLE activity ADD COLUMN campaign_id TEXT",
     // Second SIM phone number for dual-SIM gateways
@@ -434,6 +443,8 @@ export function initDb() {
     "ALTER TABLE gateways ADD COLUMN owner_id TEXT",
     // SIM slot that received this inbound message (1 = SIM1, 2 = SIM2)
     "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0",
+    // Boss/notify numbers for campaign alerts
+    "ALTER TABLE campaigns ADD COLUMN boss_numbers TEXT DEFAULT ''",
   ];
   for (const sql of migrations) {
     try {
