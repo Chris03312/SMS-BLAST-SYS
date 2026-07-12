@@ -48,7 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private static boolean sPermissionsRequested = false;
 
     // Gateway info
-    private TextView tvDeviceIp, tvApiKey, tvDeviceModel;
+    private TextView tvDeviceIp, tvDeviceId, tvApiKey, tvDeviceModel;
     private EditText etGatewayPort;
 
     // Inbound webhook
@@ -92,6 +92,7 @@ public class MainActivity extends AppCompatActivity {
         // Display device info
         tvDeviceIp.setText(getLocalIp());
         tvDeviceModel.setText(Build.MANUFACTURER + " " + Build.MODEL);
+        tvDeviceId.setText(getGatewayDeviceId());
 
         // Load or generate API key
         String key = prefs.getString(PREF_API_KEY, "");
@@ -142,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void bindViews() {
         tvDeviceIp      = findViewById(R.id.tvDeviceIp);
+        tvDeviceId      = findViewById(R.id.tvDeviceId);
         tvDeviceModel   = findViewById(R.id.tvDeviceModel);
         tvApiKey        = findViewById(R.id.tvApiKey);
         etGatewayPort   = findViewById(R.id.etGatewayPort);
