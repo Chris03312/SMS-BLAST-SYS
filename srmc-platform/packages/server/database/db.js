@@ -463,9 +463,10 @@ export function initDb() {
   // Guarantee a known admin login on EVERY boot (fresh DB or reinstall).
   ensureAdminAccount();
 
-  // Start periodic database backups
-  createInitialBackup();
-  startBackupSchedule();
+  // Periodic backups disabled — DB is already persisted on every write.
+  // Backups just clutter git history and waste disk space.
+  // createInitialBackup();
+  // startBackupSchedule();
 
   console.log('[db] Database ready at', DB_PATH);
 }
