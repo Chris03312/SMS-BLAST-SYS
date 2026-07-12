@@ -147,11 +147,11 @@ export function gatewayOffline(userId, deviceId) {
  */
 export function resolveGateway(rawId) {
   if (!rawId) return null;
-  // 1. Direct ID match
-  let gw = db.prepare('SELECT * FROM gateways WHERE id = ?').get(rawId);
+  // 1. Phone ID match first (admin-created PULL gateway with phone_id = device UUID)
+  let gw = db.prepare('SELECT * FROM gateways WHERE phone_id = ?').get(rawId);
   if (gw) return gw;
-  // 2. Phone ID match
-  gw = db.prepare('SELECT * FROM gateways WHERE phone_id = ?').get(rawId);
+  // 2. Direct ID match (auto-created gateway by heartbeat)
+  gw = db.prepare('SELECT * FROM gateways WHERE id = ?').get(rawId);
   if (gw) return gw;
   // 3. Resolve username from users table, then match phone_id = username
   const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(rawId);

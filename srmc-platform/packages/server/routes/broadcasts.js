@@ -44,7 +44,7 @@ router.get('/', (req, res) => {
       LEFT JOIN campaigns c ON b.campaign_id = c.id
     `;
 
-    const conditions = [];
+    const conditions = ['b.deleted_at IS NULL'];
     const params = [];
 
     if (req.user.role === 'agent') {
@@ -74,7 +74,7 @@ router.get('/', (req, res) => {
     query += ' ORDER BY b.created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
-    const broadcasts = db.prepare(query).all(...params);
+    const broadcasts = db.prepare(query).all(...params).filter(b => !b.deleted_at);
     const total = db.prepare(
       `SELECT COUNT(*) as c FROM broadcasts b ${conditions.length > 0 ? 'WHERE ' + conditions.slice(0, conditions.length).join(' AND ') : ''}`
     ).get(...params.slice(0, -2));
@@ -98,6 +98,7 @@ router.get('/running/list', (req, res) => {
        LEFT JOIN campaigns c ON b.campaign_id = c.id
        LEFT JOIN gateways g ON b.gateway_id = g.id
        WHERE b.status IN ('pending', 'sending', 'paused')
+       AND b.deleted_at IS NULL
     `;
     const params = [];
     if (req.user.role === 'agent') {
@@ -336,7 +337,7 @@ router.get('/running/count', (req, res) => {
   return ok(res, { count: getRunningCount() });
 });
 
-// ── Delete a broadcast ──────────────────────────────────────────────────
+// ── Soft-delete a broadcast (hides it but keeps history & sent counts) ──
 
 router.delete('/:id', (req, res) => {
   try {
@@ -352,16 +353,9 @@ router.delete('/:id', (req, res) => {
     // Stop the engine if this broadcast is actively sending
     cancelBroadcast(req.params.id);
 
-    // Delete messages — skip 'sent'/'delivered' if broadcast is already complete
-    if (bcast.status === 'done') {
-      // Only delete non-sent messages (queued, pending, failed, cancelled)
-      db.prepare("DELETE FROM messages WHERE broadcast_id = ? AND status NOT IN ('sent', 'delivered')").run(req.params.id);
-    } else {
-      // Otherwise hard-delete all messages
-      db.prepare('DELETE FROM messages WHERE broadcast_id = ?').run(req.params.id);
-    }
-
-    db.prepare('DELETE FROM broadcasts WHERE id = ?').run(req.params.id);
+    // Soft-delete: mark as deleted instead of removing data
+    // This preserves messages, sent counts, and activity logs
+    db.prepare("UPDATE broadcasts SET deleted_at = datetime('now'), status = 'cancelled' WHERE id = ?").run(req.params.id);
 
     // Notify frontend so it can update UIs
     emitEvent({

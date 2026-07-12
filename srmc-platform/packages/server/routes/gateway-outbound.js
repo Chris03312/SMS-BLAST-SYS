@@ -54,9 +54,9 @@ function authGateway(req, res) {
     return null;
   }
   const rawId = payload.gatewayId;
-  // Resolve gateway by database ID first, then phone_id, then username
-  const gw = db.prepare('SELECT id FROM gateways WHERE id = ?').get(rawId)
-    || db.prepare('SELECT id FROM gateways WHERE phone_id = ?').get(rawId);
+  // Resolve gateway by phone_id first (admin-created PULL gateway), then direct ID
+  const gw = db.prepare('SELECT id FROM gateways WHERE phone_id = ?').get(rawId)
+    || db.prepare('SELECT id FROM gateways WHERE id = ?').get(rawId);
   if (gw) return gw.id;
   // Fallback: try username lookup
   const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(rawId);

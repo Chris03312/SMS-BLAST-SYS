@@ -266,8 +266,13 @@ export default function Numbers() {
                 </div>
               )}
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Bearer token</label>
-                <PasswordInput value={form.token} onChange={e => setForm(prev => ({ ...prev, token: e.target.value.toLowerCase() }))} placeholder="token from Android app" style={{ fontSize: 12 }} className="input mono" />
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+                  Bearer token {form.mode === 'pull' && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>(not needed for PULL)</span>}
+                </label>
+                <PasswordInput value={form.token} onChange={e => setForm(prev => ({ ...prev, token: e.target.value.toLowerCase() }))} placeholder={form.mode === 'pull' ? 'Token not required in PULL mode' : 'token from Android app'} style={{ fontSize: 12, opacity: form.mode === 'pull' ? 0.4 : 1 }} className="input mono" disabled={form.mode === 'pull'} />
+                {form.mode === 'pull' && (
+                  <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 4 }}>PULL gateways authenticate via the agent account, not a bearer token.</div>
+                )}
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>SIM carrier</label>

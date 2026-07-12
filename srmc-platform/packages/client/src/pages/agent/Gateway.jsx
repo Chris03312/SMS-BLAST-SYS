@@ -142,17 +142,19 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, onTestInline, sav
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 5 }}>
-              API token
+              API token {isPullMode && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>(not needed for PULL)</span>}
             </label>
             <PasswordInput
               className="input mono"
-              placeholder="Bearer token from the app"
+              placeholder={isPullMode ? 'Token not required in PULL mode' : 'Bearer token from the app'}
               value={form.token}
               onChange={e => set('token', e.target.value.toLowerCase())}
               autoComplete="off"
+              disabled={isPullMode}
+              style={{ opacity: isPullMode ? 0.4 : 1 }}
             />
-            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
-              Found in FlashSMSGateway app → Settings → API Key
+            <div style={{ fontSize: 11, color: isPullMode ? 'var(--ink-4)' : 'var(--ink-3)', marginTop: 4 }}>
+              {isPullMode ? 'PULL gateways authenticate via the agent account, not a bearer token.' : 'Found in FlashSMSGateway app → Settings → API Key'}
             </div>
           </div>
           <div>
@@ -278,11 +280,11 @@ function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim, onRemoveClick })
     try {
       const result = await onTest(gw);
       if (result.status === 'online') {
-        setTestResult({ ok: true, msg: '✓ Gateway reachable and responding' });
+        setTestResult({ ok: true, msg: gw.mode === 'pull' ? '✓ Gateway online — last heartbeat was recent' : '✓ Gateway reachable and responding' });
       } else if (result.last_error) {
         setTestResult({ ok: false, msg: result.last_error });
       } else if (result.status === 'slow') {
-        setTestResult({ ok: false, msg: 'Gateway slow to respond — may be overloaded' });
+        setTestResult({ ok: false, msg: gw.mode === 'pull' ? 'Gateway may be disconnected — no recent heartbeat' : 'Gateway slow to respond — may be overloaded' });
       } else {
         setTestResult({ ok: false, msg: `Status: ${result.status}` });
       }

@@ -445,6 +445,8 @@ export function initDb() {
     "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0",
     // Phone/device ID for PULL mode matching
     "ALTER TABLE gateways ADD COLUMN phone_id TEXT",
+    // Soft-delete timestamp for broadcasts (hides from UI but preserves stats)
+    "ALTER TABLE broadcasts ADD COLUMN deleted_at TEXT",
   ];
   for (const sql of migrations) {
     try {

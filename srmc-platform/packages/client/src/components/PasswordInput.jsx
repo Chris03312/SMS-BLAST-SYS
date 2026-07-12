@@ -10,6 +10,7 @@ export default function PasswordInput({
   autoFocus,
   name,
   style,
+  disabled,
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -28,6 +29,7 @@ export default function PasswordInput({
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         name={name}
+        disabled={disabled}
         style={{
           ...style,
           paddingRight: 40,

@@ -337,44 +337,33 @@ public class MainActivity extends AppCompatActivity {
                 onlineConn.getResponseCode();
                 onlineConn.disconnect();
 
-                // Step 2: Send heartbeat (registers inbound webhook URL)
-                org.json.JSONObject beatPayload = new org.json.JSONObject();
-                beatPayload.put("userId", deviceId);
-                beatPayload.put("deviceId", deviceId);
-                if (!sim1.isEmpty()) beatPayload.put("sim_carrier", sim1);
-                if (!sim2.isEmpty()) beatPayload.put("sim2_carrier", sim2);
+                // Step 2: Fetch the config from server to get inbound webhook URL
+                java.net.HttpURLConnection configConn = (java.net.HttpURLConnection)
+                        new java.net.URL(serverUrl + "/api/config").openConnection();
+                configConn.setRequestMethod("GET");
+                configConn.setConnectTimeout(10_000);
+                configConn.setReadTimeout(10_000);
 
-                byte[] beatBody = beatPayload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-
-                java.net.HttpURLConnection beatConn = (java.net.HttpURLConnection)
-                        new java.net.URL(serverUrl + "/api/auth/gateway/heartbeat").openConnection();
-                beatConn.setRequestMethod("POST");
-                beatConn.setRequestProperty("Content-Type", "application/json");
-                beatConn.setDoOutput(true);
-                beatConn.setConnectTimeout(10_000);
-                beatConn.setReadTimeout(10_000);
-                try (java.io.OutputStream os = beatConn.getOutputStream()) { os.write(beatBody); }
-
-                int code = beatConn.getResponseCode();
-                java.io.BufferedReader reader = new java.io.BufferedReader(
+                int configCode = configConn.getResponseCode();
+                java.io.BufferedReader configReader = new java.io.BufferedReader(
                         new java.io.InputStreamReader(
-                                code >= 400 ? beatConn.getErrorStream() : beatConn.getInputStream(),
+                                configCode >= 400 ? configConn.getErrorStream() : configConn.getInputStream(),
                                 java.nio.charset.StandardCharsets.UTF_8));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) sb.append(line);
-                beatConn.disconnect();
+                StringBuilder configSb = new StringBuilder();
+                String configLine;
+                while ((configLine = configReader.readLine()) != null) configSb.append(configLine);
+                configConn.disconnect();
 
-                String responseBody = sb.toString();
+                String configBody = configSb.toString();
 
-                // Extract webhook URL from response if available
+                // Extract webhook URL from config response
                 String webhookUrl = "";
                 try {
-                    org.json.JSONObject resp = new org.json.JSONObject(responseBody);
-                    webhookUrl = resp.optString("inbound_webhook_url", "");
+                    org.json.JSONObject resp = new org.json.JSONObject(configBody);
+                    webhookUrl = resp.optString("INBOUND_WEBHOOK_URL", "");
                 } catch (Exception ignored) {}
 
-                final boolean finalSuccess = code < 400;
+                final boolean finalSuccess = configCode < 400;
                 final String msg;
                 if (finalSuccess) {
                     if (!webhookUrl.isEmpty()) {
@@ -385,7 +374,7 @@ public class MainActivity extends AppCompatActivity {
                         msg = "\u2713 Registered (device: " + deviceId.substring(0, 8) + "\u2026)";
                     }
                 } else {
-                    msg = "\u2717 HTTP " + code + " \u2014 " + responseBody;
+                    msg = "\u2717 HTTP " + configCode + " \u2014 " + configBody;
                 }
 
                 runOnUiThread(() -> {

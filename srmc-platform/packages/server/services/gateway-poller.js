@@ -110,11 +110,51 @@ export function startPoller() {
 export async function checkGatewayNow(gatewayId, overrideToken) {
   let gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(gatewayId);
   if (!gateway) return null;
+
   // If an override token is provided, use it instead of the DB-stored one.
   // This lets the frontend test with a newly typed token before saving.
   if (overrideToken !== undefined) {
     gateway = { ...gateway, token: overrideToken };
   }
+
+  // PULL gateway — check heartbeat recency instead of HTTP ping
+  if (gateway.mode === 'pull') {
+    const pullStatus = checkPullGatewayHealth(gateway);
+    db.prepare('UPDATE gateways SET status = ?, last_error = ? WHERE id = ?')
+      .run(pullStatus.status, pullStatus.lastError, gateway.id);
+
+    broadcast({
+      type: 'gateway:status',
+      gatewayId: gateway.id,
+      status: pullStatus.status,
+      last_beat: pullStatus.lastBeat,
+      last_error: pullStatus.lastError,
+    });
+
+    return db.prepare('SELECT * FROM gateways WHERE id = ?').get(gatewayId);
+  }
+
+  // PUSH gateway — HTTP ping as before
   await checkGateway(gateway);
   return db.prepare('SELECT * FROM gateways WHERE id = ?').get(gatewayId);
+}
+
+function checkPullGatewayHealth(gateway) {
+  if (!gateway.last_beat) {
+    return { status: 'offline', lastError: 'Never heard from this gateway — no heartbeat received', lastBeat: null };
+  }
+
+  const lastBeatTime = new Date(gateway.last_beat).getTime();
+  const diffMs = Date.now() - lastBeatTime;
+  const diffSec = Math.round(diffMs / 1000);
+
+  if (diffMs < 2 * 60 * 1000) {
+    // Heartbeat within last 2 minutes — gateway is actively polling
+    return { status: 'online', lastError: null, lastBeat: gateway.last_beat };
+  } else if (diffMs < 5 * 60 * 1000) {
+    // Heartbeat within last 5 minutes — might be slow
+    return { status: 'slow', lastError: `No heartbeat for ${diffSec}s — gateway may be disconnected`, lastBeat: gateway.last_beat };
+  } else {
+    return { status: 'offline', lastError: `No heartbeat for ${Math.floor(diffMs / 60000)}m — gateway is offline`, lastBeat: gateway.last_beat };
+  }
 }
