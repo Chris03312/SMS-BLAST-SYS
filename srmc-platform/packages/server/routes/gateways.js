@@ -69,16 +69,17 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { name, url, token, sim_carrier, number, number2 } = req.body;
-    if (!name || !url) {
-      return fail(res, 'Name and URL are required', 400);
+    const { name, url, token, sim_carrier, number, number2, mode, phone_id } = req.body;
+    if (!name) {
+      return fail(res, 'Name is required', 400);
     }
 
     const normalizedToken = token ? token.toLowerCase() : null;
+    const resolvedMode = mode || 'push';
 
     const id = uuidv4();
-    db.prepare('INSERT INTO gateways (id, name, url, token, sim_carrier, number, number2, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, name, url, normalizedToken, sim_carrier || null, number || null, number2 || null, req.user.id);
+    db.prepare('INSERT INTO gateways (id, name, url, token, sim_carrier, number, number2, owner_id, mode, phone_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, url || '', normalizedToken, sim_carrier || null, number || null, number2 || null, req.user.id, resolvedMode, phone_id || null);
 
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(id);
     return ok(res, { gateway }, 201);
@@ -93,7 +94,7 @@ router.put('/:id', (req, res) => {
     if (!canAccess(req.user, req.params.id)) {
       return fail(res, 'Forbidden — you do not own this gateway', 403);
     }
-    const { name, url, token, sim_carrier, sim2_carrier, number, number2, active } = req.body;
+    const { name, url, token, sim_carrier, sim2_carrier, number, number2, active, mode, phone_id } = req.body;
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(req.params.id);
     if (!gateway) {
       return fail(res, 'Gateway not found', 404);
@@ -101,7 +102,7 @@ router.put('/:id', (req, res) => {
 
     const normalizedToken = token !== undefined ? (token || '').toLowerCase() : gateway.token;
 
-    db.prepare('UPDATE gateways SET name = ?, url = ?, token = ?, sim_carrier = ?, sim2_carrier = ?, number = ?, number2 = ?, active = ? WHERE id = ?')
+    db.prepare('UPDATE gateways SET name = ?, url = ?, token = ?, sim_carrier = ?, sim2_carrier = ?, number = ?, number2 = ?, active = ?, mode = ?, phone_id = ? WHERE id = ?')
       .run(
         name ?? gateway.name,
         url ?? gateway.url,
@@ -111,6 +112,8 @@ router.put('/:id', (req, res) => {
         number !== undefined ? number : gateway.number,
         number2 !== undefined ? number2 : gateway.number2,
         active !== undefined ? (active ? 1 : 0) : gateway.active,
+        mode ?? gateway.mode || 'push',
+        phone_id !== undefined ? phone_id : gateway.phone_id,
         req.params.id
       );
 

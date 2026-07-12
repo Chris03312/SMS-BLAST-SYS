@@ -443,6 +443,8 @@ export function initDb() {
     "ALTER TABLE gateways ADD COLUMN owner_id TEXT",
     // SIM slot that received this inbound message (1 = SIM1, 2 = SIM2)
     "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0",
+    // Phone/device ID for PULL mode matching
+    "ALTER TABLE gateways ADD COLUMN phone_id TEXT",
   ];
   for (const sql of migrations) {
     try {

@@ -15,7 +15,7 @@ export default function Numbers() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editGateway, setEditGateway] = useState(null);
-  const [form, setForm] = useState({ name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' });
+  const [form, setForm] = useState({ name: '', url: '', token: '', sim_carrier: '', number: '', number2: '', mode: 'push', phone_id: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [testing, setTesting] = useState({});
@@ -50,14 +50,14 @@ export default function Numbers() {
 
   function openNew() {
     setEditGateway(null);
-    setForm({ name: '', url: 'http://192.168.3.', token: '', sim_carrier: '', number: '', number2: '' });
+    setForm({ name: '', url: '', token: '', sim_carrier: '', number: '', number2: '', mode: 'push', phone_id: '' });
     setError('');
     setShowModal(true);
   }
 
   function openEdit(g) {
     setEditGateway(g);
-    setForm({ name: g.name, url: g.url, token: g.token || '', sim_carrier: g.sim_carrier || '', number: g.number || '', number2: g.number2 || '' });
+    setForm({ name: g.name, url: g.url, token: g.token || '', sim_carrier: g.sim_carrier || '', number: g.number || '', number2: g.number2 || '', mode: g.mode || 'push', phone_id: g.phone_id || '' });
     setError('');
     setShowModal(true);
   }
@@ -218,14 +218,53 @@ export default function Numbers() {
         <Modal title={editGateway ? 'Edit Gateway' : 'Add Gateway'} onClose={() => setShowModal(false)}>
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Mode selector */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Mode</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[
+                    { key: 'push', label: '📡 PUSH', desc: 'Same network (LAN)' },
+                    { key: 'pull', label: '🌐 PULL', desc: 'Remote (ngrok/internet)' },
+                  ].map(opt => {
+                    const isActive = form.mode === opt.key;
+                    return (
+                      <div
+                        key={opt.key}
+                        onClick={() => setForm(prev => ({ ...prev, mode: opt.key }))}
+                        style={{
+                          flex: 1, padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                          border: `1.5px solid ${isActive ? 'var(--ink-1)' : 'var(--line)'}`,
+                          background: isActive ? 'var(--ink-1)' : '#fff',
+                          transition: 'all 0.12s',
+                        }}
+                      >
+                        <div style={{ fontSize: 14, fontWeight: 600, color: isActive ? '#fff' : 'var(--ink-1)', marginBottom: 2 }}>
+                          {opt.label}
+                        </div>
+                        <div style={{ fontSize: 11, color: isActive ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)' }}>
+                          {opt.desc}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Name</label>
                 <input className="input" value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} placeholder="e.g. Galaxy A54 – SIM 1" required />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>URL</label>
-                <input className="input mono" value={form.url} onChange={e => setForm(prev => ({ ...prev, url: e.target.value }))} placeholder="http://192.168.3.78:8080" required style={{ fontSize: 12 }} />
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>URL {form.mode !== 'pull' && <span style={{ color: 'var(--err)' }}>*</span>}</label>
+                <input className="input mono" value={form.url} onChange={e => setForm(prev => ({ ...prev, url: e.target.value }))} placeholder={form.mode === 'pull' ? 'Not needed for PULL mode' : 'http://192.168.3.78:8080'} required={form.mode !== 'pull'} disabled={form.mode === 'pull'} style={{ fontSize: 12, opacity: form.mode === 'pull' ? 0.5 : 1 }} />
               </div>
+              {/* Phone ID (only for PULL mode) */}
+              {form.mode === 'pull' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Phone ID <span style={{ color: 'var(--err)' }}>*</span></label>
+                  <input className="input mono" value={form.phone_id} onChange={e => setForm(prev => ({ ...prev, phone_id: e.target.value }))} placeholder="Enter the agent's username (main app) or device ID (Lite app)" style={{ fontSize: 12 }} required />
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>Main app: agent username. Lite app: Device ID from app.</div>
+                </div>
+              )}
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Bearer token</label>
                 <PasswordInput value={form.token} onChange={e => setForm(prev => ({ ...prev, token: e.target.value.toLowerCase() }))} placeholder="token from Android app" style={{ fontSize: 12 }} className="input mono" />

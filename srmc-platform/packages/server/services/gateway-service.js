@@ -139,6 +139,30 @@ export function gatewayOffline(userId, deviceId) {
 }
 
 /**
+ * Resolve a gateway by ID, phone_id, or username.
+ * Used by the outbound poller and heartbeat to match phones to gateways.
+ *
+ * @param {string} rawId - The raw ID from JWT or heartbeat
+ * @returns {object|null} - The gateway row, or null if not found
+ */
+export function resolveGateway(rawId) {
+  if (!rawId) return null;
+  // 1. Direct ID match
+  let gw = db.prepare('SELECT * FROM gateways WHERE id = ?').get(rawId);
+  if (gw) return gw;
+  // 2. Phone ID match
+  gw = db.prepare('SELECT * FROM gateways WHERE phone_id = ?').get(rawId);
+  if (gw) return gw;
+  // 3. Resolve username from users table, then match phone_id = username
+  const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(rawId);
+  if (user && user.username) {
+    gw = db.prepare('SELECT * FROM gateways WHERE phone_id = ?').get(user.username);
+    if (gw) return gw;
+  }
+  return null;
+}
+
+/**
  * Process a gateway heartbeat. Auto-creates the gateway if it doesn't exist,
  * supporting both SRMCGateway (has login) and SRMCGatewayLite (no login).
  *
@@ -149,10 +173,11 @@ export function gatewayHeartbeat(userId, deviceId, extra = {}) {
   const now = new Date().toISOString();
   const gwId = deviceId || userId;
 
+  // Try to resolve existing gateway by id, phone_id, or username
+  let resolved = resolveGateway(gwId);
+
   // Auto-create gateway if it doesn't exist (supports Lite app which has no login)
-  const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(gwId);
-  if (!existing) {
-    // Derive display name from device info or use a fallback
+  if (!resolved) {
     const deviceName = extra.simCarrier
       ? `Lite Gateway (${extra.simCarrier}${extra.sim2Carrier ? ' + ' + extra.sim2Carrier : ''})`
       : `Lite Gateway (${gwId.slice(0, 8)}…)`;
@@ -165,7 +190,10 @@ export function gatewayHeartbeat(userId, deviceId, extra = {}) {
       name: deviceName,
       status: 'online',
     });
+    resolved = { id: gwId };
   }
+
+  const existingId = resolved.id;
 
   // Build update — always set status/beat/online, optionally update SIM fields
   const updates = ["status = ?", "last_beat = ?", "last_online = ?"];
@@ -188,12 +216,12 @@ export function gatewayHeartbeat(userId, deviceId, extra = {}) {
     params.push(String(extra.number));
   }
 
-  params.push(gwId);
+  params.push(existingId);
   db.prepare(`UPDATE gateways SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   broadcast({
     type: 'gateway:heartbeat',
-    gatewayId: gwId,
+    gatewayId: existingId,
     timestamp: now,
     sim_carrier: extra.simCarrier || null,
     sim2_carrier: extra.sim2Carrier || null,

@@ -9,7 +9,7 @@ import { useWS } from '../../lib/ws.js';
 import { formatNumber } from '../../lib/format.js';
 import { useToast } from '../../context/ToastContext.jsx';
 
-const EMPTY_FORM = { name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' };
+const EMPTY_FORM = { name: '', url: '', token: '', sim_carrier: '', number: '', number2: '', mode: 'push', phone_id: '' };
 
 function timeAgo(iso) {
   if (!iso) return 'never';
@@ -21,10 +21,11 @@ function timeAgo(iso) {
 
 // ── Inline gateway form (add or edit) ───────────────────────────────────────
 function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, onTestInline, saving, error }) {
-  const [form, setForm] = useState(initial);
+  const [form, setForm] = useState({ ...initial });
   const [inlineTestResult, setInlineTestResult] = useState(null);
   const [inlineTesting, setInlineTesting] = useState(false);
   const isEdit = !!initial.id;
+  const isPullMode = form.mode === 'pull';
 
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
 
@@ -54,6 +55,37 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, onTestInline, sav
       </div>
 
       <form onSubmit={handleSubmit}>
+        {/* Mode selector */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+            Mode
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { key: 'push', label: '📡 PUSH', desc: 'Same network (LAN)' },
+              { key: 'pull', label: '🌐 PULL', desc: 'Remote (ngrok/internet)' },
+            ].map(opt => (
+              <div
+                key={opt.key}
+                onClick={() => set('mode', opt.key)}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                  border: `1.5px solid ${isPullMode === (opt.key === 'pull') ? 'var(--ink-1)' : 'var(--line)'}`,
+                  background: isPullMode === (opt.key === 'pull') ? 'var(--ink-1)' : '#fff',
+                  transition: 'all 0.12s',
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 600, color: isPullMode === (opt.key === 'pull') ? '#fff' : 'var(--ink-1)', marginBottom: 2 }}>
+                  {opt.label}
+                </div>
+                <div style={{ fontSize: 11, color: isPullMode === (opt.key === 'pull') ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)' }}>
+                  {opt.desc}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Name + URL on the same row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
@@ -71,18 +103,40 @@ function GatewayForm({ initial = EMPTY_FORM, onSave, onCancel, onTestInline, sav
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 5 }}>
-              Gateway URL <span style={{ color: 'var(--err)' }}>*</span>
+              Gateway URL {!isPullMode && <span style={{ color: 'var(--err)' }}>*</span>}
             </label>
             <input
               className="input mono"
-              placeholder="http://192.168.1.100:8080"
+              placeholder={isPullMode ? 'Not needed for PULL mode' : 'http://192.168.1.100:8080'}
               value={form.url}
               onChange={e => set('url', e.target.value)}
-              required
+              required={!isPullMode}
+              disabled={isPullMode}
               type="url"
+              style={{ opacity: isPullMode ? 0.5 : 1 }}
             />
           </div>
         </div>
+
+        {/* Phone ID (only for PULL mode) */}
+        {isPullMode && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 5 }}>
+              Phone ID <span style={{ color: 'var(--err)' }}>*</span>
+            </label>
+            <input
+              className="input mono"
+              placeholder="Enter the agent's username (main app) or device ID (Lite app)"
+              value={form.phone_id}
+              onChange={e => set('phone_id', e.target.value)}
+              style={{ fontSize: 12 }}
+              required
+            />
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
+              Main app: enter the agent username (e.g. "Chirs"). Lite app: enter the Device ID shown in the app's Gateway Info section.
+            </div>
+          </div>
+        )}
 
         {/* Token + SIM carrier */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>

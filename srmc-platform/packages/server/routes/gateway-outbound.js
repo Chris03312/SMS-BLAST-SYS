@@ -53,7 +53,18 @@ function authGateway(req, res) {
     res.status(401).json({ success: false, error: 'Invalid or expired gateway token' });
     return null;
   }
-  return payload.gatewayId;
+  const rawId = payload.gatewayId;
+  // Resolve gateway by database ID first, then phone_id, then username
+  const gw = db.prepare('SELECT id FROM gateways WHERE id = ?').get(rawId)
+    || db.prepare('SELECT id FROM gateways WHERE phone_id = ?').get(rawId);
+  if (gw) return gw.id;
+  // Fallback: try username lookup
+  const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(rawId);
+  if (user && user.username) {
+    const gw2 = db.prepare('SELECT id FROM gateways WHERE phone_id = ?').get(user.username);
+    if (gw2) return gw2.id;
+  }
+  return rawId;
 }
 
 // ── Claim pending outbound messages for this gateway ──────────────────────
