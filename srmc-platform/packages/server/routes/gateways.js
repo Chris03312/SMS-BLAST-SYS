@@ -112,7 +112,7 @@ router.put('/:id', (req, res) => {
         number !== undefined ? number : gateway.number,
         number2 !== undefined ? number2 : gateway.number2,
         active !== undefined ? (active ? 1 : 0) : gateway.active,
-        mode ?? gateway.mode || 'push',
+        mode ?? (gateway.mode || 'push'),
         phone_id !== undefined ? phone_id : gateway.phone_id,
         req.params.id
       );
