@@ -93,6 +93,7 @@ export default function AdminShell({ children }) {
   const location = useLocation();
   const [connectivity, setConnectivity] = useState(null);
   const [showNetInfo, setShowNetInfo] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const wsStatus = useConnectionStatus();
 
   const fetchConnectivity = useCallback(() => {
@@ -107,6 +108,11 @@ export default function AdminShell({ children }) {
     return () => clearInterval(interval);
   }, [fetchConnectivity]);
 
+  // Close sidebar when navigating (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
   function handleLogout() { logout(); }
 
   function initials(name) {
@@ -116,7 +122,13 @@ export default function AdminShell({ children }) {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      {/* Sidebar overlay for mobile */}
+      <div
+        className={`sidebar-overlay${sidebarOpen ? ' open' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         {/* ── Sidebar header (brand) ── */}
         <Link to="/admin" className="sb-header" style={{ textDecoration: 'none', cursor: 'pointer' }}>
           <div className="brand-mark">
@@ -200,6 +212,33 @@ export default function AdminShell({ children }) {
       </aside>
 
       <main className="main">
+        {/* Mobile header bar with hamburger */}
+        <div className="mobile-header">
+          <button
+            className="sidebar-toggle"
+            onClick={() => setSidebarOpen(s => !s)}
+            title="Toggle menu"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              {sidebarOpen ? (
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </>
+              )}
+            </svg>
+          </button>
+          <div className="brand-title" style={{ fontSize: 13 }}>SMS Admin</div>
+          <div className="user-avatar" style={{ marginLeft: 'auto' }}>
+            {initials(user?.display_name)}
+          </div>
+        </div>
         {children}
       </main>
     </div>

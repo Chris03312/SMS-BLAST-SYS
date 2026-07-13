@@ -142,7 +142,7 @@ function BroadcastDetail({ broadcast, onClose }) {
         </div>
 
         {/* Messages table */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }} className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
               <tr style={{ borderBottom: '1px solid var(--line)' }}>
@@ -549,6 +549,7 @@ export default function Dashboard() {
         <div className="card-head">
           <h3>Broadcasts</h3>
         </div>
+        <div className="table-wrap" style={{ overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>
@@ -867,6 +868,7 @@ export default function Dashboard() {
             })}
           </tbody>
         </table>
+        </div>
 
         {/* Pagination footer */}
         <div className="footer">

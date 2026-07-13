@@ -276,8 +276,13 @@ export default function BlastDashboard() {
   }, [turboDelay]);
 
   function handleTemplateSelect(t) {
-    setSelectedTemplate(t);
-    setMessage(t.body);
+    if (selectedTemplate?.id === t.id) {
+      setSelectedTemplate(null);
+      setMessage('');
+    } else {
+      setSelectedTemplate(t);
+      setMessage(t.body);
+    }
   }
 
   function toggleGateway(id) {
@@ -401,7 +406,7 @@ export default function BlastDashboard() {
 
   return (
     <AgentShell>
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 360px', gap: 16, minHeight: 0 }}>
+      <div className="compose-grid" style={{ display: 'grid', gridTemplateColumns: '280px 1fr 360px', gap: 16, minHeight: 0 }}>
 
         {/* LEFT COL */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

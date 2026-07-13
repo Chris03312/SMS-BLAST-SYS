@@ -79,6 +79,15 @@ function BroadcastDetail({ broadcast, onClose }) {
               {!broadcast.completed_at && broadcast.started_at && (
                 <span style={{ color: 'var(--info)', whiteSpace: 'nowrap' }}>⟳ In progress</span>
               )}
+              {broadcast.gateway_name && (
+                <span style={{ fontWeight: 600, color: 'var(--ink-2)', marginRight: 2 }}>{broadcast.gateway_name}</span>
+              )}
+              {broadcast.gateway_number && (
+                <span style={{ fontWeight: 500, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                  {broadcast.gateway_number}
+                  {broadcast.gateway_number2 ? ` / ${broadcast.gateway_number2}` : ''}
+                </span>
+              )}
               {broadcast.sim_mode && (
                 <span style={{
                   padding: '1px 7px', borderRadius: 4,
@@ -296,10 +305,11 @@ export default function History() {
           <h3>Broadcasts</h3>
           <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{total} total</span>
         </div>
+        <div className="table-wrap" style={{ overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>
-              <th>When</th>
+              <th style={{ minWidth: 140 }}>When</th>
               <th>Campaign</th>
               <th>Message</th>
               <th>Status</th>
@@ -320,9 +330,9 @@ export default function History() {
             )}
             {broadcasts.map(b => (
               <tr key={b.id}>
-                <td>
-                  <div style={{ fontSize: 12, color: 'var(--ink-1)' }}>{formatTime(b.created_at)}</div>
-                  <div style={{ fontSize: 10, fontFamily: 'var(--mono)', marginTop: 1, lineHeight: 1.4 }}>
+                <td style={{ maxWidth: 160 }}>
+                  <div style={{ fontSize: 12, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatTime(b.created_at)}>{formatTime(b.created_at)}</div>
+                  <div style={{ fontSize: 10, fontFamily: 'var(--mono)', marginTop: 1, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {b.started_at && (
                       <span style={{ color: 'var(--ok)' }}>▶ {formatTime(b.started_at)}</span>
                     )}
@@ -330,7 +340,7 @@ export default function History() {
                       <span style={{ color: 'var(--ink-4)', marginLeft: 4 }}>✓ {formatTime(b.completed_at)}</span>
                     )}
                   </div>
-                  <div className="cell-id">{b.template_name || '—'}</div>
+                  <div className="cell-id" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.template_name || ''}>{b.template_name || '—'}</div>
                 </td>
                 <td>
                   <div style={{ fontSize: 12, fontWeight: 500 }}>{b.campaign_name || '—'}</div>
@@ -394,6 +404,7 @@ export default function History() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="footer">
           <span>Showing {Math.min(page * limit + 1, total)}–{Math.min((page + 1) * limit, total)} of {total}</span>
           <div className="pager">

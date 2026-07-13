@@ -84,6 +84,50 @@
   display: flex; align-items: center; justify-content: center;
   padding: 56px;
 }
+
+/* ─── RESPONSIVE LOGIN ─── */
+@media (max-width: 1024px) {
+  .wrap { grid-template-columns: 1.2fr 1fr; }
+  .wrap .brand { padding: 32px 28px; }
+  .wrap .brand h1 { font-size: 32px; }
+  .brand-copy { font-size: 13px; }
+  .stat-row { gap: 16px; }
+  .form-panel { padding: 32px; }
+}
+
+@media (max-width: 768px) {
+  .wrap {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .wrap .brand {
+    padding: 24px 20px;
+    min-height: auto;
+  }
+  .wrap .brand .eyebrow { margin-bottom: 10px; }
+  .wrap .brand h1 { font-size: 28px; }
+  .brand-copy { margin: 12px 0 20px; font-size: 13px; max-width: 100%; }
+  .stat-row { display: none; }
+  .brand-footer { display: none; }
+  .orb { width: 200px; height: 200px; top: -60px; right: -60px; }
+  .brand-inner { min-height: auto; }
+  .brand-logo { width: 100px; }
+  .form-panel { padding: 32px 20px; }
+  .form-title { font-size: 24px; }
+  .form-stack { margin-top: 24px; }
+  .helper-box { display: none; }
+}
+
+@media (max-width: 480px) {
+  .wrap .brand { padding: 16px; }
+  .wrap .brand h1 { font-size: 24px; }
+  .brand-copy { font-size: 12px; margin: 8px 0 16px; }
+  .form-panel { padding: 24px 16px; }
+  .form-title { font-size: 22px; }
+  .form-inner { max-width: 100%; }
+  .form-panel .input { padding: 10px 12px; font-size: 13px; }
+  .cta { padding: 11px 14px; font-size: 13px; }
+}
 .form-inner { width: 100%; max-width: 380px; }
 .form-eyebrow {
   font-size: 11px; font-weight: 600; letter-spacing: 0.14em;

@@ -232,3 +232,43 @@ tbody tr:hover { background: var(--bg-page); }
   display: flex; justify-content: space-between; align-items: flex-end;
   margin-bottom: 20px; gap: 24px;
 }
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 1024px) {
+  .page-head { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .main { padding: 18px 16px !important; }
+  h1 { font-size: 22px; }
+  .card-head { padding: 12px 14px; }
+  tbody td { padding: 10px 12px; }
+  thead th { padding: 9px 12px; }
+  .toolbar { flex-wrap: wrap; padding: 6px; }
+  .search { min-width: 100%; order: 1; }
+  .seg { order: 0; }
+}
+
+@media (max-width: 768px) {
+  .page-head { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .main { padding: 14px !important; }
+  h1 { font-size: 20px; }
+  .page-sub { font-size: 12.5px; }
+  .card { border-radius: 10px; }
+  .card-head { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
+  .card-head h3 { font-size: 12px; }
+  tbody td { padding: 8px 10px; font-size: 12px; }
+  thead th { padding: 7px 10px; font-size: 10.5px; }
+  .toolbar { gap: 6px; padding: 6px; }
+  .footer { flex-direction: column; gap: 8px; padding: 10px 12px; }
+  .pager button { width: 24px; height: 24px; font-size: 11px; }
+  .num { font-size: 11.5px; }
+  /* Make tables horizontally scrollable */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-wrap::after { content: '← Scroll →'; display: block; text-align: center; font-size: 10px; color: var(--ink-4); padding: 4px; }
+}
+
+@media (max-width: 480px) {
+  h1 { font-size: 18px; }
+  .main { padding: 10px !important; }
+  .card-head { padding: 8px 10px; }
+  tbody td { padding: 6px 8px; font-size: 11px; }
+  thead th { padding: 6px 8px; font-size: 10px; }
+}

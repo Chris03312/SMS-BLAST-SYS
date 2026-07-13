@@ -245,7 +245,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* KPIs — mini analytic cards with sparklines and rings */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
         {loading ? Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="card" style={{ padding: '18px 20px', height: 120 }} />
         )) : kpis.map(k => (
@@ -308,7 +308,7 @@ export default function AdminDashboard() {
               Cancel All
             </button>
           </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'auto' }} className="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -341,7 +341,7 @@ export default function AdminDashboard() {
                           {b.message?.slice(0, 50)}{b.message?.length > 50 ? '…' : ''}
                         </div>
                       </td>
-                      <td className="num" style={{ fontSize: 13 }}>{b.total || 0}</td>
+                      <td className="num" style={{ fontSize: 13, textAlign: 'right' }}>{b.total || 0}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div style={{
@@ -368,8 +368,8 @@ export default function AdminDashboard() {
                           <span className="num" style={{ fontSize: 11, fontWeight: 600, minWidth: 32, textAlign: 'right' }}>{pct}%</span>
                         </div>
                       </td>
-                      <td className="num" style={{ fontSize: 13, color: 'var(--ok)' }}>{b.sent || 0}</td>
-                      <td className="num" style={{ fontSize: 13, color: (b.failed || 0) > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{b.failed || 0}</td>
+                      <td className="num" style={{ fontSize: 13, color: 'var(--ok)', textAlign: 'right' }}>{b.sent || 0}</td>
+                      <td className="num" style={{ fontSize: 13, color: (b.failed || 0) > 0 ? 'var(--err)' : 'var(--ink-3)', textAlign: 'right' }}>{b.failed || 0}</td>
                       <td>
                         {cancelledIds.has(b.id) ? (
                           <Pill status="cancelled" label="Cancelled" />
@@ -498,13 +498,13 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, marginBottom: 16 }}>
+      <div className="admin-dash-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, marginBottom: 16 }}>
         {/* Gateways status */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Gateways</h3>
           </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'auto' }} className="table-wrap">
             {(stats?.gateways_status || []).map(g => (
               <div key={g.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-soft)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -529,7 +529,7 @@ export default function AdminDashboard() {
             <h3>Active Campaigns</h3>
             <a href="/admin/campaigns" style={{ color: 'var(--brand-1)', fontSize: 12, fontWeight: 500 }}>View all →</a>
           </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'auto' }} className="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -547,7 +547,7 @@ export default function AdminDashboard() {
                       <div className="cell-id">{c.owner_name}</div>
                     </td>
                     <td><Pill status={c.status} label={c.status} /></td>
-                    <td className="num">{c.total_sent}</td>
+                    <td className="num" style={{ textAlign: 'right' }}>{c.total_sent}</td>
                   </tr>
                 ))}
               </tbody>
@@ -556,14 +556,14 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16 }}>
+      <div className="admin-dash-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16 }}>
         {/* Agents */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Agents</h3>
             <a href="/admin/agents" style={{ color: 'var(--brand-1)', fontSize: 12, fontWeight: 500 }}>View all →</a>
           </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'auto' }} className="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -584,7 +584,7 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     </td>
-                    <td className="num">{a.sent_today || 0}</td>
+                    <td className="num" style={{ textAlign: 'right' }}>{a.sent_today || 0}</td>
                   </tr>
                 ))}
               </tbody>
