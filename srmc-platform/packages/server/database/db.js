@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, copyFil
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import { normalizePhone } from '../utils/phone.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -520,6 +521,31 @@ export function initDb() {
   try {
     db.exec("CREATE INDEX IF NOT EXISTS idx_inbound_agent_id ON inbound(agent_id)");
   } catch (_) { }
+
+  // ── Backfill: normalize existing contact phone numbers ────────────
+  // Contacts uploaded before the normalizePhone change may be in raw format
+  // (e.g., "09171234567" instead of "+639171234567"). Re-normalize them so
+  // the auto-mark feature works for all contacts.
+  try {
+    const unnormalized = db.prepare(
+      "SELECT id, phone_number FROM agent_contacts WHERE phone_number NOT LIKE '+%'"
+    ).all();
+    if (unnormalized.length > 0) {
+      const fixStmt = db.prepare('UPDATE agent_contacts SET phone_number = ? WHERE id = ?');
+      const fixAll = db.transaction(() => {
+        for (const c of unnormalized) {
+          const normalized = normalizePhone(c.phone_number);
+          if (normalized !== c.phone_number) {
+            fixStmt.run(normalized, c.id);
+          }
+        }
+      });
+      fixAll();
+      console.log(`[db] Backfilled ${unnormalized.length} contact phone numbers to E.164 format`);
+    }
+  } catch (_) {
+    // Silently skip if agent_contacts table doesn't exist yet
+  }
 
   // Guarantee a known admin login on EVERY boot (fresh DB or reinstall).
   ensureAdminAccount();

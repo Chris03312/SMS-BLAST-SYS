@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Pill from '../../components/Pill.jsx';
+import Modal from '../../components/Modal.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useWS } from '../../lib/ws.js';
-import { formatNumber, formatDate } from '../../lib/format.js';
+import { formatNumber, formatDate, formatTime } from '../../lib/format.js';
 
 function Sparkline({ data, color = 'var(--brand-1)', width = 100, height = 28, fill = false }) {
   if (!data || data.length === 0) return <svg width={width} height={height} />;
@@ -50,6 +51,11 @@ export default function AdminDashboard() {
   const [inbound, setInbound] = useState([]);
   const [runningBroadcasts, setRunningBroadcasts] = useState([]);
   const [confirmCancelAll, setConfirmCancelAll] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [cancelledIds, setCancelledIds] = useState(new Set());
+  const [viewBroadcast, setViewBroadcast] = useState(null);
+  const [viewMessages, setViewMessages] = useState([]);
+  const [viewLoading, setViewLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // ── Debounced data refresh ───────────────────────────────────────────
@@ -57,6 +63,54 @@ export default function AdminDashboard() {
   // broadcast:progress or gateway:heartbeat). Only re-fetches at most once
   // every 3 seconds, and the last call always wins.
   const refreshRef = useRef(null);
+
+  async function handleCancel(broadcastId) {
+    try {
+      await api.post(`/broadcasts/${broadcastId}/cancel`);
+      setCancelledIds(prev => new Set(prev).add(broadcastId));
+      // Update the local status so the Pill shows "Cancelled"
+      setRunningBroadcasts(prev => prev.map(b =>
+        b.id === broadcastId ? { ...b, status: 'cancelled' } : b
+      ));
+      toast('Broadcast cancelled', 'info');
+    } catch (e) {
+      toast('Failed to cancel: ' + e.message, 'error');
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!confirmDelete) return;
+    try {
+      await api.del(`/broadcasts/${confirmDelete}`);
+      setRunningBroadcasts(prev => prev.filter(b => b.id !== confirmDelete));
+      setCancelledIds(prev => {
+        const next = new Set(prev);
+        next.delete(confirmDelete);
+        return next;
+      });
+      setConfirmDelete(null);
+      toast('Broadcast deleted', 'success');
+    } catch (e) {
+      toast('Failed to delete: ' + e.message, 'error');
+      setConfirmDelete(null);
+    }
+  }
+
+  async function handleViewBroadcast(broadcastId) {
+    setViewLoading(true);
+    setViewBroadcast(null);
+    setViewMessages([]);
+    try {
+      // Fetch broadcast details with all messages
+      const data = await api.get(`/broadcasts/${broadcastId}`);
+      setViewBroadcast(data);  // store the full broadcast object
+      setViewMessages(data.messages || []);
+    } catch (e) {
+      toast('Failed to load broadcast details: ' + e.message, 'error');
+      setViewBroadcast(null);
+    }
+    setViewLoading(false);
+  }
 
   async function handleCancelAll() {
     try {
@@ -265,6 +319,7 @@ export default function AdminDashboard() {
                   <th style={{ textAlign: 'right' }}>Sent</th>
                   <th style={{ textAlign: 'right' }}>Failed</th>
                   <th>Status</th>
+                  <th style={{ textAlign: 'center', width: 120 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -315,7 +370,74 @@ export default function AdminDashboard() {
                       </td>
                       <td className="num" style={{ fontSize: 13, color: 'var(--ok)' }}>{b.sent || 0}</td>
                       <td className="num" style={{ fontSize: 13, color: (b.failed || 0) > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{b.failed || 0}</td>
-                      <td><Pill status={b.status} label={isPaused ? 'Paused' : 'Sending'} /></td>
+                      <td>
+                        {cancelledIds.has(b.id) ? (
+                          <Pill status="cancelled" label="Cancelled" />
+                        ) : (
+                          <Pill status={b.status} label={isPaused ? 'Paused' : 'Sending'} />
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                          <button
+                            onClick={() => handleViewBroadcast(b.id)}
+                            title="View details"
+                            style={{
+                              padding: '4px 8px', fontSize: 11, fontWeight: 600,
+                              border: '1px solid var(--line)', borderRadius: 6,
+                              background: 'transparent', color: 'var(--ink-2)',
+                              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3,
+                              transition: 'all 0.12s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)'; e.currentTarget.style.borderColor = 'var(--ink-4)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10"/><polyline points="12 16 12 12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                            </svg>
+                            View
+                          </button>
+                          {cancelledIds.has(b.id) ? (
+                            <button
+                              onClick={() => setConfirmDelete(b.id)}
+                              title="Delete broadcast"
+                              style={{
+                                padding: '4px 8px', fontSize: 11, fontWeight: 600,
+                                border: '1px solid var(--err-line)', borderRadius: 6,
+                                background: 'var(--err-bg)', color: 'var(--err)',
+                                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3,
+                                transition: 'all 0.12s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--err)'; e.currentTarget.style.color = '#fff'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                              </svg>
+                              Delete
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleCancel(b.id)}
+                              title="Cancel broadcast"
+                              style={{
+                                padding: '4px 8px', fontSize: 11, fontWeight: 600,
+                                border: '1px solid var(--err-line)', borderRadius: 6,
+                                background: 'transparent', color: 'var(--err)',
+                                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3,
+                                transition: 'all 0.12s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--err-bg)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                              </svg>
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -499,6 +621,106 @@ export default function AdminDashboard() {
           onConfirm={handleCancelAll}
           onCancel={() => setConfirmCancelAll(false)}
         />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete Broadcast"
+          message="Permanently delete this broadcast? It will be moved to the Deleted filter in History. Already sent messages will be kept."
+          confirmLabel="Delete"
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {viewBroadcast && (
+        <Modal title="Broadcast Details" onClose={() => { setViewBroadcast(null); setViewMessages([]); }} width={600}>
+          {viewLoading ? (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Broadcast info — uses viewBroadcast data directly from API */}
+              {(() => {
+                const b = viewBroadcast;
+                if (!b) return <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>Broadcast not found.</div>;
+                const sentCount = viewMessages.filter(m => m.status === 'sent' || m.status === 'delivered').length;
+                const failedCount = viewMessages.filter(m => m.status === 'failed').length;
+                const pendingCount = viewMessages.filter(m => m.status === 'queued' || m.status === 'pending' || m.status === 'sending').length;
+
+                return (
+                  <>
+                    {/* Message preview */}
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                        Message
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--ink-1)', padding: '8px 12px', background: 'var(--bg-soft)', borderRadius: 6, lineHeight: 1.5, maxHeight: 80, overflowY: 'auto' }}>
+                        {b.message}
+                      </div>
+                    </div>
+
+                    {/* Summary stats */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                      {[
+                        { label: 'Total', val: b.total || 0, color: 'var(--ink-1)' },
+                        { label: 'Sent', val: sentCount, color: 'var(--ok)' },
+                        { label: 'Failed', val: failedCount, color: 'var(--err)' },
+                        { label: 'Pending', val: pendingCount, color: 'var(--warn)' },
+                      ].map(s => (
+                        <div key={s.label} style={{ padding: '8px 10px', background: 'var(--bg-soft)', borderRadius: 6, textAlign: 'center' }}>
+                          <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{s.label}</div>
+                          <div className="num" style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.val}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Per-recipient list */}
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                        Recipients ({viewMessages.length})
+                      </div>
+                      <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 6 }}>
+                        {viewMessages.length === 0 ? (
+                          <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--ink-3)' }}>No messages loaded.</div>
+                        ) : (
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead style={{ position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 1 }}>
+                              <tr style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                                <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)' }}>Number</th>
+                                <th style={{ textAlign: 'center', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)' }}>Status</th>
+                                <th style={{ textAlign: 'right', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)' }}>Sent At</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {viewMessages.map(m => (
+                                <tr key={m.id} style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                                  <td style={{ padding: '5px 10px', fontFamily: 'var(--mono)', color: 'var(--ink-1)' }}>{m.to_number}</td>
+                                  <td style={{ padding: '5px 10px', textAlign: 'center' }}>
+                                    <Pill status={m.status} label={m.status} />
+                                  </td>
+                                  <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-3)' }}>
+                                    {m.sent_at ? formatTime(m.sent_at) : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Meta info */}
+                    <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
+                      <span>Agent: <strong style={{ color: 'var(--ink-1)' }}>{b.agent_name || '—'}</strong></span>
+                      <span>Delay: <strong style={{ color: 'var(--ink-1)' }}>{b.delay_ms}ms</strong></span>
+                      <span>Created: <strong style={{ color: 'var(--ink-1)' }}>{formatDate(b.created_at)}</strong></span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </Modal>
       )}
     </AdminShell>
   );

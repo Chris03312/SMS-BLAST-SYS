@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../database/db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
-// normalizePhone removed — numbers are stored as-uploaded
+import { normalizePhone } from '../utils/phone.js';
 
 const router = Router();
 
@@ -35,65 +35,103 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
 
     const batchId = uuidv4();
     const contacts = [];
-    const matchedAgents = [];
     const dpdGroups = new Set();
-    let totalNumbers = 0;
+    const unmatchedNames = [];
+    // Build a sorted list of system display names for suggestions
+    const systemNames = allAgents.map(a => a.display_name).sort();
 
     for (const agent of agents) {
       const name = (agent.name || '').trim();
       const key = name.toLowerCase();
       const agentId = agentMap[key];
-      if (!agentId) continue;
+      if (!agentId) {
+        const nums = Array.isArray(agent.numbers) ? agent.numbers : [];
+        unmatchedNames.push({ name, count: nums.length });
+        continue;
+      }
 
       const dpdGroup = agent.dpd_group || '';
       if (dpdGroup) dpdGroups.add(dpdGroup);
       const category = agent.category || '';
 
       const nums = Array.isArray(agent.numbers) ? agent.numbers : [];
-      const validNums = [];
       for (const raw of nums) {
         const cleaned = String(raw).trim();
-        // Strip semicolons and formatting chars for validation only
-        const digitsOnly = cleaned.replace(/[\s\-().;]/g, '');
+        // Normalize phone number to E.164 so it matches broadcast format
+        const normalized = normalizePhone(cleaned);
+        const digitsOnly = normalized.replace(/[\s\-().;]/g, '');
         if (digitsOnly.length >= 7 && digitsOnly.length <= 16 && /^\+?\d+$/.test(digitsOnly)) {
           contacts.push({
             id: uuidv4(),
             agentId,
             batchId,
-            phoneNumber: cleaned,
+            phoneNumber: normalized,
             dpdGroup,
             category,
           });
-          validNums.push(cleaned);
-          totalNumbers++;
         }
-      }
-      if (validNums.length > 0) {
-        matchedAgents.push({ name: agent.name, dpd_group: dpdGroup, count: validNums.length });
       }
     }
 
     if (contacts.length === 0) {
-      return fail(res, 'No valid phone numbers found. Make sure agent names match display names exactly.');
+      const unmatchedDetail = unmatchedNames.map(u => `"${u.name}" (${u.count} nums)`).join(', ');
+      const suggestion = unmatchedNames.length > 0
+        ? ` Unmatched: ${unmatchedDetail}. System agents: ${systemNames.join(', ')}`
+        : '';
+      return fail(res, `No valid phone numbers found.${suggestion} Make sure agent names match display names exactly.`);
+    }
+
+    // ── Dedup: skip phone numbers that already exist for each agent ──
+    const agentIds = [...new Set(contacts.map(c => c.agentId))];
+    const existingByAgent = {};
+    for (const aid of agentIds) {
+      const rows = db.prepare('SELECT phone_number FROM agent_contacts WHERE agent_id = ?').all(aid);
+      existingByAgent[aid] = new Set(rows.map(r => r.phone_number));
+    }
+    const beforeDedup = contacts.length;
+    const afterDedup = contacts.filter(c => !existingByAgent[c.agentId]?.has(c.phoneNumber));
+    const skippedCount = beforeDedup - afterDedup.length;
+
+    if (afterDedup.length === 0) {
+      return fail(res, `All ${skippedCount} numbers already exist for their assigned agents. No new contacts to add.`);
+    }
+
+    // Recalculate counts after dedup
+    const totalNumbers = afterDedup.length;
+    const dedupAgentCounts = {};
+    const dedupMatched = [];
+    for (const c of afterDedup) {
+      const key = c.agentId;
+      if (!dedupAgentCounts[key]) {
+        const agentRow = db.prepare('SELECT display_name FROM users WHERE id = ?').get(key);
+        dedupAgentCounts[key] = { name: agentRow?.display_name || 'Unknown', dpd_group: c.dpdGroup, count: 0 };
+      }
+      dedupAgentCounts[key].count++;
+    }
+    for (const val of Object.values(dedupAgentCounts)) {
+      dedupMatched.push(val);
     }
 
     // Bulk-insert all contacts — uses a single prepared statement + one flushDb()
     // instead of 100K individual flushDb() calls. ~100x faster for large uploads.
-    const rows = contacts.map(c => [c.id, c.agentId, c.batchId, c.phoneNumber, 0, c.dpdGroup, c.category]);
+    const rows = afterDedup.map(c => [c.id, c.agentId, c.batchId, c.phoneNumber, 0, c.dpdGroup, c.category]);
     db.bulkInsert('agent_contacts', ['id', 'agent_id', 'batch_id', 'phone_number', 'used', 'dpd_group', 'category'], rows);
 
     // Log activity
-    const dpdSummary = [...dpdGroups].join(', ');
-    const detail = matchedAgents.map(a => `${a.name}: ${a.count}`).join(', ');
+    const detail = dedupMatched.map(a => `${a.name}: ${a.count}`).join(', ');
+    const skipNote = skippedCount > 0 ? ` (${skippedCount} duplicates skipped)` : '';
     db.prepare(
       'INSERT INTO activity (id, user_id, action, detail) VALUES (?, ?, ?, ?)'
-    ).run(uuidv4(), req.user.id, 'contacts:upload', `Uploaded ${totalNumbers} contacts (${matchedAgents.length} agents) — ${detail}`);
+    ).run(uuidv4(), req.user.id, 'contacts:upload', `Uploaded ${totalNumbers} contacts (${dedupMatched.length} agents)${skipNote} — ${detail}`);
 
     return ok(res, {
       batchId,
       total: totalNumbers,
-      agents: matchedAgents.length,
-      matched: matchedAgents,
+      agents: dedupMatched.length,
+      matched: dedupMatched,
+      unmatched: unmatchedNames,
+      system_agents: systemNames,
+      skipped: skippedCount,
       dpd_groups: [...dpdGroups],
     });
   } catch (e) {

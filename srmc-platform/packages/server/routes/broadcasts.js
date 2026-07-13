@@ -361,6 +361,37 @@ router.post('/', broadcastLimiter, async (req, res) => {
   }
 });
 
+// ── Check which recipients have been sent to before ────────────────────
+// Used by the Compose page to warn when some numbers have already been messaged.
+router.post('/check-recipients', (req, res) => {
+  try {
+    const { numbers } = req.body;
+    if (!Array.isArray(numbers) || numbers.length === 0) {
+      return fail(res, 'No numbers provided');
+    }
+
+    // Query which of the given numbers have been sent/delivered in previous
+    // broadcasts for this agent — using IN with parameter placeholders.
+    const placeholders = numbers.map(() => '?').join(',');
+    const existing = db.prepare(
+      `SELECT DISTINCT m.to_number FROM messages m
+       JOIN broadcasts b ON m.broadcast_id = b.id
+       WHERE b.agent_id = ? AND m.to_number IN (${placeholders})
+       AND m.status IN ('sent', 'delivered')`
+    ).all(req.user.id, ...numbers);
+
+    const alreadySent = existing.map(r => r.to_number);
+
+    return ok(res, {
+      already_sent: alreadySent,
+      total: alreadySent.length,
+    });
+  } catch (e) {
+    console.error('[broadcasts] check-recipients error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
 // ── Get running broadcast count ────────────────────────────────────────
 
 router.get('/running/count', (req, res) => {

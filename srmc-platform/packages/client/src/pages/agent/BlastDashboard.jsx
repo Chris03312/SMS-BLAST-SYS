@@ -115,6 +115,8 @@ export default function BlastDashboard() {
   const [statsFailed, setStatsFailed] = useState(0);
   const [statsTotal, setStatsTotal] = useState(0);
   const [broadcastsPaused, setBroadcastsPaused] = useState(false);
+  const [alreadySentCount, setAlreadySentCount] = useState(0);
+  const checkedRef = useRef('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -314,6 +316,17 @@ export default function BlastDashboard() {
   const segments = Math.ceil(charCount / 160) || 1;
   const isTurbo = delayMs < 1000; // Turbo is the only option below 1000ms
   const isLowDelay = delayMs <= 2000 && !isTurbo;
+  // ── Check recipients for re-send warning when review modal opens ──
+  useEffect(() => {
+    if (!showReview || recipientList.length === 0) return;
+    const key = recipientList.join(',');
+    if (checkedRef.current === key) return; // Already checked this exact list
+    checkedRef.current = key;
+    api.post('/broadcasts/check-recipients', { numbers: recipientList })
+      .then(d => setAlreadySentCount(d.total || 0))
+      .catch(() => {});
+  }, [showReview, recipientList]);
+
   const isLargeBatch = recipientList.length > 200;
 
   async function handleSend() {
@@ -1031,6 +1044,21 @@ export default function BlastDashboard() {
                   )}
 
                 </div>
+
+                {/* Re-send warning */}
+                {alreadySentCount > 0 && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 8,
+                    background: 'var(--warn-bg)', border: '1px solid var(--warn-line)',
+                    fontSize: 12, color: 'var(--warn)',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    <span><strong>{alreadySentCount} of {recipientList.length} recipients</strong> have already received this message before. They will still be sent again, but will not be re-marked as "Used" in your contacts list.</span>
+                  </div>
+                )}
 
                 {/* Global pause warning */}
                 {broadcastsPaused && (

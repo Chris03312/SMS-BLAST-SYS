@@ -18,7 +18,7 @@ import { broadcast } from '../services/ws.js';
 import { logActivity } from '../services/activity.js';
 import { gatewayOutboundLimiter } from '../middleware/rate-limit.js';
 import { validateInboundToken, trackGatewayResult } from '../services/gateway-service.js';
-import { onMessageAcked } from '../services/broadcast-engine.js';
+import { onMessageAcked, markContactAsUsed } from '../services/broadcast-engine.js';
 import { resolvePullSimMode } from '../services/sim-utils.js';
 
 function resolveSender(gateway) {
@@ -142,10 +142,13 @@ router.post('/gateway/delivery-report', gatewayOutboundLimiter, (req, res) => {
         `Delivery confirmed for ${message_id} → ${to_number} via ${gwName}`,
         'info');
 
-      // Trigger progress recalculation so the broadcast's sent count updates
-      const msg = db.prepare('SELECT broadcast_id FROM messages WHERE id = ?').get(message_id);
-      if (msg && msg.broadcast_id) {
-        onMessageAcked(msg.broadcast_id);
+      // Mark the contact as used (only marks if not already marked)
+      const msg = db.prepare('SELECT broadcast_id, agent_id FROM messages m LEFT JOIN broadcasts b ON b.id = m.broadcast_id WHERE m.id = ?').get(message_id);
+      if (msg) {
+        markContactAsUsed(to_number, msg.agent_id, msg.broadcast_id);
+        if (msg.broadcast_id) {
+          onMessageAcked(msg.broadcast_id);
+        }
       }
     }
 
@@ -182,6 +185,7 @@ router.post('/gateway/outbound/ack', gatewayOutboundLimiter, (req, res) => {
 
       if (r.status === 'sent') {
         db.prepare("UPDATE messages SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?").run(now, r.id);
+        markContactAsUsed(receiver, msg.agent_id, msg.broadcast_id);
         db.prepare('UPDATE gateways SET sent_today = sent_today + 1 WHERE id = ?').run(gatewayId);
         trackGatewayResult(gatewayId, true, gwName, msg.agent_id);
         logActivity(msg.agent_id, 'sms:sent', `Sent from ${senderWithSim} to ${receiver} via ${gwName}`, 'info');

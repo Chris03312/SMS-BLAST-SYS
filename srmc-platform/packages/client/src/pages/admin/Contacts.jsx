@@ -156,7 +156,12 @@ export default function AdminContacts() {
         fileName: preview.fileName,
       };
       const result = await api.post('/admin/contacts/upload', payload);
-      toast(`Uploaded ${result.total} numbers to ${result.agents} agents`, 'success');
+      let msg = `Uploaded ${result.total} numbers to ${result.agents} agents`;
+      if (result.unmatched && result.unmatched.length > 0) {
+        const names = result.unmatched.map(u => `"${u.name}" (${u.count} numbers)`).join(', ');
+        msg += `. ⚠️ Unmatched names: ${names}. System agents: ${(result.system_agents || []).join(', ')}`;
+      }
+      toast(msg, result.unmatched?.length > 0 ? 'warning' : 'success');
       setPreview(null);
       setParsedAgents([]);
       loadBatches();

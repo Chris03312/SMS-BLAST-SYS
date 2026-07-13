@@ -20,6 +20,23 @@ import { computeSimMode } from './sim-utils.js';
 // Map of broadcastId -> { cancel: boolean, paused: boolean, _resume: () => void }
 const running = new Map();
 
+/**
+ * Mark a contact as 'used' in the agent_contacts table when a message
+ * is successfully sent. Only marks if the contact exists and hasn't
+ * been marked used before.
+ */
+export function markContactAsUsed(toNumber, agentId, broadcastId) {
+  if (!toNumber || !agentId) return;
+  try {
+    db.prepare(
+      `UPDATE agent_contacts SET used = 1, broadcast_id = ?
+       WHERE agent_id = ? AND phone_number = ? AND used = 0`
+    ).run(broadcastId || null, agentId, toNumber);
+  } catch (_) {
+    // Silently ignore — agent_contacts might not exist or table not set up
+  }
+}
+
 export async function startBroadcast(broadcastId) {
   const broadcastRecord = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(broadcastId);
   if (!broadcastRecord) {
@@ -159,6 +176,7 @@ export async function startBroadcast(broadcastId) {
       const result = await pushSend(gateway, number, msgRecord.message, resolvedSimMode);
       if (result.ok) {
         db.prepare("UPDATE messages SET status = 'sent', sent_at = ? WHERE id = ?").run(new Date().toISOString(), msgRecord.id);
+        markContactAsUsed(number, agentId, broadcastId);
         sent++;
         logActivity(agentId, 'broadcast:queued', `Message sent to ${number}`, 'info', campaignId);
       } else {
@@ -245,6 +263,7 @@ export async function startBroadcast(broadcastId) {
               const result = await pushSend(gateway, num, msgRecord.message, simMode);
               if (result.ok) {
                 db.prepare("UPDATE messages SET status = 'sent', sent_at = ? WHERE id = ?").run(new Date().toISOString(), msgRecord.id);
+                markContactAsUsed(num, agentId, broadcastId);
                 return { success: true, num };
               } else {
                 db.prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ?").run(
