@@ -253,21 +253,23 @@ export default function Dashboard() {
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
       });
       const data = await api.get(`/broadcasts?${params}`);
-      setBroadcasts(data.broadcasts || []);
-      setTotal(data.total || 0);
+      // Filter out soft-deleted broadcasts from Dashboard
+      const filtered = (data.broadcasts || []).filter(b => b.status !== 'deleted');
+      const deletedCount = (data.broadcasts || []).filter(b => b.status === 'deleted').length;
+      setBroadcasts(filtered);
+      setTotal((data.total || 0) - deletedCount);
 
-      // Compute stats from all broadcasts
-      const all = await api.get('/broadcasts?limit=1000');
-      const list = all.broadcasts || [];
+      // Stats from the actual message history (messages table) — unaffected by deletions
+      const all = await api.get('/stats');
       setStats({
-        sent: list.reduce((s, b) => s + (b.sent || 0), 0),
-        failed: list.reduce((s, b) => s + (b.failed || 0), 0),
-        delivered: list.reduce((s, b) => s + (b.delivered || 0), 0),
-        active: list.filter(b => b.status === 'sending').length,
-        paused: list.filter(b => b.status === 'paused').length,
+        sent: all.user_total_all_time || 0,
+        failed: all.failed_all_time || 0,
+        delivered: all.delivered_all_time || 0,
+        active: filtered.filter(b => b.status === 'sending').length,
+        paused: filtered.filter(b => b.status === 'paused').length,
       });
       // Initialize progress ref so live deltas are correct
-      for (const b of list) {
+      for (const b of filtered) {
         lastProgressRef.current[b.id] = { sent: b.sent || 0, failed: b.failed || 0 };
       }
     } catch (e) {

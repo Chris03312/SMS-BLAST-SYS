@@ -51,10 +51,10 @@ function BroadcastDetail({ broadcast, onClose }) {
       }}>
         {/* Header */}
         <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          display: 'flex', flexWrap: 'wrap', gap: 8,
           padding: '16px 20px', borderBottom: '1px solid var(--line)',
         }}>
-          <div>
+          <div style={{ flex: '1 1 280px', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>Broadcast Details</div>
               <span style={{
@@ -69,19 +69,19 @@ function BroadcastDetail({ broadcast, onClose }) {
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {broadcast.message?.slice(0, 60)}{broadcast.message?.length > 60 ? '…' : ''}
             </div>
-            <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6, fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--ink-4)', alignItems: 'center' }}>
               {broadcast.started_at && (
-                <span style={{ color: 'var(--ok)' }}>▶ Started {formatDate(broadcast.started_at)}</span>
+                <span style={{ color: 'var(--ok)', whiteSpace: 'nowrap' }}>▶ Started {formatDate(broadcast.started_at)}</span>
               )}
               {broadcast.completed_at && (
-                <span style={{ color: 'var(--ink-3)' }}>✓ Ended {formatDate(broadcast.completed_at)}</span>
+                <span style={{ color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>✓ Ended {formatDate(broadcast.completed_at)}</span>
               )}
               {!broadcast.completed_at && broadcast.started_at && (
                 <span style={{ color: 'var(--info)' }}>⟳ In progress</span>
               )}
               {broadcast.sim_mode && (
                 <span style={{
-                  padding: '1px 7px', borderRadius: 4,
+                  padding: '1px 7px', borderRadius: 4, whiteSpace: 'nowrap',
                   background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
                     : broadcast.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
                     : broadcast.sim_mode === 'parallel' ? 'rgba(245,158,11,0.12)'
@@ -118,7 +118,22 @@ function BroadcastDetail({ broadcast, onClose }) {
         </div>
 
         {/* Messages list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {/* Column headers */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr auto auto 1fr',
+            gap: 12, alignItems: 'center',
+            padding: '8px 20px', borderBottom: '1px solid var(--line)',
+            fontSize: 10, fontWeight: 600, color: 'var(--ink-4)',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+            position: 'sticky', top: 0, background: '#fff', zIndex: 1,
+          }}>
+            <div>Recipient</div>
+            <div>SIM</div>
+            <div style={{ textAlign: 'center' }}>Status</div>
+            <div>Timestamp</div>
+          </div>
+          <div style={{ padding: '0 20px' }}>
           {loading && (
             <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
           )}
@@ -158,6 +173,7 @@ function BroadcastDetail({ broadcast, onClose }) {
               </div>
             </div>
           ))}
+          </div>
         </div>
 
         {/* Footer */}
@@ -193,7 +209,7 @@ export default function History() {
   const [page, setPage] = useState(0);
   const limit = 20;
 
-  const STATUSES = ['all', 'done', 'sending', 'failed', 'cancelled'];
+  const STATUSES = ['all', 'done', 'sending', 'failed', 'cancelled', 'deleted'];
 
   // Load campaigns list on mount
   useEffect(() => {
@@ -225,7 +241,7 @@ export default function History() {
 
   const [detailBroadcast, setDetailBroadcast] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
+
 
   const pages = Math.ceil(total / limit);
 
@@ -372,26 +388,7 @@ export default function History() {
                       <circle cx="12" cy="12" r="10"/><polyline points="12 16 12 12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
                     </svg>
                   </button>
-                  {/* Delete button — only for done/cancelled/failed broadcasts */}
-                  {(b.status === 'done' || b.status === 'cancelled' || b.status === 'failed') && (
-                    <button
-                      onClick={() => setConfirmDelete(b)}
-                      title="Delete"
-                      style={{
-                        width: 28, height: 28, padding: 0,
-                        border: '1px solid var(--err-line)',
-                        borderRadius: 6, background: 'var(--err-bg)',
-                        color: 'var(--err)', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--err)'; e.currentTarget.style.color = '#fff'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'var(--err-bg)'; e.currentTarget.style.color = 'var(--err)'; }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                      </svg>
-                    </button>
-                  )}
+
                 </div>
               </td>
               </tr>
@@ -429,24 +426,6 @@ export default function History() {
         />
       )}
 
-      {confirmDelete && (
-        <ConfirmModal
-          title="Delete Broadcast"
-          message={`Delete this broadcast${confirmDelete.status === 'done' ? '? Sent messages will be preserved.' : ' and all its messages?'}`}
-          confirmLabel="Delete"
-          danger={true}
-          onConfirm={async () => {
-            try {
-              await api.del(`/broadcasts/${confirmDelete.id}`);
-              // Remove broadcast from local state immediately
-              setBroadcasts(prev => prev.filter(b => b.id !== confirmDelete.id));
-              setTotal(prev => Math.max(0, prev - 1));
-            } catch (_) {}
-            setConfirmDelete(null);
-          }}
-          onCancel={() => setConfirmDelete(null)}
-        />
-      )}
     </AgentShell>
   );
 }

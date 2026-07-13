@@ -1,0 +1,206 @@
+================================================================================
+  BRANCH DIFFERENCES: master vs v2 vs v3
+  SMS-BLAST-SYS / SRMC Platform
+================================================================================
+
+Last updated: July 13, 2026
+
+--------------------------------------------------------------------------------
+ 1. OVERVIEW
+--------------------------------------------------------------------------------
+
+This repository has three active branches. All three share a common historical
+foundation but have diverged to serve different feature sets.
+
+  Branch    Latest Commit                          Merge Base with master
+  ───────── ───────────────────────────────────── ─────────────────────────
+  master    ca5eb60 - "ENHANCING MORE PARTS"       ─ (itself)
+  v2        8e0349c - "adding more recipients      ca5eb60 - "ENHANCING
+                   features"                                  MORE PARTS"
+  v3        5cc8529 - "full integration of        67dcdbe - "db update"
+                    internet based"
+
+NOTE: "merge base" means the last commit the branches had in common before
+they diverged.
+
+--------------------------------------------------------------------------------
+ 2. SHARED HISTORY (common to all three branches)
+--------------------------------------------------------------------------------
+
+These commits form the common foundation shared by master, v2, and v3:
+
+  8ffb2e2  READY NA
+  a9477bc  need minor adjustment for android app + the time in the history and
+           broadcast dashboard of time send and time done
+  9fc1612  update sa office-PC
+  186ef07  merging
+  38dbe10  can send sim1 and sim2 independently
+  3a45574  added round robin
+  3e1ce0e  need toast, skeleton functions, also nakakastress na reset ampotek
+  a596f00  ALL DONE UNTIL BUG DECIDE TO APPEAR
+  6380154  DESKTOP APP BUILDED
+  625ac7c  testing phase
+  195a821  FILE PATH RECONSTRUCTED
+  d805d1b  WEBHOOK INTEGRATION
+  a8a8cb1  purge function
+  af65dbc  minor changes for sim1 and sim2 inbound
+  1685a0d  fixing
+  a8c2653  minor fixing
+  904d370  latest
+
+After commit 904d370 the branches begin to diverge.
+
+--------------------------------------------------------------------------------
+ 3. BRANCH: master (CURRENT DEFAULT BRANCH)
+--------------------------------------------------------------------------------
+
+  Latest commit: ca5eb60 - "ENHANCING MORE PARTS"
+  Status: Reset to origin/master. The "internet based" (2147ed0) and
+          "db update" (67dcdbe) commits have been completely removed.
+
+  Description:
+    master is the primary / default branch. It has been reset back to commit
+    ca5eb60 ("ENHANCING MORE PARTS") — the same state as origin/master.
+    All subsequent commits ("db update" and "internet based") have been
+    permanently removed from the branch history.
+
+    master currently does NOT include:
+
+      • The "internet based" changes
+      • The "db update" changes
+      • The recipients/contacts management features seen in v2
+      • The advanced PULL mode and Lite device integration seen in v3
+
+--------------------------------------------------------------------------------
+ 4. BRANCH: v2
+--------------------------------------------------------------------------------
+
+  Latest commit: 8e0349c - "adding more recipients features"
+  Unique commits (not on master):
+    8e0349c  adding more recipients features
+    bf46732  adding recipients upload and auto select and boss number in each
+             campaigns
+    ca5eb60  ENHANCING MORE PARTS  (also on master)
+
+  Description:
+    v2 focuses on recipient / contact management features. It adds:
+
+    NEW FILES:
+      • packages/client/src/pages/admin/Contacts.jsx   — Admin contacts page
+      • packages/client/src/pages/agent/Recipients.jsx  — Agent recipients page
+      • packages/server/routes/contacts.js              — Contacts API routes
+
+    KEY FEATURES ADDED:
+      • Recipients upload (CSV/excel import)
+      • Auto-select recipients
+      • "Boss number" per campaign
+      • Enhanced PasswordInput component
+      • Extended broadcast engine modifications
+
+    v2 does NOT include master's "internet based" or "db update" commits,
+    nor does it include any of v3's PULL mode / Lite app features.
+
+  Diff stats vs master:  30 files changed, 1,810 insertions, 738 deletions
+
+--------------------------------------------------------------------------------
+ 5. BRANCH: v3
+--------------------------------------------------------------------------------
+
+  Latest commit: 5cc8529 - "full integration of internet based"
+  Unique commits (not on master or v2):
+    5cc8529  full integration of internet based
+    79736f0  fix: syntax error - wrap ?? with || in parentheses
+    ec67190  PULL mode: phone_id matching, mode selector, Lite device ID
+    7b4ea05  Epal na DB
+    3896253  lite app mini refactoring
+    67dcdbe  db update  (also on master)
+
+  Description:
+    v3 is the most advanced branch and the only one with the "PULL mode"
+    architecture. This is a fundamentally different approach to SMS delivery
+    where the Android gateway phones actively PULL pending messages from the
+    server (instead of the server PUSHing to the phones).
+
+    KEY CHANGES vs master:
+      • PULL mode: phone_id matching, mode selector, Lite device ID
+      • Full integration of "internet-based" delivery
+      • SRMCGatewayLite app support (a lighter Android gateway APK)
+      • Major broadcast-engine refactor (622 insertions, 256 deletions)
+      • Removal of broadcast-helpers.js and sim-utils.js
+      • Significant Analytics page overhaul
+      • Major gateway-service.js and gateway-poller.js restructuring
+
+  The "full integration of internet based" commit (5cc8529) is a small
+  finishing commit that caps the PULL mode work:
+  • 10 files changed, only 93 insertions
+  • Main changes in gateway-poller.js (40 lines), broadcasts.js (20),
+    MainActivity.java (51), and Gateway.jsx (14)
+  • This is the final touch on top of the PULL mode infrastructure built
+    in the preceding commits (ec67190, 3896253, 7b4ea05)
+
+  💡 NOTE on "internet based" across branches:
+     Both master and v3 have commits mentioning "internet based", but they
+     are DIFFERENT commits with DIFFERENT approaches:
+     - master: big monolithic commit that ADDS broadcast-helpers + sim-utils
+     - v3: small finishing commit on top of PULL mode — v3 actually
+           REMOVES broadcast-helpers.js and sim-utils.js because the PULL
+           mode architecture made them unnecessary
+
+    FILES REMOVED in v3 (compared to v2):
+      • packages/client/src/pages/admin/Contacts.jsx
+      • packages/client/src/pages/agent/Recipients.jsx
+      • packages/server/routes/contacts.js
+      • packages/server/services/broadcast-helpers.js
+      • packages/server/services/sim-utils.js
+      • documentation/HOW_PULL_MODE_WORKS.txt
+
+    v3 does NOT include v2's recipients/contacts features. The recipients
+    management was apparently replaced by the PULL mode architecture where
+    devices are identified by phone_id rather than by manual assignment.
+
+  Diff stats vs v2:  41 files changed, 1,164 insertions, 2,876 deletions
+
+--------------------------------------------------------------------------------
+ 6. SIDE-BY-SIDE COMPARISON
+--------------------------------------------------------------------------------
+
+  Feature / Aspect            master           v2                v3
+  ─────────────────────────── ─────────────── ───────────────── ─────────────────
+  Internet-based sending      ✅ (latest)     ❌                ✅ (full)
+  Recipients upload / CSV     ❌               ✅               ❌
+  Contacts management pages   ❌               ✅               ❌
+  PULL mode (device polling)  ❌               ❌               ✅
+  SRMCGatewayLite support     ❌               ❌               ✅
+  Phone_id device matching    ❌               ❌               ✅
+  Broadcast-helpers module    ✅               ✅               ❌ (removed)
+  Sim-utils module            ✅               ✅               ❌ (removed)
+  Boss number per campaign    ❌               ✅               ❌
+  Broadcast engine            standard        extended          heavily refactored
+  Analytics page              standard        standard          heavily refactored
+  Android app                 SRMCGateway     SRMCGateway       SRMCGateway +
+                                                                 SRMCGatewayLite
+  Desktop app (Electron)      ✅               ✅               ✅
+
+--------------------------------------------------------------------------------
+ 7. RECOMMENDATION
+--------------------------------------------------------------------------------
+
+  • Use master if you want the current stable release with internet-based
+    sending capability and general enhancements.
+
+  • Use v2 if you need the recipients/contacts management features (upload
+    via CSV, auto-select, boss number per campaign). Note that v2 does NOT
+    have the latest internet-based improvements from master.
+
+  • Use v3 if you need the full PULL mode architecture where Android devices
+    autonomously pull messages from the server. This is the most advanced
+    branch with a fundamentally reworked delivery engine and Lite app
+    support, but it sacrifices the v2 recipients management features.
+
+  💡 Consider merging features across branches (e.g., cherry-pick v2's
+     recipients/contacts into v3) if you need both recipient management AND
+     the PULL mode architecture.
+
+================================================================================
+  END OF BRANCH DIFFERENCES DOCUMENT
+================================================================================
