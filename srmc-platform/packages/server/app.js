@@ -12,9 +12,9 @@
  *   3. create httpServer, initWss(server), server.listen()
  */
 
-// Force default timezone (Philippines / UTC+8). The actual configurable
-// timezone is read dynamically from settings in broadcast-engine.js.
-// This env var is the fallback for all server-side Date operations.
+// Force a usable fallback timezone before the DB is initialised.
+// initTimezone() (called after initDb()) will read the configured value
+// from settings and update this env var accordingly.
 process.env.TZ = 'Asia/Manila';
 
 import 'dotenv/config';
@@ -46,6 +46,7 @@ import statsRoutes from './routes/stats.js';
 import activityRoutes from './routes/activity.js';
 import settingsRoutes from './routes/settings.js';
 import contactRoutes from './routes/contacts.js';
+import { initTimezone } from './services/timezone.js';
 
 // Read SERVER_PORT from env. Falls back to 3001.
 // Server always binds to 0.0.0.0 so both LAN (192.168.x.x) and localhost
@@ -249,9 +250,10 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ success: false, error: 'Internal server error' });
 });
 
-// ── Init DB and ngrok (no listen — caller handles that) ──────────────
+// ── Init DB, timezone, and ngrok (no listen — caller handles that) ──
 
 initDb();
+initTimezone();
 
 
 if (NGROK_URL) {

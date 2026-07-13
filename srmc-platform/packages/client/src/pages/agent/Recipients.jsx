@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -15,12 +15,14 @@ function todayStr() {
 export default function Recipients() {
   const [contacts, setContacts] = useState([]);
   const [total, setTotal] = useState(0);
+  const [available, setAvailable] = useState(0);
   const [used, setUsed] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(new Set());
-  const [selectAll, setSelectAll] = useState(false);
   const [dateFilter, setDateFilter] = useState(todayStr);
+  const [usedFilter, setUsedFilter] = useState('all'); // 'all', 'available', 'used'
   const [maxSelect, setMaxSelect] = useState(200);
+  const [activeCategory, setActiveCategory] = useState(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -30,21 +32,53 @@ export default function Recipients() {
       if (s.max_selected_contacts) setMaxSelect(Number(s.max_selected_contacts) || 200);
     }).catch(() => {});
     load();
-  }, [dateFilter]);
+  }, [dateFilter, usedFilter]);
 
   async function load() {
     setLoading(true);
     try {
-      const qs = `date=${encodeURIComponent(dateFilter)}`;
+      const qs = `date=${encodeURIComponent(dateFilter)}&used=${usedFilter}`;
       const data = await api.get(`/agent/contacts?${qs}`);
       setContacts(data.contacts || []);
       setTotal(data.total || 0);
+      setAvailable(data.available || 0);
       setUsed(data.used || 0);
     } catch (e) {
       toast(e.message, 'error');
     }
     setLoading(false);
   }
+
+  // Group contacts by Category → DPD
+  const grouped = useMemo(() => {
+    const byCategory = {};
+    for (const c of contacts) {
+      const catKey = c.category || '__nocat__';
+      if (!byCategory[catKey]) byCategory[catKey] = { category: c.category || '', dpdGroups: {} };
+      const dpdKey = c.dpd_group || '__none__';
+      if (!byCategory[catKey].dpdGroups[dpdKey]) byCategory[catKey].dpdGroups[dpdKey] = [];
+      byCategory[catKey].dpdGroups[dpdKey].push(c);
+    }
+
+    // Sort categories: named ones first (natural sort), unnamed last
+    const catKeys = Object.keys(byCategory).sort((a, b) => {
+      if (a === '__nocat__') return 1;
+      if (b === '__nocat__') return -1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+
+    return { byCategory, catKeys };
+  }, [contacts]);
+
+  // Sync activeCategory when contacts load/changed
+  useEffect(() => {
+    if (grouped.catKeys.length > 0 && (!activeCategory || !grouped.catKeys.includes(activeCategory))) {
+      setActiveCategory(grouped.catKeys[0]);
+    }
+    if (grouped.catKeys.length === 0) {
+      setActiveCategory(null);
+    }
+  }, [grouped.catKeys]);
 
   function toggleSelect(id) {
     setSelected(prev => {
@@ -60,18 +94,6 @@ export default function Recipients() {
       }
       return next;
     });
-    setSelectAll(false);
-  }
-
-  function toggleSelectAll() {
-    if (selectAll) {
-      setSelected(new Set());
-      setSelectAll(false);
-    } else {
-      const ids = contacts.slice(0, maxSelect).map(c => c.id);
-      setSelected(new Set(ids));
-      setSelectAll(true);
-    }
   }
 
   function toggleSelectColumn(columnContacts) {
@@ -161,10 +183,13 @@ export default function Recipients() {
         </div>
       </div>
 
+      {/* Viewport-fill wrapper */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
       {/* Stats strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, flexShrink: 0 }}>
         {[
-          { label: 'Available', val: total, color: 'var(--ok)' },
+          { label: 'Available', val: available, color: 'var(--ok)' },
           { label: 'Used', val: used, color: 'var(--ink-3)' },
           { label: 'Selected', val: selected.size, color: selected.size > 0 ? 'var(--info)' : 'var(--ink-3)' },
         ].map(s => (
@@ -175,15 +200,28 @@ export default function Recipients() {
         ))}
       </div>
 
-      {/* Date filter */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      {/* Filters row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+        {/* Used status filter */}
+        <div className="seg" style={{ fontSize: 11 }}>
+          {['all', 'available', 'used'].map(s => (
+            <button
+              key={s}
+              className={usedFilter === s ? 'on' : ''}
+              onClick={() => { setUsedFilter(s); setSelected(new Set()); }}
+            >
+              {s === 'all' ? 'All' : s === 'available' ? 'Available' : 'Used'}
+            </button>
+          ))}
+        </div>
+
         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-          Filter by date
+          Date
         </label>
         <input
           type="date"
           value={dateFilter}
-          onChange={e => { setDateFilter(e.target.value); setSelected(new Set()); setSelectAll(false); }}
+          onChange={e => { setDateFilter(e.target.value); setSelected(new Set()); }}
           style={{
             padding: '6px 10px', borderRadius: 6, border: '1px solid var(--line)',
             fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--ink-1)',
@@ -194,7 +232,7 @@ export default function Recipients() {
           <button
             className="btn-ghost"
             style={{ fontSize: 11, padding: '4px 10px' }}
-            onClick={() => { setDateFilter(todayStr()); setSelected(new Set()); setSelectAll(false); }}
+            onClick={() => { setDateFilter(todayStr()); setSelected(new Set()); }}
           >
             Reset to Today
           </button>
@@ -203,48 +241,13 @@ export default function Recipients() {
 
       {/* Group contacts by Category → DPD — sectioned column layout */}
       {(() => {
-        // First group by category, then by DPD within each category
-        const byCategory = {};
-        for (const c of contacts) {
-          const catKey = c.category || '__nocat__';
-          if (!byCategory[catKey]) byCategory[catKey] = { category: c.category || '', dpdGroups: {} };
-          const dpdKey = c.dpd_group || '__none__';
-          if (!byCategory[catKey].dpdGroups[dpdKey]) byCategory[catKey].dpdGroups[dpdKey] = [];
-          byCategory[catKey].dpdGroups[dpdKey].push(c);
-        }
-
-        // Sort categories: named ones first (natural sort), unnamed last
-        const catKeys = Object.keys(byCategory).sort((a, b) => {
-          if (a === '__nocat__') return 1;
-          if (b === '__nocat__') return -1;
-          return a.localeCompare(b, undefined, { numeric: true });
-        });
-
-        // Flatten to compute global max rows per column (for filler alignment)
-        let globalMaxRows = 0;
-        for (const catKey of catKeys) {
-          const dpdKeys = Object.keys(byCategory[catKey].dpdGroups);
-          for (const dpdKey of dpdKeys) {
-            globalMaxRows = Math.max(globalMaxRows, byCategory[catKey].dpdGroups[dpdKey].length);
-          }
-        }
+        const { byCategory, catKeys } = grouped;
 
         return (
-          <div className="card">
-            <div className="card-head">
+          <div className="card" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className="card-head" style={{ flexShrink: 0 }}>
               <h3>Contact Numbers</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {total > 0 && (
-                  <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: 'var(--ink-2)' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectAll}
-                      onChange={toggleSelectAll}
-                      style={{ accentColor: 'var(--ink-1)' }}
-                    />
-                    Select all {Math.min(total, maxSelect)}
-                  </label>
-                )}
                 {!loading && total > 0 && (
                   <span style={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
                     {total} total
@@ -252,57 +255,6 @@ export default function Recipients() {
                 )}
               </div>
             </div>
-
-            {/* Category nav bar */}
-            {!loading && contacts.length > 0 && catKeys.filter(k => k !== '__nocat__').length > 1 && (
-              <div style={{
-                padding: '8px 18px',
-                borderBottom: '1px solid var(--line-soft)',
-                background: 'var(--bg)',
-                display: 'flex',
-                gap: 6,
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                position: 'sticky',
-                top: 0,
-                zIndex: 2,
-              }}>
-                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 4 }}>
-                  Jump to:
-                </span>
-                {catKeys.filter(k => k !== '__nocat__').map(catKey => {
-                  const section = byCategory[catKey];
-                  const sectionTotal = Object.values(section.dpdGroups).reduce((sum, arr) => sum + arr.length, 0);
-                  return (
-                    <button
-                      key={catKey}
-                      type="button"
-                      onClick={() => {
-                        const el = document.getElementById(`cat-section-${catKey.replace(/[^a-zA-Z0-9]/g, '_')}`);
-                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }}
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        padding: '3px 10px',
-                        borderRadius: 5,
-                        border: '1px solid rgba(59,130,246,0.25)',
-                        background: 'rgba(59,130,246,0.06)',
-                        color: '#3b82f6',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        transition: 'all 0.12s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.15)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.06)'; }}
-                    >
-                      {section.category}
-                      <span style={{ marginLeft: 4, opacity: 0.6, fontFamily: 'var(--mono)' }}>{sectionTotal}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
 
             {loading ? (
               <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
@@ -318,19 +270,21 @@ export default function Recipients() {
                 </div>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', padding: '14px 18px' }}>
+              <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'auto', padding: '14px 18px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {catKeys.map((catKey) => {
+                  {catKeys.filter(catKey => catKey === activeCategory).map((catKey) => {
                     const section = byCategory[catKey];
                     const isNoCat = catKey === '__nocat__';
                     const catLabel = isNoCat ? 'Uncategorized' : section.category;
                     const sectionId = `cat-section-${catKey.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-                    // Sort DPD groups within this category
+                    // Sort DPD groups: lowest DPD value on the left, 'No DPD' on the right
                     const dpdKeys = Object.keys(section.dpdGroups).sort((a, b) => {
                       if (a === '__none__') return 1;
                       if (b === '__none__') return -1;
-                      return a.localeCompare(b, undefined, { numeric: true });
+                      const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                      const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                      return numA - numB;
                     });
 
                     const sectionTotal = dpdKeys.reduce((sum, k) => sum + section.dpdGroups[k].length, 0);
@@ -460,7 +414,7 @@ export default function Recipients() {
                                 </div>
 
                                 {/* Column body */}
-                                <div style={{ flex: 1, overflowY: 'auto', maxHeight: 360 }}>
+                                <div>
                                   {colContacts.map(c => (
                                     <div
                                       key={c.id}
@@ -497,18 +451,29 @@ export default function Recipients() {
                                       }}>
                                         {c.phone_number}
                                       </span>
-                                    </div>
-                                  ))}
-                                  {/* Empty rows to fill remaining space */}
-                                  {Array.from({ length: globalMaxRows - colContacts.length }).map((_, i) => (
-                                    <div key={`empty-${i}`} style={{ padding: '5px 10px', borderBottom: '1px solid var(--line-soft)', opacity: 0.3 }}>
-                                      <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>—</span>
+                                      {c.used !== undefined && (
+                                        <span style={{
+                                          fontSize: 8,
+                                          fontWeight: 700,
+                                          padding: '1px 5px',
+                                          borderRadius: 3,
+                                          flexShrink: 0,
+                                          marginLeft: 'auto',
+                                          color: c.used ? 'var(--ok)' : '#3b82f6',
+                                          background: c.used ? 'var(--ok-bg)' : 'rgba(59,130,246,0.1)',
+                                          textTransform: 'uppercase',
+                                          letterSpacing: '0.04em',
+                                        }}>
+                                          {c.used ? 'Used' : 'Open'}
+                                        </span>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
 
                                 {/* Column footer */}
                                 <div style={{
+                                  marginTop: 'auto',
                                   padding: '5px 10px',
                                   borderTop: '1px solid var(--line-soft)',
                                   fontSize: 9,
@@ -533,7 +498,51 @@ export default function Recipients() {
               </div>
             )}
 
-            <div className="footer">
+            {/* Category nav bar — Excel-style sheet tabs at the bottom */}
+            {!loading && contacts.length > 0 && catKeys.length > 1 && (
+              <div style={{
+                padding: '8px 18px',
+                borderTop: '1px solid var(--line-soft)',
+                background: 'var(--bg)',
+                display: 'flex',
+                gap: 6,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+              }}>
+                {catKeys.map(catKey => {
+                  const isNoCat = catKey === '__nocat__';
+                  const section = byCategory[catKey];
+                  const sectionTotal = Object.values(section.dpdGroups).reduce((sum, arr) => sum + arr.length, 0);
+                  const isActive = activeCategory === catKey;
+                  return (
+                    <button
+                      key={catKey}
+                      type="button"
+                      onClick={() => setActiveCategory(catKey)}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: '3px 10px',
+                        borderRadius: 5,
+                        border: `1px solid ${isNoCat ? 'var(--line-soft)' : isActive ? 'rgba(59,130,246,0.6)' : 'rgba(59,130,246,0.2)'}`,
+                        background: isActive ? 'rgba(59,130,246,0.12)' : isNoCat ? 'var(--bg-soft)' : 'transparent',
+                        color: isActive ? '#2563eb' : isNoCat ? 'var(--ink-4)' : '#3b82f6',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        transition: 'all 0.12s',
+                      }}
+                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; }}
+                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isNoCat ? 'var(--bg-soft)' : 'transparent'; }}
+                    >
+                      📄 {isNoCat ? 'Uncategorized' : section.category}
+                      <span style={{ marginLeft: 4, opacity: 0.6, fontFamily: 'var(--mono)' }}>{sectionTotal}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="footer" style={{ flexShrink: 0 }}>
               <span>
                 {catKeys.length} categor{catKeys.length !== 1 ? 'ies' : 'y'} · {total} numbers · {used} used
                 {selected.size > 0 && <span style={{ marginLeft: 8, color: 'var(--info)' }}>· {selected.size} selected</span>}
@@ -542,6 +551,7 @@ export default function Recipients() {
           </div>
         );
       })()}
+      </div>
     </AgentShell>
   );
 }

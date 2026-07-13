@@ -198,7 +198,7 @@ export default function AgentShell({ children }) {
           <button className="btn-ghost" onClick={handleLogout}>Sign out</button>
         </div>
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column' }}>
         {children}
       </div>
     </>

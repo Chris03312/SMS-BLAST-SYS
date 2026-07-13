@@ -77,10 +77,12 @@ router.post('/auth/gateway/online', (req, res) => {
       return fail(res, 'userId is required', 400);
     }
     const found = gatewayOnline(userId, deviceId, deviceInfo, number, sim_carrier, number2, sim2_carrier);
-    if (found === false) {
-      return fail(res, 'Gateway not found - ask an admin to add it in the Gateway management page first', 404);
+    if (!found) {
+      return fail(res, 'Gateway not found — add it in Admin > Gateways first', 404);
     }
-    return ok(res, { message: 'Gateway marked online' });
+    return ok(res, {
+      message: 'Gateway marked online',
+    });
   } catch (e) {
     console.error('[gateway-auth] Online error:', e);
     return fail(res, 'Internal server error', 500);
@@ -107,18 +109,22 @@ router.post('/auth/gateway/offline', (req, res) => {
 
 router.post('/auth/gateway/heartbeat', (req, res) => {
   try {
-    const { userId, deviceId, sim_carrier, number2, sim2_carrier, number } = req.body;
+    const { userId, deviceId, deviceInfo, sim_carrier, number2, sim2_carrier, number } = req.body;
     if (!userId) {
       return fail(res, 'userId is required', 400);
     }
-    const found = gatewayHeartbeat(userId, deviceId, { simCarrier: sim_carrier, number2, sim2Carrier: sim2_carrier, number });
+    const found = gatewayHeartbeat(userId, deviceId, {
+      deviceInfo,
+      simCarrier: sim_carrier,
+      number2,
+      sim2Carrier: sim2_carrier,
+      number,
+    });
     if (!found) {
-      return fail(res, 'Gateway not found', 404);
+      return fail(res, 'Gateway not found — add it in Admin > Gateways first', 404);
     }
 
     // Return the gateway-specific inbound webhook URL
-    // Each gateway gets its own URL: .../api/webhook/inbound/{gatewayId}
-    // This way multiple gateways can share a single ngrok tunnel
     const webhookUrl = getInboundWebhookUrl(deviceId || userId);
     return ok(res, {
       message: 'Heartbeat received',

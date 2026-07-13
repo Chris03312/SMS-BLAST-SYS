@@ -10,6 +10,7 @@ import fetch from 'node-fetch';
 import db from '../database/db.js';
 import { broadcast } from './ws.js';
 import { logActivity } from './activity.js';
+import { getTimezone } from './timezone.js';
 
 export { logActivity };
 
@@ -18,12 +19,6 @@ export function sleep(ms) {
 }
 
 // ── Time / Config helpers ──────────────────────────────────────────────────
-
-/** Read the configurable timezone from settings. */
-export function getTimezone() {
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'timezone'").get();
-  return (row && row.value) || 'Asia/Manila';
-}
 
 /**
  * Return the current time in the configured timezone as "HH:MM" (24-hour).

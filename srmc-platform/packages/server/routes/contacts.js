@@ -153,37 +153,56 @@ router.get('/admin/contacts/batches', adminOnly, (req, res) => {
 router.get('/agent/contacts', (req, res) => {
   try {
     const dateFilter = req.query.date; // optional YYYY-MM-DD
+    const usedFilter = req.query.used || 'all'; // 'all', 'available', 'used'
 
-    let contactsSql, contactsParams, totalSql, totalParams;
+    // Build WHERE clauses
+    const conditions = ['agent_id = ?'];
+    const params = [req.user.id];
 
     if (dateFilter) {
-      contactsSql = 'SELECT id, phone_number, batch_id, created_at, dpd_group, category FROM agent_contacts WHERE agent_id = ? AND used = 0 AND DATE(created_at) = ? ORDER BY category, dpd_group, created_at DESC';
-      contactsParams = [req.user.id, dateFilter];
-      totalSql = 'SELECT COUNT(*) as c FROM agent_contacts WHERE agent_id = ? AND used = 0 AND DATE(created_at) = ?';
-      totalParams = [req.user.id, dateFilter];
-    } else {
-      contactsSql = 'SELECT id, phone_number, batch_id, created_at, dpd_group, category FROM agent_contacts WHERE agent_id = ? AND used = 0 ORDER BY category, dpd_group, created_at DESC';
-      contactsParams = [req.user.id];
-      totalSql = 'SELECT COUNT(*) as c FROM agent_contacts WHERE agent_id = ? AND used = 0';
-      totalParams = [req.user.id];
+      conditions.push('DATE(created_at) = ?');
+      params.push(dateFilter);
     }
 
-    const contacts = db.prepare(contactsSql).all(...contactsParams);
-    const total = db.prepare(totalSql).get(...totalParams);
+    if (usedFilter === 'available') {
+      conditions.push('used = 0');
+    } else if (usedFilter === 'used') {
+      conditions.push('used = 1');
+    }
+    // 'all' — no used filter
 
-    let usedSql, usedParams;
+    const whereClause = conditions.join(' AND ');
+
+    // Fetch contacts with used field included
+    const contactsSql = `SELECT id, phone_number, used, batch_id, created_at, dpd_group, category FROM agent_contacts WHERE ${whereClause} ORDER BY category, dpd_group, created_at DESC`;
+    const contacts = db.prepare(contactsSql).all(...params);
+
+    // Total count matching filter
+    const totalSql = `SELECT COUNT(*) as c FROM agent_contacts WHERE ${whereClause}`;
+    const total = db.prepare(totalSql).get(...params);
+
+    // Available (unused) count
+    const availConditions = ['agent_id = ?', 'used = 0'];
+    const availParams = [req.user.id];
     if (dateFilter) {
-      usedSql = 'SELECT COUNT(*) as c FROM agent_contacts WHERE agent_id = ? AND used = 1 AND DATE(created_at) = ?';
-      usedParams = [req.user.id, dateFilter];
-    } else {
-      usedSql = 'SELECT COUNT(*) as c FROM agent_contacts WHERE agent_id = ? AND used = 1';
-      usedParams = [req.user.id];
+      availConditions.push('DATE(created_at) = ?');
+      availParams.push(dateFilter);
     }
-    const usedTotal = db.prepare(usedSql).get(...usedParams);
+    const availableTotal = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts WHERE ${availConditions.join(' AND ')}`).get(...availParams);
+
+    // Used count
+    const usedConditions = ['agent_id = ?', 'used = 1'];
+    const usedParams = [req.user.id];
+    if (dateFilter) {
+      usedConditions.push('DATE(created_at) = ?');
+      usedParams.push(dateFilter);
+    }
+    const usedTotal = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts WHERE ${usedConditions.join(' AND ')}`).get(...usedParams);
 
     return ok(res, {
       contacts,
       total: total?.c || 0,
+      available: availableTotal?.c || 0,
       used: usedTotal?.c || 0,
     });
   } catch (e) {
@@ -246,6 +265,136 @@ router.get('/admin/contacts/batch/:batchId', adminOnly, (req, res) => {
   } catch (e) {
     console.error('[contacts] Get batch error:', e);
     return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Admin: Get all active agents (for dropdowns) ─────────────────────
+
+router.get('/admin/contacts/agents', adminOnly, (req, res) => {
+  try {
+    const agents = db.prepare("SELECT id, display_name FROM users WHERE role = 'agent' AND active = 1 ORDER BY display_name").all();
+    return ok(res, { agents });
+  } catch (e) {
+    console.error('[contacts] List agents error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Admin: Update a single contact ─────────────────────────────────────
+
+router.put('/admin/contacts/:id', adminOnly, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category, agent_id, dpd_group } = req.body;
+
+    const contact = db.prepare('SELECT id FROM agent_contacts WHERE id = ?').get(id);
+    if (!contact) return fail(res, 'Contact not found', 404);
+
+    const updates = [];
+    const params = [];
+
+    if (category !== undefined) {
+      updates.push('category = ?');
+      params.push(category);
+    }
+    if (agent_id !== undefined) {
+      // Verify agent exists
+      const agent = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'agent' AND active = 1").get(agent_id);
+      if (!agent) return fail(res, 'Agent not found or inactive', 400);
+      updates.push('agent_id = ?');
+      params.push(agent_id);
+    }
+    if (dpd_group !== undefined) {
+      updates.push('dpd_group = ?');
+      params.push(dpd_group);
+    }
+
+    if (updates.length === 0) return fail(res, 'No fields to update', 400);
+
+    params.push(id);
+    db.prepare(`UPDATE agent_contacts SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+    db.prepare(
+      'INSERT INTO activity (id, user_id, action, detail) VALUES (?, ?, ?, ?)'
+    ).run(uuidv4(), req.user.id, 'contacts:update', `Updated contact ${id.slice(0, 8)}…`);
+
+    return ok(res, { updated: true });
+  } catch (e) {
+    console.error('[contacts] Update contact error:', e);
+    return fail(res, e.message, 500);
+  }
+});
+
+// ── Admin: Bulk update contacts ────────────────────────────────────────
+
+router.put('/admin/contacts/bulk-update', adminOnly, (req, res) => {
+  try {
+    const { ids, category, agent_id, dpd_group } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return fail(res, 'No contact IDs provided');
+
+    const updates = [];
+    const params = [];
+
+    if (category !== undefined) {
+      updates.push('category = ?');
+      params.push(category);
+    }
+    if (agent_id !== undefined) {
+      const agent = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'agent' AND active = 1").get(agent_id);
+      if (!agent) return fail(res, 'Agent not found or inactive', 400);
+      updates.push('agent_id = ?');
+      params.push(agent_id);
+    }
+    if (dpd_group !== undefined) {
+      updates.push('dpd_group = ?');
+      params.push(dpd_group);
+    }
+
+    if (updates.length === 0) return fail(res, 'No fields to update', 400);
+
+    const setClause = updates.join(', ');
+    const placeholders = ids.map(() => '?').join(',');
+    const stmt = db.prepare(`UPDATE agent_contacts SET ${setClause} WHERE id IN (${placeholders})`);
+    stmt.run(...params, ...ids);
+
+    const fieldLabels = [];
+    if (category !== undefined) fieldLabels.push('category');
+    if (agent_id !== undefined) fieldLabels.push('agent');
+    if (dpd_group !== undefined) fieldLabels.push('DPD group');
+
+    db.prepare(
+      'INSERT INTO activity (id, user_id, action, detail) VALUES (?, ?, ?, ?)'
+    ).run(uuidv4(), req.user.id, 'contacts:bulk-update', `Updated ${ids.length} contacts (${fieldLabels.join(', ')})`);
+
+    return ok(res, { updated: ids.length });
+  } catch (e) {
+    console.error('[contacts] Bulk update error:', e);
+    return fail(res, e.message, 500);
+  }
+});
+
+// ── Admin: Rename category across a batch ──────────────────────────────
+
+router.put('/admin/contacts/rename-category', adminOnly, (req, res) => {
+  try {
+    const { batch_id, old_name, new_name } = req.body;
+    if (!batch_id || !old_name || !new_name) return fail(res, 'batch_id, old_name, and new_name are required');
+    if (old_name === new_name) return fail(res, 'New name must be different', 400);
+
+    const result = db.prepare(
+      'UPDATE agent_contacts SET category = ? WHERE batch_id = ? AND category = ?'
+    ).run(new_name, batch_id, old_name);
+
+    if (result.changes === 0) return fail(res, 'No contacts found with that category in this batch', 404);
+
+    db.prepare(
+      'INSERT INTO activity (id, user_id, action, detail) VALUES (?, ?, ?, ?)'
+    ).run(uuidv4(), req.user.id, 'contacts:rename-category', `Renamed category "${old_name}" → "${new_name}" (${result.changes} contacts)`);
+
+    return ok(res, { renamed: result.changes });
+  } catch (e) {
+    console.error('[contacts] Rename category error:', e);
+    return fail(res, e.message, 500);
   }
 });
 

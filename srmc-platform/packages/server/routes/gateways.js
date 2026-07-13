@@ -5,6 +5,7 @@ import db from '../database/db.js';
 import { fixTimestamps } from '../utils/fix-timestamps.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { checkGatewayNow } from '../services/gateway-poller.js';
+import { getTimezone } from '../services/timezone.js';
 
 const router = Router();
 
@@ -206,8 +207,7 @@ router.post('/:id/test-sim', async (req, res) => {
       return fail(res, `SIM ${sim === 'sim2' ? '2' : '1'} has no number configured`, 400);
     }
 
-    const tzRow = db.prepare("SELECT value FROM settings WHERE key = 'timezone'").get();
-    const tz = (tzRow && tzRow.value) || 'Asia/Manila';
+    const tz = getTimezone();
     const testMsg = `SMS test — SIM ${sim === 'sim2' ? '2' : '1'} at ${new Date().toLocaleTimeString('en-PH', { timeZone: tz })}`;
 
     // PUSH gateway — send directly to the phone's HTTP server

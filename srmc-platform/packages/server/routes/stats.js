@@ -39,16 +39,32 @@ router.get('/', authMiddleware, (req, res) => {
           AND m.status = 'failed'
           AND date(m.created_at) = date('now')
       `).get(userId);
-      // Agent's all-time total
+      // Agent's all-time sent + delivered
       const userTotal = db.prepare(`
         SELECT COUNT(*) as total FROM messages m
         JOIN broadcasts b ON b.id = m.broadcast_id
         WHERE b.agent_id = ?
           AND m.status IN ('sent', 'delivered')
       `).get(userId);
+      // Agent's all-time failed
+      const userFailedAll = db.prepare(`
+        SELECT COUNT(*) as total FROM messages m
+        JOIN broadcasts b ON b.id = m.broadcast_id
+        WHERE b.agent_id = ?
+          AND m.status = 'failed'
+      `).get(userId);
+      // Agent's all-time delivered
+      const userDeliveredAll = db.prepare(`
+        SELECT COUNT(*) as total FROM messages m
+        JOIN broadcasts b ON b.id = m.broadcast_id
+        WHERE b.agent_id = ?
+          AND m.status = 'delivered'
+      `).get(userId);
       stats.sent_today = agentSentToday ? agentSentToday.total : 0;
       stats.failed_today = agentFailedToday ? agentFailedToday.total : 0;
       stats.user_total_all_time = userTotal ? userTotal.total : 0;
+      stats.failed_all_time = userFailedAll ? userFailedAll.total : 0;
+      stats.delivered_all_time = userDeliveredAll ? userDeliveredAll.total : 0;
     }
     return ok(res, stats);
   } catch (e) {

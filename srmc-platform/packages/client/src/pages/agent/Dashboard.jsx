@@ -252,22 +252,27 @@ export default function Dashboard() {
         offset: page * limit,
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
       });
-      const data = await api.get(`/broadcasts?${params}`);
-      setBroadcasts(data.broadcasts || []);
-      setTotal(data.total || 0);
+      const raw = data.broadcasts || [];
+      const filtered = raw.filter(b => b.status !== 'deleted');
+      setBroadcasts(filtered);
+      setTotal(filtered.length === 0 ? Math.max(0, (data.total || 0) - raw.filter(b => b.status === 'deleted').length) : data.total || 0);
+      // Handle case where filter='all': subtract deleted count from total
+      if (statusFilter === 'all') {
+        const deletedCount = raw.filter(b => b.status === 'deleted').length;
+        if (deletedCount > 0) setTotal((data.total || 0) - deletedCount);
+      }
 
-      // Compute stats from all broadcasts
-      const all = await api.get('/broadcasts?limit=1000');
-      const list = all.broadcasts || [];
+      // Compute stats from messages table (never decreases when broadcast is deleted)
+      const statsData = await api.get('/stats');
       setStats({
-        sent: list.reduce((s, b) => s + (b.sent || 0), 0),
-        failed: list.reduce((s, b) => s + (b.failed || 0), 0),
-        delivered: list.reduce((s, b) => s + (b.delivered || 0), 0),
-        active: list.filter(b => b.status === 'sending').length,
-        paused: list.filter(b => b.status === 'paused').length,
+        sent: statsData.user_total_all_time || 0,
+        failed: statsData.failed_all_time || 0,
+        delivered: statsData.delivered_all_time || 0,
+        active: filtered.filter(b => b.status === 'sending').length,
+        paused: filtered.filter(b => b.status === 'paused').length,
       });
       // Initialize progress ref so live deltas are correct
-      for (const b of list) {
+      for (const b of filtered) {
         lastProgressRef.current[b.id] = { sent: b.sent || 0, failed: b.failed || 0 };
       }
     } catch (e) {
@@ -828,7 +833,7 @@ export default function Dashboard() {
                         <button
                           onClick={() => setConfirmAction({
                             title: 'Delete Broadcast',
-                            message: `Delete this broadcast? This will remove it from your history. (${b.sent || 0}/${b.total || 0} messages)`,
+                            message: `Delete this broadcast? It will be moved to the "Deleted" filter in History. (${b.sent || 0}/${b.total || 0} messages)`,
                             confirmLabel: 'Delete',
                             onConfirm: () => { api.del(`/broadcasts/${b.id}`).then(() => loadBroadcasts()).catch(() => {}); setConfirmAction(null); },
                           })}

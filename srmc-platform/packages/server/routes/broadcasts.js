@@ -383,22 +383,14 @@ router.delete('/:id', (req, res) => {
     // Stop the engine if this broadcast is actively sending
     cancelBroadcast(req.params.id);
 
-    // Delete messages — skip 'sent'/'delivered' if broadcast is already complete
-    if (bcast.status === 'done') {
-      // Only delete non-sent messages (queued, pending, failed, cancelled)
-      db.prepare("DELETE FROM messages WHERE broadcast_id = ? AND status NOT IN ('sent', 'delivered')").run(req.params.id);
-    } else {
-      // Otherwise hard-delete all messages
-      db.prepare('DELETE FROM messages WHERE broadcast_id = ?').run(req.params.id);
-    }
-
-    db.prepare('DELETE FROM broadcasts WHERE id = ?').run(req.params.id);
+    // Soft-delete: mark as 'deleted' so it stays visible in History page
+    db.prepare("UPDATE broadcasts SET status = 'deleted', completed_at = datetime('now') WHERE id = ?").run(req.params.id);
 
     // Notify frontend so it can update UIs
     emitEvent({
       type: 'broadcast:complete',
       broadcastId: req.params.id,
-      status: 'cancelled',
+      status: 'deleted',
       sent: bcast.sent || 0,
       failed: bcast.failed || 0,
       total: bcast.total || 0,

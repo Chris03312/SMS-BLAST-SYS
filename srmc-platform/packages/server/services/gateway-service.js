@@ -16,27 +16,20 @@ const INBOUND_TOKEN_EXPIRY = '30d';
 
 /**
  * Authenticate a gateway device and return an inbound token.
- * The inbound token is used by the Android gateway to authenticate
- * inbound SMS forwarding requests.
  *
  * @param {string} userId   - Gateway user ID
  * @returns {object|null}   - { user, inboundToken } or null on failure
  */
 export function gatewayLogin(userId) {
-  // Validate gateway user (users with active=1 in the users table)
   const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(userId);
   if (!user) return null;
 
-  // Simple password check (bcrypt compare is async, so do it inline here)
-  // For simplicity, we do a direct hash comparison. The caller handles bcrypt.
-  // This function just looks up the user and generates the token.
   const inboundToken = jwt.sign(
     { gatewayId: String(user.id), type: 'gateway', role: user.role },
     JWT_SECRET,
     { expiresIn: INBOUND_TOKEN_EXPIRY }
   );
 
-  // Store the token reference
   const tokenId = uuidv4();
   db.prepare('INSERT INTO gateway_tokens (id, gateway_id, token) VALUES (?, ?, ?)')
     .run(tokenId, userId, inboundToken);
@@ -123,8 +116,6 @@ export function gatewayOnline(userId, deviceId, deviceInfo, number, simCarrier, 
 
 /**
  * Mark a gateway as offline.
- *
- * @param {string} userId - Gateway user ID
  */
 export function gatewayOffline(userId, deviceId) {
   const now = new Date().toISOString();
@@ -192,49 +183,28 @@ export function gatewayHeartbeat(userId, deviceId, extra = {}) {
 
 /**
  * Get the inbound webhook URL from settings (ngrok or LAN fallback).
- *
- * When a gatewayId is provided, returns a per-gateway webhook URL so each
- * gateway has its own endpoint (e.g. /api/webhook/inbound/{gatewayId}).
- * This allows multiple gateways to share a single ngrok tunnel while the
- * server can identify each gateway from the URL path.
- *
- * @param {string} [gatewayId] - Optional gateway ID for per-gateway URL
- * @returns {string} - The public-facing webhook URL
  */
 export function getInboundWebhookUrl(gatewayId) {
   const setting = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_url'").get();
   const ngrokUrl = setting ? setting.value : '';
   if (ngrokUrl) {
     const base = `${ngrokUrl}/api/webhook/inbound`;
-    if (gatewayId) {
-      return `${base}/${gatewayId}`;
-    }
+    if (gatewayId) return `${base}/${gatewayId}`;
     return base;
   }
-  return ''; // Empty = use LAN fallback
+  return '';
 }
 
 /**
  * Log out a gateway.
- *
- * @param {string} userId - Gateway user ID
  */
 export function gatewayLogout(userId, deviceId) {
-  // Revoke all tokens for this gateway
   db.prepare('DELETE FROM gateway_tokens WHERE gateway_id = ?').run(userId);
   gatewayOffline(userId, deviceId);
 }
 
 /**
- * Track a gateway's send result and alert if too many consecutive failures
- * suggest the SIM may have no load.
- *
- * Call this after every send attempt through a gateway (both push and pull).
- *
- * @param {string}  gatewayId
- * @param {boolean} success   - true if the message was sent, false otherwise
- * @param {string}  gwName    - Display name for activity logs
- * @param {string}  [agentId] - Agent who triggered the send (for activity log)
+ * Track a gateway's send result and alert if too many consecutive failures.
  */
 export function trackGatewayResult(gatewayId, success, gwName, agentId) {
   if (success) {
@@ -263,10 +233,6 @@ export function trackGatewayResult(gatewayId, success, gwName, agentId) {
 
 /**
  * Notify that the server has an inbound webhook endpoint reachable.
- * This is called on server startup if NGROK_URL is configured.
- *
- * @param {string} ngrokUrl - The ngrok URL from env
- * @returns {string} - The webhook URL
  */
 export function registerNgrokWebhook(ngrokUrl) {
   if (ngrokUrl) {

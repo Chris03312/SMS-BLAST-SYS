@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
 import { getAllSettings, updateSettings } from '../services/config-service.js';
+import { applyTimezone } from '../services/timezone.js';
 import db from '../database/db.js';
 import { broadcast } from '../services/ws.js';
 
@@ -34,6 +35,10 @@ router.put('/', adminOnly, (req, res) => {
       return fail(res, 'Body must be a key-value object', 400);
     }
     const settings = updateSettings(updates);
+    // Sync process.env.TZ if timezone was changed
+    if (updates.timezone) {
+      applyTimezone(updates.timezone);
+    }
     return ok(res, { settings });
   } catch (e) {
     console.error('[settings] PUT error:', e);
@@ -93,6 +98,8 @@ router.post('/reset', adminOnly, (req, res) => {
     resetAll();
     console.log('[settings] All settings reset to defaults by', req.user.id);
     const settings = getAllSettings();
+    // Reset process.env.TZ to the default timezone
+    applyTimezone('Asia/Manila');
     return ok(res, { settings, message: 'Settings reset to factory defaults.' });
   } catch (e) {
     console.error('[settings] reset error:', e);
