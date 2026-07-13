@@ -508,15 +508,12 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Android 14+ (API 34+) requires RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED
-        // when registering a receiver for non-system broadcasts.
+        // ContextCompat.registerReceiver requires RECEIVER_EXPORTED or
+        // RECEIVER_NOT_EXPORTED as of AndroidX core 1.9+ (crash on API 31+).
         // GATEWAY_STARTED is an internal app broadcast — RECEIVER_NOT_EXPORTED is correct.
-        int receiverFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                ? ContextCompat.RECEIVER_NOT_EXPORTED
-                : 0;
         ContextCompat.registerReceiver(this, gatewayStartedReceiver,
                 new IntentFilter(GatewayService.ACTION_GATEWAY_STARTED),
-                receiverFlags);
+                ContextCompat.RECEIVER_NOT_EXPORTED);
         updateStatusUi();
         detectSims();
     }

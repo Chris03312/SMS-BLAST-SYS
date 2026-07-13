@@ -53,7 +53,8 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
       const validNums = [];
       for (const raw of nums) {
         const cleaned = String(raw).trim();
-        const digitsOnly = cleaned.replace(/[\s\-().]/g, '');
+        // Strip semicolons and formatting chars for validation only
+        const digitsOnly = cleaned.replace(/[\s\-().;]/g, '');
         if (digitsOnly.length >= 7 && digitsOnly.length <= 16 && /^\+?\d+$/.test(digitsOnly)) {
           contacts.push({
             id: uuidv4(),

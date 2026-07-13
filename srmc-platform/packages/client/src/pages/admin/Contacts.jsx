@@ -105,11 +105,13 @@ export default function AdminContacts() {
             if (!agentNames[c]) continue;
             if (cell === undefined || cell === null) continue;
             const str = String(cell).trim();
-            const cleaned = str.replace(/[\s\-().]/g, '');
+            // Strip semicolons and formatting chars for validation only
+            const cleaned = str.replace(/[\s\-().;]/g, '');
             if (cleaned.length >= 7 && /^\+?\d{7,15}$/.test(cleaned)) {
               // Find which agent this column belongs to
               const agentIdx = agentNames.slice(0, c + 1).filter(Boolean).length - 1;
               if (sheetAgents[agentIdx]) {
+                // Store the original string (with semicolons) as-is
                 sheetAgents[agentIdx].numbers.push(str);
                 totalNumbers++;
               }

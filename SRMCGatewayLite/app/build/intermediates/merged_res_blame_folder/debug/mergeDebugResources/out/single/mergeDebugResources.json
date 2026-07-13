@@ -1,66 +1,62 @@
 [
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-hdpi_ic_launcher.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-hdpi\\ic_launcher.webp"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-hdpi_ic_launcher_round.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-hdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-anydpi-v26_ic_launcher_round.xml.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-anydpi-v26\\ic_launcher_round.xml"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-hdpi_ic_launcher.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-hdpi/ic_launcher.webp"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-hdpi_ic_launcher_round.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-hdpi\\ic_launcher_round.webp"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-mdpi_ic_launcher.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-mdpi/ic_launcher.webp"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-mdpi_ic_launcher_round.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-mdpi\\ic_launcher_round.webp"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-xhdpi_ic_launcher_round.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-xhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-xxxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-xxxhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-xxhdpi_ic_launcher.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-xxhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-xhdpi_ic_launcher.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-xhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.flashsms.gateway.app-debug-20:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.flashsms.gateway.app-main-22:/drawable/ic_launcher_foreground.xml"
     },
     {
         "merged": "com.flashsms.gateway.app-debug-20:/layout_activity_main.xml.flat",
         "source": "com.flashsms.gateway.app-main-22:/layout/activity_main.xml"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\layout_activity_main.xml.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\layout\\activity_main.xml"
+        "merged": "com.flashsms.gateway.app-debug-20:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.flashsms.gateway.app-main-22:/drawable/ic_launcher_background.xml"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-xxhdpi_ic_launcher.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-xxhdpi\\ic_launcher.webp"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-anydpi-v26/ic_launcher_round.xml"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-mdpi_ic_launcher.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-mdpi\\ic_launcher.webp"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-mdpi_ic_launcher_round.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-mdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-anydpi-v26_ic_launcher.xml.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-anydpi-v26\\ic_launcher.xml"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-xxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-xxhdpi/ic_launcher_round.webp"
     },
     {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\drawable_ic_launcher_foreground.xml.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\drawable\\ic_launcher_foreground.xml"
-    },
-    {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-xxxhdpi_ic_launcher_round.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-xxxhdpi\\ic_launcher_round.webp"
-    },
-    {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-xxhdpi_ic_launcher_round.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-xxhdpi\\ic_launcher_round.webp"
-    },
-    {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-xhdpi_ic_launcher.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-xhdpi\\ic_launcher.webp"
-    },
-    {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\drawable_ic_launcher_background.xml.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\drawable\\ic_launcher_background.xml"
-    },
-    {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-xhdpi_ic_launcher_round.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-xhdpi\\ic_launcher_round.webp"
-    },
-    {
-        "merged": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-debug-20:\\mipmap-xxxhdpi_ic_launcher.webp.flat",
-        "source": "C:\\Users\\administratorr\\.gradle\\daemon\\8.14.5\\com.flashsms.gateway.app-main-22:\\mipmap-xxxhdpi\\ic_launcher.webp"
+        "merged": "com.flashsms.gateway.app-debug-20:/mipmap-xxxhdpi_ic_launcher.webp.flat",
+        "source": "com.flashsms.gateway.app-main-22:/mipmap-xxxhdpi/ic_launcher.webp"
     }
 ]

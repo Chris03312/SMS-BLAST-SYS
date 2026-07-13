@@ -106,10 +106,12 @@ public class OutboundPoller {
         IntentFilter filter = new IntentFilter();
         filter.addAction(SmsDeliveryReceiver.ACTION_SENT);
         filter.addAction(SmsDeliveryReceiver.ACTION_DELIVERY);
-        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                ? ContextCompat.RECEIVER_EXPORTED
-                : 0;
-        ContextCompat.registerReceiver(context, deliveryReceiver, filter, flags);
+        // ContextCompat.registerReceiver requires RECEIVER_EXPORTED or
+        // RECEIVER_NOT_EXPORTED as of AndroidX core 1.9+ (crash on API 31+).
+        // This receiver gets broadcasts from the system via PendingIntent, so
+        // RECEIVER_EXPORTED is correct.
+        ContextCompat.registerReceiver(context, deliveryReceiver, filter,
+                ContextCompat.RECEIVER_EXPORTED);
         receiverRegistered = true;
         Log.d(TAG, "Delivery receiver registered");
     }
