@@ -157,7 +157,10 @@ class Statement {
     stmt.step();
     const changes = rawDb.getRowsModified();
     stmt.free();
-    flushDb();
+    // Skip disk flush inside a transaction — the transaction wrapper or
+    // bulkInsert flushes once after COMMIT. Flushing during a transaction
+    // writes uncommitted state to disk and is redundant.
+    if (!db._inTransaction) flushDb();
     return { changes };
   }
 }
@@ -165,6 +168,9 @@ class Statement {
 // ── Database wrapper ─────────────────────────────────────────────────────────
 
 class Database {
+  /** Tracks whether we are inside a BEGIN/COMMIT transaction. */
+  _inTransaction = false;
+
   /** Runs one or many SQL statements (DDL, bulk DML, etc.). */
   exec(sql) {
     rawDb.run(sql);
@@ -181,16 +187,23 @@ class Database {
    * Returns a zero-arg callable — matches the better-sqlite3 pattern:
    *   const doInsert = db.transaction(() => { ... });
    *   doInsert();
+   *
+   * Skips per-statement flushDb() during the transaction (handled once
+   * after COMMIT). ROLLBACK is guarded so a failed COMMIT doesn't trigger
+   * "cannot rollback - no transaction is active".
    */
   transaction(fn) {
     return () => {
       rawDb.run('BEGIN');
+      this._inTransaction = true;
       try {
         fn();
         rawDb.run('COMMIT');
       } catch (e) {
-        rawDb.run('ROLLBACK');
+        try { rawDb.run('ROLLBACK'); } catch (_) { /* guard: no active txn */ }
         throw e;
+      } finally {
+        this._inTransaction = false;
       }
       flushDb();
     };
@@ -203,6 +216,10 @@ class Database {
    * This is MUCH faster than calling .run() in a loop (which flushes per call).
    * For 100K rows, flushDb time drops from minutes to under a second.
    *
+   * Manages its own transaction (not using this.transaction()) to avoid
+   * statement free/allocate overhead per row. The _inTransaction flag is
+   * set here so per-statement flushDb is skipped.
+   *
    * @param {string} table  - Table name
    * @param {string[]} columns - Column names
    * @param {Array[]} rows   - Array of value arrays (one per row)
@@ -213,6 +230,7 @@ class Database {
     const sql = `INSERT INTO ${table} (${columns.join(',')}) VALUES (${placeholders})`;
     const stmt = rawDb.prepare(sql);
     rawDb.run('BEGIN');
+    this._inTransaction = true;
     try {
       for (const row of rows) {
         stmt.bind(row);
@@ -221,9 +239,11 @@ class Database {
       }
       rawDb.run('COMMIT');
     } catch (e) {
-      rawDb.run('ROLLBACK');
+      try { rawDb.run('ROLLBACK'); } catch (_) { /* guard: no active txn */ }
       stmt.free();
       throw e;
+    } finally {
+      this._inTransaction = false;
     }
     stmt.free();
     flushDb();
