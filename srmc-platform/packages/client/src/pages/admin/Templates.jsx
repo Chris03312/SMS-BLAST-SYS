@@ -27,14 +27,14 @@ export default function AdminTemplates() {
 
   function openEdit(t) {
     setSelected(t);
-    setEditing({ name: t.name, body: t.body, variables: JSON.parse(t.variables || '[]') });
+    setEditing({ name: t.name, body: t.body, variables: JSON.parse(t.variables || '[]'), boss_numbers: t.boss_numbers || '' });
     setShowModal(true);
     setError('');
   }
 
   function openNew() {
     setSelected(null);
-    setEditing({ name: '', body: '', variables: [] });
+    setEditing({ name: '', body: '', variables: [], boss_numbers: '' });
     setShowModal(true);
     setError('');
   }
@@ -158,6 +158,20 @@ export default function AdminTemplates() {
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Message body</label>
                 <textarea className="input" rows={5} value={editing.body} onChange={e => setEditing(prev => ({ ...prev, body: e.target.value }))} required style={{ resize: 'vertical' }} />
                 <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 4, fontFamily: 'var(--mono)' }}>{editing.body.length}ch</div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+                  Boss Numbers
+                  <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 4 }}>(one per line — these numbers receive a copy of every broadcast using this template)</span>
+                </label>
+                <textarea
+                  className="input"
+                  rows={3}
+                  value={editing.boss_numbers}
+                  onChange={e => setEditing(prev => ({ ...prev, boss_numbers: e.target.value }))}
+                  placeholder="09171234567&#10;09179876543"
+                  style={{ resize: 'vertical', fontFamily: 'var(--mono)', fontSize: 12 }}
+                />
               </div>
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

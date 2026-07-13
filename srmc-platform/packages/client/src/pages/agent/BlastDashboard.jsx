@@ -304,9 +304,9 @@ export default function BlastDashboard() {
       .filter(s => s.length >= 7);
   }
 
-  function parseBossNumbers(campaign) {
-    if (!campaign?.boss_numbers) return [];
-    return campaign.boss_numbers.split('\n').map(s => s.trim()).filter(Boolean);
+  function parseBossNumbers(template) {
+    if (!template?.boss_numbers) return [];
+    return template.boss_numbers.split('\n').map(s => s.trim()).filter(Boolean);
   }
 
   const recipientList = parseRecipients(recipients);
@@ -347,13 +347,12 @@ export default function BlastDashboard() {
       }));
       setSending(false);
       // Capture summary data for post-send receipt
-      const campaignObj = campaigns.find(c => c.id === selectedCampaign);
-      const bossNumbers = parseBossNumbers(campaignObj);
+      const bossNumbers = parseBossNumbers(selectedTemplate);
       setSentSummary({
         message: result.broadcast.message || message,
         recipients: recipientList,
         gateways: selectedGateways,
-        campaign: campaignObj?.name || null,
+        campaign: campaigns.find(c => c.id === selectedCampaign)?.name || null,
         bossNumbers,
         distribution,
         delayMs,
@@ -931,13 +930,13 @@ export default function BlastDashboard() {
                   </div>
 
                   {/* Boss Numbers */}
-                  {parseBossNumbers(campaigns.find(c => c.id === selectedCampaign)).length > 0 && (
+                  {parseBossNumbers(selectedTemplate).length > 0 && (
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
                         Boss Numbers
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {parseBossNumbers(campaigns.find(c => c.id === selectedCampaign)).map(n => (
+                        {parseBossNumbers(selectedTemplate).map(n => (
                           <span key={n} style={{
                             padding: '2px 8px', borderRadius: 4,
                             background: 'rgba(219,39,119,0.08)',

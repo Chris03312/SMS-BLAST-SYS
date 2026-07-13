@@ -81,6 +81,7 @@ router.post('/reset', adminOnly, (req, res) => {
       ['turbo_delay',               '100'],
       ['turbo_batch_size',           '5'],
       ['timezone',                  'Asia/Manila'],
+      ['max_selected_contacts', '200'],
       ['public_url',     ''],
     ];
     const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');

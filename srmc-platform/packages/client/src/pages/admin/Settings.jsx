@@ -313,6 +313,18 @@ export default function Settings() {
                     </span>
                   </div>
                 </Field>
+                <Field label="Max selected contacts" help="Maximum contacts an agent can select per column in the Recipients page.">
+                  <div style={{ display: 'flex' }}>
+                    <input className="input mono" type="number" min="1" value={form.max_selected_contacts || 200} onChange={e => set('max_selected_contacts', e.target.value)}
+                      style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 160 }} />
+                    <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                      contacts
+                    </span>
+                  </div>
+                </Field>
+              </FieldRow>
+
+              <FieldRow cols={2}>
                 <Field label="Max broadcasts per day (agent)" help="How many total broadcasts an agent can create per day. 0 = unlimited.">
                   <div style={{ display: 'flex' }}>
                     <input className="input mono" type="number" min="0" value={form.max_broadcasts_per_day_per_agent || 0} onChange={e => set('max_broadcasts_per_day_per_agent', e.target.value)}

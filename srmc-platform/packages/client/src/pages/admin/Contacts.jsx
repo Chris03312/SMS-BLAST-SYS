@@ -42,32 +42,60 @@ export default function AdminContacts() {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-      if (!rows || rows.length < 2) {
-        toast('File must have a header row (agent names) and at least one data row.', 'warning');
+      if (!rows || rows.length < 3) {
+        toast('File must have category, DPD, and agent name header rows, plus at least one data row.', 'warning');
         return;
       }
 
-      const headerRow = rows[0];
-      const agentNames = headerRow.filter(Boolean).map(String);
-      if (agentNames.length === 0) {
-        toast('Header row is empty.', 'warning');
+      // Row 0 = Category headers (e.g. "PRIORITY", "INSUFFICIENT", ...)
+      // Row 1 = DPD group headers (e.g. "DPD 1", "DPD 2", ...)
+      // Row 2 = Agent names (e.g. "Christian Catalan", "Maria Santos", ...)
+      // Row 3+ = Phone numbers
+      const categoryRow = rows[0];
+      const dpdRow = rows[1];
+      const nameRow = rows[2];
+      if (!nameRow || nameRow.filter(Boolean).length === 0) {
+        toast('Row 3 must contain agent display names.', 'warning');
         return;
       }
 
-      const agentsData = agentNames.map(name => ({ name, numbers: [] }));
+      const agentNames = nameRow.map(cell => cell ? String(cell).trim() : '');
+      const dpdGroups = dpdRow.map(cell => cell ? String(cell).trim() : '');
+      const categoryLabels = categoryRow.map(cell => cell ? String(cell).trim() : '');
+      const validCols = agentNames.filter(Boolean).length;
+
+      if (validCols === 0) {
+        toast('No agent names found in row 3.', 'warning');
+        return;
+      }
+
+      // Build agent data with categories and DPD groups — carry forward labels across merged cells
+      let currentCategory = '';
+      let currentDpd = '';
+      const agentsData = agentNames.map((name, i) => {
+        if (categoryLabels[i]) currentCategory = categoryLabels[i];
+        if (dpdGroups[i]) currentDpd = dpdGroups[i];
+        if (!name) return null;
+        return { name, numbers: [], dpd_group: currentDpd, category: currentCategory };
+      }).filter(Boolean);
+
       let total = 0;
-      for (let r = 1; r < rows.length; r++) {
+      const maxCols = Math.max(agentNames.length, ...rows.slice(3).map(r => Array.isArray(r) ? r.length : 0));
+      for (let r = 3; r < rows.length; r++) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
-        for (let c = 0; c < agentNames.length; c++) {
+        let agentIdx = 0;
+        for (let c = 0; c < maxCols; c++) {
           const cell = row[c];
+          if (!agentNames[c]) continue;
           if (cell === undefined || cell === null) continue;
           const str = String(cell).trim();
           const cleaned = str.replace(/[\s\-().]/g, '');
           if (cleaned.length >= 7 && /^\+?\d{7,15}$/.test(cleaned)) {
-            agentsData[c].numbers.push(str);
+            agentsData[agentIdx].numbers.push(str);
             total++;
           }
+          agentIdx++;
         }
       }
 
@@ -79,7 +107,7 @@ export default function AdminContacts() {
       setParsedAgents(agentsData);
       setPreview({
         fileName: file.name,
-        agents: agentsData.map(a => ({ name: a.name, count: a.numbers.length })),
+        agents: agentsData.map(a => ({ name: a.name, count: a.numbers.length, dpd_group: a.dpd_group, category: a.category })),
         total,
       });
     } catch (err) {
@@ -93,10 +121,17 @@ export default function AdminContacts() {
     if (!preview || parsedAgents.length === 0) return;
     setUploading(true);
     try {
-      const result = await api.post('/admin/contacts/upload', {
-        agents: parsedAgents,
+      // Build payload with DPD group info
+      const payload = {
+        agents: parsedAgents.map(a => ({
+          name: a.name,
+          numbers: a.numbers,
+          dpd_group: a.dpd_group || '',
+          category: a.category || '',
+        })),
         fileName: preview.fileName,
-      });
+      };
+      const result = await api.post('/admin/contacts/upload', payload);
       toast(`Uploaded ${result.total} numbers to ${result.agents} agents`, 'success');
       setPreview(null);
       setParsedAgents([]);
@@ -108,14 +143,27 @@ export default function AdminContacts() {
   }
 
   function downloadSample() {
+    // Merged-cell style: Category row above DPD row above agent names row
     const sampleData = [
-      ['Maria', 'Jose', 'Carlo'],
-      ['09171234567', '09179876543', '09195551234'],
-      ['09177654321', '09193332211', '09194447777'],
-      ['09178889999', '', '09196665555'],
+      ['PRIORITY', 'PRIORITY', 'PRIORITY', 'INSUFFICIENT', 'INSUFFICIENT'],
+      ['DPD 1', 'DPD 1', 'DPD 2', 'DPD 1', 'DPD 2'],
+      ['Christian Catalan', 'Maria Santos', 'Jose Rizal', 'Ana Lopez', 'Pedro Gomez'],
+      ['09171234567', '09179876543', '09195551234', '09172223333', '09174445555'],
+      ['09177654321', '09193332211', '09194447777', '09178889999', '09176667777'],
     ];
     const ws = XLSX.utils.aoa_to_sheet(sampleData);
-    ws['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 16 }];
+    ws['!cols'] = [{ wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+
+    // Merge category and DPD header cells to show visual groupings
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }, // PRIORITY spans cols A-C
+      { s: { r: 0, c: 3 }, e: { r: 0, c: 4 } }, // INSUFFICIENT spans cols D-E
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } }, // DPD 1 under PRIORITY spans cols A-B
+      { s: { r: 1, c: 2 }, e: { r: 1, c: 2 } }, // DPD 2 under PRIORITY single col C
+      { s: { r: 1, c: 3 }, e: { r: 1, c: 3 } }, // DPD 1 under INSUFFICIENT single col D
+      { s: { r: 1, c: 4 }, e: { r: 1, c: 4 } }, // DPD 2 under INSUFFICIENT single col E
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
     XLSX.writeFile(wb, 'contact_template.xlsx');
@@ -187,8 +235,9 @@ export default function AdminContacts() {
         <div className="card-head"><h3>Upload Contact List</h3></div>
         <div style={{ padding: 18 }}>
           <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12, lineHeight: 1.6 }}>
-            Upload an Excel file (.xlsx) where <strong>column headers are agent display names</strong> and <strong>cells contain phone numbers</strong>.
-            <br />The system will assign each number to the agent in its column.
+            Upload an Excel file (.xlsx) with 3 header rows: <strong>Category</strong> (row 1), <strong>DPD</strong> (row 2), <strong>Agent name</strong> (row 3).
+            <br />Use merged cells to group agents. Numbers below each agent column are assigned to that agent.
+            <br />The system ignores empty cells and validates phone numbers. <strong>Agent names must match display names exactly.</strong>
           </div>
 
           {!preview ? (
@@ -233,14 +282,44 @@ export default function AdminContacts() {
                 <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--ink-1)' }}>
                   {preview.fileName} — {preview.total} numbers found
                 </div>
+                {/* Category badges */}
+                {preview.agents.some(a => a.category) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    {[...new Set(preview.agents.filter(a => a.category).map(a => a.category))].map(cat => (
+                      <span key={cat} style={{
+                        padding: '3px 10px', borderRadius: 6,
+                        background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+                        fontSize: 10, fontWeight: 600, color: '#3b82f6',
+                        textTransform: 'uppercase', letterSpacing: '0.05em',
+                      }}>
+                        {cat}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* DPD group badges */}
+                {preview.agents.some(a => a.dpd_group) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    {[...new Set(preview.agents.filter(a => a.dpd_group).map(a => a.dpd_group))].map(dpd => (
+                      <span key={dpd} style={{
+                        padding: '3px 10px', borderRadius: 6,
+                        background: 'rgba(219,39,119,0.08)', border: '1px solid rgba(219,39,119,0.2)',
+                        fontSize: 10, fontWeight: 600, color: '#db2777',
+                        textTransform: 'uppercase', letterSpacing: '0.05em',
+                      }}>
+                        {dpd}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                   {preview.agents.map(a => (
-                    <span key={a.name} style={{
+                    <span key={a.name + a.dpd_group} style={{
                       padding: '3px 10px', borderRadius: 6,
                       background: 'var(--ok-bg)', border: '1px solid var(--ok-line)',
                       fontSize: 11, fontWeight: 500, color: 'var(--ok)',
                     }}>
-                      {a.name}: {a.count}
+                      {a.category ? `[${a.category}] ` : ''}{a.dpd_group ? `${a.dpd_group} · ` : ''}{a.name}: {a.count}
                     </span>
                   ))}
                 </div>
@@ -285,6 +364,8 @@ export default function AdminContacts() {
                 <th>Agents</th>
                 <th>Used</th>
                 <th>Per Agent</th>
+                <th>Categories</th>
+                <th>DPD Groups</th>
                 <th style={{ textAlign: 'center', width: 100 }}>Actions</th>
               </tr>
             </thead>
@@ -309,6 +390,32 @@ export default function AdminContacts() {
                             fontFamily: 'var(--mono)',
                           }}>
                             {a.agent_name}: {a.count}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {(b.categories || []).map(c => (
+                          <span key={c} style={{
+                            fontSize: 10, padding: '1px 7px', borderRadius: 4,
+                            background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+                            color: '#3b82f6', fontFamily: 'var(--mono)',
+                          }}>
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {(b.dpd_groups || []).map(d => (
+                          <span key={d} style={{
+                            fontSize: 10, padding: '1px 7px', borderRadius: 4,
+                            background: 'rgba(219,39,119,0.08)', border: '1px solid rgba(219,39,119,0.2)',
+                            color: '#db2777', fontFamily: 'var(--mono)',
+                          }}>
+                            {d}
                           </span>
                         ))}
                       </div>
@@ -340,7 +447,7 @@ export default function AdminContacts() {
                   {/* Expanded batch detail row */}
                   {viewBatch === b.batch_id && (
                     <tr>
-                      <td colSpan={6} style={{ padding: '0 18px', background: 'var(--bg-soft)' }}>
+                      <td colSpan={8} style={{ padding: '0 18px', background: 'var(--bg-soft)' }}>
                         <div style={{ padding: '14px 0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>
@@ -368,6 +475,8 @@ export default function AdminContacts() {
                                   <tr style={{ borderBottom: '1px solid var(--line-soft)' }}>
                                     <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)' }}>Agent</th>
                                     <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)' }}>Phone Number</th>
+                                    <th style={{ textAlign: 'center', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)', width: 80 }}>Category</th>
+                                    <th style={{ textAlign: 'center', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)', width: 60 }}>DPD</th>
                                     <th style={{ textAlign: 'center', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)', width: 60 }}>Status</th>
                                     <th style={{ textAlign: 'center', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)', width: 36 }}></th>
                                   </tr>
@@ -377,6 +486,32 @@ export default function AdminContacts() {
                                     <tr key={c.id} style={{ borderBottom: '1px solid var(--line-soft)' }}>
                                       <td style={{ padding: '5px 10px', color: 'var(--ink-1)', fontWeight: 500 }}>{c.agent_name}</td>
                                       <td style={{ padding: '5px 10px', fontFamily: 'var(--mono)', color: 'var(--ink-1)' }}>{c.phone_number}</td>
+                                      <td style={{ padding: '5px 10px', textAlign: 'center' }}>
+                                        {c.category ? (
+                                          <span style={{
+                                            fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                                            color: '#3b82f6',
+                                            background: 'rgba(59,130,246,0.08)',
+                                          }}>
+                                            {c.category}
+                                          </span>
+                                        ) : (
+                                          <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>—</span>
+                                        )}
+                                      </td>
+                                      <td style={{ padding: '5px 10px', textAlign: 'center' }}>
+                                        {c.dpd_group ? (
+                                          <span style={{
+                                            fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                                            color: '#db2777',
+                                            background: 'rgba(219,39,119,0.08)',
+                                          }}>
+                                            {c.dpd_group}
+                                          </span>
+                                        ) : (
+                                          <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>—</span>
+                                        )}
+                                      </td>
                                       <td style={{ padding: '5px 10px', textAlign: 'center' }}>
                                         <span style={{
                                           fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
@@ -412,7 +547,7 @@ export default function AdminContacts() {
                                   background: stats.used === stats.total ? 'var(--ok-bg)' : 'var(--bg)',
                                   color: 'var(--ink-2)', fontFamily: 'var(--mono)',
                                 }}>
-                                  {name}: {stats.used}/{stats.total} used
+                                  {stats.dpd_group ? `${stats.dpd_group} · ` : ''}{name}: {stats.used}/{stats.total} used
                                 </span>
                               ))}
                             </div>

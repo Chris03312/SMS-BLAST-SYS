@@ -196,6 +196,39 @@ class Database {
     };
   }
 
+  /**
+   * Bulk-insert many rows into a table without flushing to disk after each row.
+   * Uses a single prepared statement, binds each row, and flushes ONCE at the end.
+   *
+   * This is MUCH faster than calling .run() in a loop (which flushes per call).
+   * For 100K rows, flushDb time drops from minutes to under a second.
+   *
+   * @param {string} table  - Table name
+   * @param {string[]} columns - Column names
+   * @param {Array[]} rows   - Array of value arrays (one per row)
+   */
+  bulkInsert(table, columns, rows) {
+    if (!rows.length) return;
+    const placeholders = columns.map(() => '?').join(',');
+    const sql = `INSERT INTO ${table} (${columns.join(',')}) VALUES (${placeholders})`;
+    const stmt = rawDb.prepare(sql);
+    rawDb.run('BEGIN');
+    try {
+      for (const row of rows) {
+        stmt.bind(row);
+        stmt.step();
+        stmt.reset();
+      }
+      rawDb.run('COMMIT');
+    } catch (e) {
+      rawDb.run('ROLLBACK');
+      stmt.free();
+      throw e;
+    }
+    stmt.free();
+    flushDb();
+  }
+
   /** No-op — WAL journal mode is not meaningful for an in-memory WASM DB. */
   pragma() { }
 }
@@ -445,6 +478,12 @@ export function initDb() {
     "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0",
     // Boss/notify numbers for campaign alerts
     "ALTER TABLE campaigns ADD COLUMN boss_numbers TEXT DEFAULT ''",
+    // Boss/notify numbers — moved to templates from campaigns
+    "ALTER TABLE templates ADD COLUMN boss_numbers TEXT DEFAULT ''",
+    // DPD group label for agent contacts (e.g., "DPD 1")
+    "ALTER TABLE agent_contacts ADD COLUMN dpd_group TEXT DEFAULT ''",
+    // Category label above DPD (e.g., "PRIORITY", "INSUFFICIENT")
+    "ALTER TABLE agent_contacts ADD COLUMN category TEXT DEFAULT ''",
   ];
   for (const sql of migrations) {
     try {

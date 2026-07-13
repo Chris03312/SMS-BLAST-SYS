@@ -65,7 +65,7 @@ export const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || process.env.NGROK_
 const app = express();
 
 app.use(cors({ origin: '*', credentials: true }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // Trust nginx reverse proxy headers (X-Forwarded-For, X-Forwarded-Proto, etc.)
 // so Express sees the real client IP instead of nginx's IP.

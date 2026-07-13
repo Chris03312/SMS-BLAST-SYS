@@ -13,8 +13,8 @@ export default function Campaigns() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const { toast } = useToast();
-  const [form, setForm] = useState({ name: '', status: 'active', boss_numbers: '' });
-  const [editForm, setEditForm] = useState({ name: '', status: 'active', boss_numbers: '' });
+  const [form, setForm] = useState({ name: '', status: 'active' });
+  const [editForm, setEditForm] = useState({ name: '', status: 'active' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -37,7 +37,7 @@ export default function Campaigns() {
       const c = await api.post('/campaigns', form);
       setCampaigns(prev => [c.campaign, ...prev]);
       setShowModal(false);
-      setForm({ name: '', status: 'active', boss_numbers: '' });
+      setForm({ name: '', status: 'active' });
       toast(`Campaign "${form.name}" created`, 'success');
     } catch (e) {
       setError(e.message);
@@ -48,7 +48,7 @@ export default function Campaigns() {
 
   function handleEdit(c) {
     setEditItem(c);
-    setEditForm({ name: c.name, status: c.status, boss_numbers: c.boss_numbers || '' });
+    setEditForm({ name: c.name, status: c.status });
     setError('');
     setShowEditModal(true);
   }
@@ -188,20 +188,6 @@ export default function Campaigns() {
                   <option value="scheduled">Scheduled</option>
                 </select>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
-                  Boss Numbers
-                  <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 4 }}>(one per line — these numbers receive campaign alerts)</span>
-                </label>
-                <textarea
-                  className="input"
-                  rows={4}
-                  value={form.boss_numbers}
-                  onChange={e => setForm(prev => ({ ...prev, boss_numbers: e.target.value }))}
-                  placeholder="09171234567&#10;09179876543"
-                  style={{ resize: 'vertical', fontFamily: 'var(--mono)', fontSize: 12 }}
-                />
-              </div>
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
@@ -234,20 +220,6 @@ export default function Campaigns() {
                   <option value="done">Done</option>
                   <option value="scheduled">Scheduled</option>
                 </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
-                  Boss Numbers
-                  <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 4 }}>(one per line — these numbers receive campaign alerts)</span>
-                </label>
-                <textarea
-                  className="input"
-                  rows={4}
-                  value={editForm.boss_numbers}
-                  onChange={e => setEditForm(prev => ({ ...prev, boss_numbers: e.target.value }))}
-                  placeholder="09171234567&#10;09179876543"
-                  style={{ resize: 'vertical', fontFamily: 'var(--mono)', fontSize: 12 }}
-                />
               </div>
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

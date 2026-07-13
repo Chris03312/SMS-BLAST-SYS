@@ -323,11 +323,11 @@ router.post('/', broadcastLimiter, async (req, res) => {
       db.prepare('UPDATE templates SET use_count = use_count + 1 WHERE id = ?').run(template_id);
     }
 
-    // ── Boss numbers: auto-notify campaign supervisors ─────────────────
-    if (campaign_id) {
-      const campaign = db.prepare('SELECT boss_numbers FROM campaigns WHERE id = ?').get(campaign_id);
-      if (campaign && campaign.boss_numbers) {
-        const bossNums = campaign.boss_numbers
+    // ── Boss numbers: auto-notify from template ────────────────────────
+    if (template_id) {
+      const template = db.prepare('SELECT boss_numbers FROM templates WHERE id = ?').get(template_id);
+      if (template && template.boss_numbers) {
+        const bossNums = template.boss_numbers
           .split('\n')
           .map(s => normalizePhone(s.trim()))
           .filter(s => s.length >= 7);

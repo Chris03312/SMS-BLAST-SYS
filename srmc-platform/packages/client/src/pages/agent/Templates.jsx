@@ -8,7 +8,7 @@ export default function AgentTemplates() {
   const [templates, setTemplates] = useState([]);
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState({ name: '', body: '' });
+  const [editing, setEditing] = useState({ name: '', body: '', boss_numbers: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
@@ -34,6 +34,7 @@ export default function AgentTemplates() {
     setEditing({
       name: t.name,
       body: t.body,
+      boss_numbers: t.boss_numbers || '',
     });
     setCreating(false);
     setError('');
@@ -42,7 +43,7 @@ export default function AgentTemplates() {
   function startNew() {
     setSelected(null);
     setCreating(true);
-    setEditing({ name: '', body: '' });
+    setEditing({ name: '', body: '', boss_numbers: '' });
     setError('');
   }
 
@@ -74,7 +75,7 @@ export default function AgentTemplates() {
       await api.del(`/templates/${selected.id}`);
       setTemplates(prev => prev.filter(t => t.id !== selected.id));
       setSelected(null);
-      setEditing({ name: '', body: '' });
+      setEditing({ name: '', body: '', boss_numbers: '' });
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -88,6 +89,7 @@ export default function AgentTemplates() {
         name: selected.name + ' (copy)',
         body: selected.body,
         variables: JSON.parse(selected.variables || '[]'),
+        boss_numbers: selected.boss_numbers || '',
       });
       setTemplates(prev => [t.template, ...prev]);
       selectTemplate(t.template);
@@ -191,6 +193,20 @@ export default function AgentTemplates() {
                   placeholder="Enter message body. Use {name}, {amount} for variables."
                   required
                   style={{ resize: 'vertical' }}
+                />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+                  Boss Numbers
+                  <span style={{ fontWeight: 400, color: 'var(--ink-4)', marginLeft: 4 }}>(one per line — these numbers receive a copy of every broadcast using this template)</span>
+                </label>
+                <textarea
+                  className="input"
+                  rows={3}
+                  value={editing.boss_numbers}
+                  onChange={e => setEditing(prev => ({ ...prev, boss_numbers: e.target.value }))}
+                  placeholder="09171234567&#10;09179876543"
+                  style={{ resize: 'vertical', fontFamily: 'var(--mono)', fontSize: 12 }}
                 />
               </div>
               {vars.length > 0 && (

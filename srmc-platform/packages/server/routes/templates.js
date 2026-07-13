@@ -54,14 +54,14 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { name, body, category, variables } = req.body;
+    const { name, body, category, variables, boss_numbers } = req.body;
     if (!name || !body) {
       return fail(res, 'Name and body are required', 400);
     }
 
     const id = uuidv4();
-    db.prepare('INSERT INTO templates (id, name, body, category, variables, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, name, body, category || 'transactional', JSON.stringify(variables || []), req.user.id);
+    db.prepare('INSERT INTO templates (id, name, body, category, variables, created_by, boss_numbers) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, body, category || 'transactional', JSON.stringify(variables || []), req.user.id, boss_numbers || '');
 
     const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
     return ok(res, { template }, 201);
@@ -78,14 +78,15 @@ router.put('/:id', (req, res) => {
       return fail(res, 'Template not found', 404);
     }
 
-    const { name, body, category, variables } = req.body;
+    const { name, body, category, variables, boss_numbers } = req.body;
 
-    db.prepare(`UPDATE templates SET name = ?, body = ?, category = ?, variables = ?, updated_at = datetime('now') WHERE id = ?`)
+    db.prepare(`UPDATE templates SET name = ?, body = ?, category = ?, variables = ?, boss_numbers = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(
         name ?? template.name,
         body ?? template.body,
         category ?? template.category,
         variables !== undefined ? JSON.stringify(variables) : template.variables,
+        boss_numbers ?? (template.boss_numbers || ''),
         req.params.id
       );
 

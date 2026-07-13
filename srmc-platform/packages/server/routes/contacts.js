@@ -17,7 +17,7 @@ function fail(res, error, status = 400) {
 }
 
 // ── Admin: Upload contacts (client sends pre-parsed JSON) ─────────────
-// Expected body: { agents: [{ name: "Maria", numbers: ["+639171234567", ...] }, ...], fileName: "..." }
+// Expected body: { agents: [{ name: "Maria", numbers: ["..."], dpd_group: "DPD 1", category: "PRIORITY" }, ...], fileName: "..." }
 
 router.post('/admin/contacts/upload', adminOnly, (req, res) => {
   try {
@@ -36,6 +36,7 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
     const batchId = uuidv4();
     const contacts = [];
     const matchedAgents = [];
+    const dpdGroups = new Set();
     let totalNumbers = 0;
 
     for (const agent of agents) {
@@ -43,6 +44,10 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
       const key = name.toLowerCase();
       const agentId = agentMap[key];
       if (!agentId) continue;
+
+      const dpdGroup = agent.dpd_group || '';
+      if (dpdGroup) dpdGroups.add(dpdGroup);
+      const category = agent.category || '';
 
       const nums = Array.isArray(agent.numbers) ? agent.numbers : [];
       const validNums = [];
@@ -55,13 +60,15 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
             agentId,
             batchId,
             phoneNumber: cleaned,
+            dpdGroup,
+            category,
           });
           validNums.push(cleaned);
           totalNumbers++;
         }
       }
       if (validNums.length > 0) {
-        matchedAgents.push({ name: agent.name, count: validNums.length });
+        matchedAgents.push({ name: agent.name, dpd_group: dpdGroup, count: validNums.length });
       }
     }
 
@@ -69,15 +76,13 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
       return fail(res, 'No valid phone numbers found. Make sure agent names match display names exactly.');
     }
 
-    // Insert each contact — no transaction needed since insertStmt.run() auto-flushes
-    const insertStmt = db.prepare(
-      'INSERT INTO agent_contacts (id, agent_id, batch_id, phone_number, used) VALUES (?, ?, ?, ?, 0)'
-    );
-    for (const c of contacts) {
-      insertStmt.run(c.id, c.agentId, c.batchId, c.phoneNumber);
-    }
+    // Bulk-insert all contacts — uses a single prepared statement + one flushDb()
+    // instead of 100K individual flushDb() calls. ~100x faster for large uploads.
+    const rows = contacts.map(c => [c.id, c.agentId, c.batchId, c.phoneNumber, 0, c.dpdGroup, c.category]);
+    db.bulkInsert('agent_contacts', ['id', 'agent_id', 'batch_id', 'phone_number', 'used', 'dpd_group', 'category'], rows);
 
     // Log activity
+    const dpdSummary = [...dpdGroups].join(', ');
     const detail = matchedAgents.map(a => `${a.name}: ${a.count}`).join(', ');
     db.prepare(
       'INSERT INTO activity (id, user_id, action, detail) VALUES (?, ?, ?, ?)'
@@ -88,6 +93,7 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
       total: totalNumbers,
       agents: matchedAgents.length,
       matched: matchedAgents,
+      dpd_groups: [...dpdGroups],
     });
   } catch (e) {
     console.error('[contacts] Upload error:', e);
@@ -121,7 +127,18 @@ router.get('/admin/contacts/batches', adminOnly, (req, res) => {
         GROUP BY ac.agent_id
         ORDER BY count DESC
       `).all(b.batch_id);
-      return { ...b, agents };
+
+      // Get unique DPD groups for this batch
+      const dpdGroups = db.prepare(`
+        SELECT DISTINCT dpd_group FROM agent_contacts WHERE batch_id = ? AND dpd_group != '' ORDER BY dpd_group
+      `).all(b.batch_id).map(r => r.dpd_group);
+
+      // Get unique categories for this batch
+      const categories = db.prepare(`
+        SELECT DISTINCT category FROM agent_contacts WHERE batch_id = ? AND category != '' ORDER BY category
+      `).all(b.batch_id).map(r => r.category);
+
+      return { ...b, agents, dpd_groups: dpdGroups, categories };
     });
 
     return ok(res, { batches: batchDetails });
@@ -135,21 +152,18 @@ router.get('/admin/contacts/batches', adminOnly, (req, res) => {
 
 router.get('/agent/contacts', (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 0;
-    const limit = parseInt(req.query.limit) || 200;
-    const offset = page * limit;
     const dateFilter = req.query.date; // optional YYYY-MM-DD
 
     let contactsSql, contactsParams, totalSql, totalParams;
 
     if (dateFilter) {
-      contactsSql = 'SELECT id, phone_number, batch_id, created_at FROM agent_contacts WHERE agent_id = ? AND used = 0 AND DATE(created_at) = ? ORDER BY created_at DESC LIMIT ? OFFSET ?';
-      contactsParams = [req.user.id, dateFilter, limit, offset];
+      contactsSql = 'SELECT id, phone_number, batch_id, created_at, dpd_group, category FROM agent_contacts WHERE agent_id = ? AND used = 0 AND DATE(created_at) = ? ORDER BY category, dpd_group, created_at DESC';
+      contactsParams = [req.user.id, dateFilter];
       totalSql = 'SELECT COUNT(*) as c FROM agent_contacts WHERE agent_id = ? AND used = 0 AND DATE(created_at) = ?';
       totalParams = [req.user.id, dateFilter];
     } else {
-      contactsSql = 'SELECT id, phone_number, batch_id, created_at FROM agent_contacts WHERE agent_id = ? AND used = 0 ORDER BY created_at DESC LIMIT ? OFFSET ?';
-      contactsParams = [req.user.id, limit, offset];
+      contactsSql = 'SELECT id, phone_number, batch_id, created_at, dpd_group, category FROM agent_contacts WHERE agent_id = ? AND used = 0 ORDER BY category, dpd_group, created_at DESC';
+      contactsParams = [req.user.id];
       totalSql = 'SELECT COUNT(*) as c FROM agent_contacts WHERE agent_id = ? AND used = 0';
       totalParams = [req.user.id];
     }
@@ -171,8 +185,6 @@ router.get('/agent/contacts', (req, res) => {
       contacts,
       total: total?.c || 0,
       used: usedTotal?.c || 0,
-      page,
-      limit,
     });
   } catch (e) {
     console.error('[contacts] Agent list error:', e);
@@ -210,19 +222,20 @@ router.get('/admin/contacts/batch/:batchId', adminOnly, (req, res) => {
   try {
     const contacts = db.prepare(`
       SELECT ac.id, ac.phone_number, ac.used, ac.broadcast_id, ac.created_at,
-             u.display_name as agent_name
+             u.display_name as agent_name, ac.dpd_group, ac.category
       FROM agent_contacts ac
       JOIN users u ON ac.agent_id = u.id
       WHERE ac.batch_id = ?
-      ORDER BY u.display_name, ac.created_at
+      ORDER BY ac.category, ac.dpd_group, u.display_name, ac.created_at
     `).all(req.params.batchId);
 
-    // Tally per agent
+    // Tally per agent + category combo
     const byAgent = {};
     for (const c of contacts) {
-      if (!byAgent[c.agent_name]) byAgent[c.agent_name] = { total: 0, used: 0 };
-      byAgent[c.agent_name].total++;
-      if (c.used) byAgent[c.agent_name].used++;
+      const key = `${c.agent_name}__${c.category || ''}`;
+      if (!byAgent[key]) byAgent[key] = { total: 0, used: 0, dpd_group: c.dpd_group || '', category: c.category || '' };
+      byAgent[key].total++;
+      if (c.used) byAgent[key].used++;
     }
 
     return ok(res, {
