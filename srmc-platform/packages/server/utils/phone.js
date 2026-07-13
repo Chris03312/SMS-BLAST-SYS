@@ -10,7 +10,7 @@
  *  6. Anything else             → return as-is and let the gateway decide
  */
 export function normalizePhone(raw) {
-  const n = String(raw).trim().replace(/[\s\-().]/g, '');
+  const n = String(raw).trim().replace(/[\s\-().;]/g, '');
 
   if (n.startsWith('+'))               return n;
   if (n.startsWith('09'))              return '+63' + n.slice(1);

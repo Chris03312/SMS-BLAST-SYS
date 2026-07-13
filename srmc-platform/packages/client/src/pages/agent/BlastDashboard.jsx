@@ -289,7 +289,7 @@ export default function BlastDashboard() {
   }
 
   function normalizePhone(raw) {
-    const n = String(raw).trim().replace(/[\s\-().]/g, '');
+    const n = String(raw).trim().replace(/[\s\-().;]/g, '');
     if (n.startsWith('+')) return n;
     if (n.startsWith('09')) return '+63' + n.slice(1);
     if (n.startsWith('9') && n.length === 10) return '+63' + n;
