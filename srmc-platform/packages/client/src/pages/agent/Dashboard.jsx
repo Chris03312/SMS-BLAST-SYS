@@ -252,6 +252,7 @@ export default function Dashboard() {
         offset: page * limit,
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
       });
+      const data = await api.get(`/broadcasts?${params}`);
       const raw = data.broadcasts || [];
       const filtered = raw.filter(b => b.status !== 'deleted');
       setBroadcasts(filtered);
