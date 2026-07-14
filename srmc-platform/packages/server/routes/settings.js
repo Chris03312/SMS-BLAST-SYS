@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
-import { getAllSettings, updateSettings } from '../services/config-service.js';
+import { getAllSettings, updateSettings, DEFAULTS } from '../services/config-service.js';
 import { applyTimezone } from '../services/timezone.js';
 import db from '../database/db.js';
 import { broadcast } from '../services/ws.js';
@@ -74,32 +74,19 @@ router.post('/reset', adminOnly, (req, res) => {
     if (req.body.confirm !== true && req.body.confirm !== 'true') {
       return fail(res, 'Confirmation required. Set { "confirm": true } to proceed.', 400);
     }
-    const defaults = [
-      ['org_name',       'SMS Platform'],
-      ['sender_id',      'SMSGATEWAY'],
-      ['delay',          '6000'],
-      ['window_start',   '00:00'],
-      ['window_end',     '23:59'],
-      ['daily_cap',               '10000'],
-      ['max_concurrent_broadcasts', '0'],
-      ['max_broadcasts_per_agent',  '5'],
-      ['turbo_delay',               '100'],
-      ['turbo_batch_size',           '5'],
-      ['timezone',                  'Asia/Manila'],
-      ['max_selected_contacts', '200'],
-      ['public_url',     ''],
-    ];
+    // Use the single source of truth from config-service
+    const defaults = DEFAULTS;
     const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     const resetAll = db.transaction(() => {
-      for (const [key, value] of defaults) {
+      for (const [key, value] of Object.entries(defaults)) {
         upsert.run(key, String(value));
       }
     });
     resetAll();
     console.log('[settings] All settings reset to defaults by', req.user.id);
     const settings = getAllSettings();
-    // Reset process.env.TZ to the default timezone
-    applyTimezone('Asia/Manila');
+    // Reset process.env.TZ to the default timezone from the single source of truth
+    applyTimezone(DEFAULTS.timezone);
     return ok(res, { settings, message: 'Settings reset to factory defaults.' });
   } catch (e) {
     console.error('[settings] reset error:', e);

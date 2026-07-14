@@ -22,12 +22,13 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import os from 'os';
+import { statSync } from 'fs';
 import { createSocket } from 'dgram';
 import { fileURLToPath } from 'url';
-import { initDb } from './database/db.js';
+import { initDb, DB_PATH } from './database/db.js';
 import db from './database/db.js';
 import { registerNgrokWebhook } from './services/gateway-service.js';
-import { startNgrok, stopNgrok, getNgrokStatus } from './services/ngrok-tunnel.js';
+import { startNgrok, stopNgrok, getNgrokStatus, getNgrokUrl, getNgrokAuthtoken, hasAuthtoken } from './services/ngrok-tunnel.js';
 import { authMiddleware, adminOnly } from './middleware/auth.js';
 import { loginLimiter, broadcastLimiter, webhookLimiter, gatewayOutboundLimiter, ngrokLimiter } from './middleware/rate-limit.js';
 
@@ -59,8 +60,12 @@ function resolveServerConfig() {
 
 const { host: HOST, port: PORT } = resolveServerConfig();
 export { HOST, PORT };
-export const NGROK_URL = process.env.NGROK_URL || '';
-export const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || process.env.NGROK_TOKEN || '';
+// Ngrok config is read from the database settings table.
+// Use getNgrokUrl() / getNgrokAuthtoken() / hasAuthtoken() from ngrok-tunnel.js.
+// Static exports kept for backward compat but are always empty —
+// consumers should use the ngrok-tunnel.js helpers instead.
+export const NGROK_URL = '';
+export const NGROK_AUTHTOKEN = '';
 
 
 const app = express();
@@ -203,7 +208,8 @@ app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
   const addresses = listLanIps();
   let primaryIp = await primaryLanIp();
   if (!primaryIp && addresses.length) primaryIp = addresses[0].ip;
-  const hasNgrokConfig = !!NGROK_URL || !!NGROK_AUTHTOKEN;
+  const ngrokUrl = getNgrokUrl();
+  const hasNgrokConfig = !!ngrokUrl || hasAuthtoken();
 
   const online = hasNgrokConfig ? await checkInternet() : true;
 
@@ -225,7 +231,52 @@ app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
   });
 });
 
-// ── Health check ──────────────────────────────────────────────────────
+// ── System health (consolidated status for the sidebar widget) ──────
+
+app.get('/api/system/health', authMiddleware, (req, res) => {
+  try {
+    const sentToday = db.prepare('SELECT COALESCE(SUM(sent_today), 0) AS c FROM gateways').get();
+    const capRow = db.prepare("SELECT value FROM settings WHERE key = 'daily_cap'").get();
+    const dailyCap = parseInt(capRow?.value) || 100000;
+
+    const gwCounts = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status = 'online' AND active = 1 THEN 1 ELSE 0 END) AS online,
+        SUM(CASE WHEN status = 'slow' AND active = 1 THEN 1 ELSE 0 END) AS slow,
+        SUM(CASE WHEN status = 'offline' AND active = 1 THEN 1 ELSE 0 END) AS offline,
+        SUM(CASE WHEN active = 0 THEN 1 ELSE 0 END) AS inactive
+      FROM gateways
+    `).get();
+
+    const activeBc = db.prepare(
+      "SELECT COUNT(*) AS c FROM broadcasts WHERE status IN ('sending', 'paused')"
+    ).get();
+
+    let dbSize = 0;
+    try { dbSize = statSync(DB_PATH).size; } catch (_) {}
+
+    return res.json({
+      success: true,
+      sent_today: sentToday?.c || 0,
+      daily_cap: dailyCap,
+      gateways: {
+        total: gwCounts?.total || 0,
+        online: gwCounts?.online || 0,
+        slow: gwCounts?.slow || 0,
+        offline: gwCounts?.offline || 0,
+        inactive: gwCounts?.inactive || 0,
+      },
+      active_broadcasts: activeBc?.c || 0,
+      db_size: dbSize,
+    });
+  } catch (e) {
+    console.error('[system] health error:', e);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// ── Simple health check ───────────────────────────────────────────────
 
 app.get('/health', (req, res) => {
   const tunnelStatus = getNgrokStatus();
@@ -233,7 +284,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     time: new Date().toISOString(),
     port: PORT,
-    ngrok: tunnelStatus.running ? tunnelStatus.url : (NGROK_URL || 'not configured'),
+    ngrok: tunnelStatus.running ? tunnelStatus.url : (getNgrokUrl() || 'not configured'),
   });
 });
 
@@ -256,11 +307,15 @@ initDb();
 initTimezone();
 
 
-if (NGROK_URL) {
-  registerNgrokWebhook(NGROK_URL);
+// Restore webhook from saved database settings.
+// The tunnel itself is auto-started by apps/web/index.js.
+const savedUrl = getNgrokUrl();
+if (savedUrl) {
+  registerNgrokWebhook(savedUrl);
+  console.log('[ngrok] Restored webhook from saved URL:', savedUrl);
 }
-
-if (!NGROK_URL && NGROK_AUTHTOKEN) {
+const token = getNgrokAuthtoken();
+if (token) {
   console.log('[ngrok] Auth token found — will auto-start tunnel after server is ready');
 }
 

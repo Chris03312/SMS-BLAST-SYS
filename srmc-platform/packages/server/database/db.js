@@ -34,7 +34,7 @@ const require = createRequire(import.meta.url);
 //     because the app folder (app.asar / Program Files) is read-only.
 //   - Standalone / dev: falls back to <repo>/data.
 const DATA_DIR = process.env.SRMC_DATA_DIR || join(__dirname, '..', '..', 'data');
-const DB_PATH = join(DATA_DIR, 'srmc.db');
+export const DB_PATH = join(DATA_DIR, 'srmc.db');
 
 mkdirSync(DATA_DIR, { recursive: true });
 
@@ -420,20 +420,20 @@ export function initDb() {
     for (const [key, value] of [
       ['org_name', 'SMS Platform'],
       ['sender_id', 'SMSGATEWAY'],
-      ['delay', '6000'],
+      ['delay', '1000'],
       ['window_start', '00:00'],
       ['window_end', '23:59'],
       ['webhook_secret', 'whsec_' + uuidv4().replace(/-/g, '')],
       ['ngrok_url', ''],
-      ['daily_cap', '10000'],
-      ['max_concurrent_broadcasts', '0'],
-      ['max_broadcasts_per_agent', '5'],
-      ['max_recipients_per_broadcast', '0'],
+      ['daily_cap', '100000'],
+      ['max_concurrent_broadcasts', '3'],
+      ['max_broadcasts_per_agent', '20'],
+      ['max_recipients_per_broadcast', '50000'],
       ['max_broadcast_duration_minutes', '0'],
-      ['max_broadcasts_per_day_per_agent', '0'],
+      ['max_broadcasts_per_day_per_agent', '50'],
       ['broadcasts_globally_paused', 'false'],
-      ['turbo_delay', '100'],
-      ['turbo_batch_size', '5'],
+      ['turbo_delay', '50'],
+      ['turbo_batch_size', '10'],
       ['timezone', 'Asia/Manila'],
       ['public_url', ''],
     ]) {

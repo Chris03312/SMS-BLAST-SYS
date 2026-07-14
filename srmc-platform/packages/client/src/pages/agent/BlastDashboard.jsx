@@ -19,7 +19,7 @@ const FLAG_LABELS = {
 
 function buildDelayOptions(turboDelay) {
   return [
-    { label: '🚀 Turbo', value: turboDelay || 100 },
+    { label: '🚀 Turbo', value: turboDelay ?? 50 },
     { label: '1s', value: 1000 },
     { label: '2s', value: 2000 },
     { label: '3s', value: 3000 },
@@ -82,11 +82,11 @@ export default function BlastDashboard() {
   const [activities, setActivities] = useState([]);
   const [inboundRecent, setInboundRecent] = useState([]);
   const [adminSettings, setAdminSettings] = useState({});
-  const [turboDelay, setTurboDelay] = useState(100);
+  const [turboDelay, setTurboDelay] = useState(50);
   const [initialDataLoaded, setInitialDataLoaded] = useState(false);
 
   // Dynamic delay options using admin-configured turbo delay
-  const [delayOptions, setDelayOptions] = useState(() => buildDelayOptions(100));
+  const [delayOptions, setDelayOptions] = useState(() => buildDelayOptions(50));
 
   // Restore draft from sessionStorage
   const savedDraft = useRef(loadDraft());
@@ -141,7 +141,7 @@ export default function BlastDashboard() {
     api.get('/settings').then(d => {
       setAdminSettings(d);
       setBroadcastsPaused(d.broadcasts_globally_paused === 'true');
-      const td = parseInt(d.turbo_delay) || 100;
+      const td = parseInt(d.turbo_delay) || 50;
       setTurboDelay(td);
       setDelayOptions(buildDelayOptions(td));
       // Only set delay from settings if no saved draft

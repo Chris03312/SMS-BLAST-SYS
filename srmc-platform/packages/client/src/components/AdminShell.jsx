@@ -92,6 +92,7 @@ export default function AdminShell({ children }) {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [connectivity, setConnectivity] = useState(null);
+  const [health, setHealth] = useState(null);
   const [showNetInfo, setShowNetInfo] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const wsStatus = useConnectionStatus();
@@ -102,11 +103,21 @@ export default function AdminShell({ children }) {
       .catch(() => setConnectivity({ online: true, lan: { primary_url: '' }, ngrok: { running: false } }));
   }, []);
 
+  const fetchHealth = useCallback(() => {
+    api.get('/system/health')
+      .then(d => setHealth(d))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetchConnectivity();
-    const interval = setInterval(fetchConnectivity, 60_000);
+    fetchHealth();
+    const interval = setInterval(() => {
+      fetchConnectivity();
+      fetchHealth();
+    }, 60_000);
     return () => clearInterval(interval);
-  }, [fetchConnectivity]);
+  }, [fetchConnectivity, fetchHealth]);
 
   // Close sidebar when navigating (mobile)
   useEffect(() => {
@@ -197,6 +208,59 @@ export default function AdminShell({ children }) {
               <span className="ok-dot" />
               System
             </div>
+
+            {/* Daily cap progress */}
+            {health && (
+              <div style={{ marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-3)', marginBottom: 3 }}>
+                  <span>Daily cap</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--ink-2)' }}>
+                    {health.sent_today.toLocaleString()} / {health.daily_cap.toLocaleString()}
+                  </span>
+                </div>
+                <div style={{ height: 4, background: 'var(--bg-soft)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', transition: 'width 0.5s', borderRadius: 3,
+                    width: `${Math.min(100, (health.sent_today / health.daily_cap) * 100)}%`,
+                    background: health.sent_today >= health.daily_cap ? 'var(--err)' : 'var(--ok)',
+                  }} />
+                </div>
+              </div>
+            )}
+
+            {/* Gateways summary */}
+            {health && health.gateways && (
+              <div className="sys-row" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{health.gateways.online}</span>
+                <span style={{ color: 'var(--ink-4)' }}>online</span>
+                {health.gateways.slow > 0 && (
+                  <><span style={{ color: 'var(--warn)', fontWeight: 600 }}>{health.gateways.slow}</span><span style={{ color: 'var(--ink-4)' }}>slow</span></>
+                )}
+                {health.gateways.offline > 0 && (
+                  <><span style={{ color: 'var(--err)', fontWeight: 600 }}>{health.gateways.offline}</span><span style={{ color: 'var(--ink-4)' }}>offline</span></>
+                )}
+              </div>
+            )}
+
+            {/* Active broadcasts */}
+            {health && health.active_broadcasts > 0 && (
+              <div className="sys-row">
+                <span style={{ fontWeight: 600, color: 'var(--warn)' }}>
+                  {health.active_broadcasts} active
+                </span>
+              </div>
+            )}
+
+            {/* DB size */}
+            {health && health.db_size > 0 && (
+              <div className="sys-row">
+                <span style={{ color: 'var(--ink-3)' }}>
+                  {(health.db_size / 1024 / 1024).toFixed(1)} MB
+                </span>
+              </div>
+            )}
+
+            {/* WebSocket status */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>WebSocket</span>
               <span style={{

@@ -11,6 +11,7 @@ import db from '../database/db.js';
 import { broadcast } from './ws.js';
 import { logActivity } from './activity.js';
 import { getTimezone } from './timezone.js';
+import { getSetting } from './config-service.js';
 
 export { logActivity };
 
@@ -37,22 +38,15 @@ export function nowHHMM() {
 }
 
 /**
- * Read window_start, window_end, and daily_cap from settings.
- * Returns an object with sensible defaults.
+ * Read window_start, window_end, and daily_cap from the database settings.
+ * All defaults flow from config-service.js — never hardcode values here.
  */
 export function readConfig() {
-  const rows = db.prepare(
-    "SELECT key, value FROM settings WHERE key IN ('window_start', 'window_end', 'daily_cap')"
-  ).all();
-  const cfg = { window_start: '00:00', window_end: '23:59', daily_cap: 10000 };
-  for (const r of rows) {
-    if (r.key === 'daily_cap') {
-      cfg.daily_cap = parseInt(r.value) || 10000;
-    } else {
-      cfg[r.key] = (r.value && r.value !== '00:00') ? r.value : cfg[r.key];
-    }
-  }
-  return cfg;
+  return {
+    window_start: getSetting('window_start') || '00:00',
+    window_end:   getSetting('window_end')   || '23:59',
+    daily_cap:    parseInt(getSetting('daily_cap'), 10) || 0,
+  };
 }
 
 // ── Progress / Completion helpers ──────────────────────────────────────────

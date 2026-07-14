@@ -19,10 +19,8 @@ let retryTimer     = null;
 const RETRY_INTERVAL_MS = 30_000; // check every 30s when offline
 
 /**
- * Resolve the ngrok authtoken for THIS device.
- * Precedence: explicit arg → per-device 'ngrok_authtoken' setting → env.
- * Per-device settings let each install use its own free ngrok account so it
- * gets its own inbound tunnel (free ngrok = one tunnel per token).
+ * Resolve the ngrok authtoken from the database settings.
+ * Set via Settings → Webhooks & API → Ngrok auth token.
  */
 function resolveAuthtoken(explicit) {
   if (explicit) return explicit;
@@ -30,27 +28,43 @@ function resolveAuthtoken(explicit) {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_authtoken'").get();
     if (row && row.value) return row.value.trim();
   } catch (_) {}
-  return process.env.NGROK_AUTHTOKEN || process.env.NGROK_TOKEN || '';
+  return '';
 }
 
 /**
- * Resolve an optional reserved domain to bind the tunnel to, so the public URL
- * stays stable across restarts. Precedence: 'ngrok_domain' setting → env.
+ * Resolve an optional reserved domain from database settings.
+ * Set via Settings → Webhooks & API → Reserved domain.
  */
 function resolveDomain() {
-  let raw = '';
   try {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_domain'").get();
-    if (row && row.value) raw = row.value;
+    if (row && row.value) return row.value.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
   } catch (_) {}
-  if (!raw) raw = process.env.NGROK_DOMAIN || '';
-  // ngrok wants the bare hostname — tolerate a full URL or trailing slash.
-  return raw.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  return '';
 }
 
-/** Whether this device has any ngrok authtoken available (settings or env). */
+/** Whether this device has an ngrok authtoken saved in the database. */
 export function hasAuthtoken() {
   return !!resolveAuthtoken();
+}
+
+/**
+ * Resolve the saved public URL from database settings.
+ * Set automatically when ngrok starts, or manually via Settings.
+ */
+export function getNgrokUrl() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'public_url'").get();
+    if (row && row.value) return row.value;
+  } catch (_) {}
+  return '';
+}
+
+/**
+ * Resolve the ngrok authtoken from database settings.
+ */
+export function getNgrokAuthtoken() {
+  return resolveAuthtoken();
 }
 
 /**
@@ -98,7 +112,7 @@ export async function startNgrok(port = 3001, authtoken) {
   try {
     const opts = { addr: port };
     if (token) opts.authtoken = token;
-    else       opts.authtoken_from_env = true;
+    // No env fallback — token must be saved in DB settings (Settings → Webhooks & API)
     if (domain) opts.domain = domain;
 
     const listener = await ngrok.forward(opts);

@@ -36,7 +36,9 @@ export default function Settings() {
   const scrollRef   = useRef(null);   // the .main scroll container
 
   useEffect(() => {
-    api.get('/settings').then(s => {
+    api.get('/settings').then(resp => {
+      // Response is { success: true, settings: { key: value, ... } }
+      const s = resp.settings || resp;
       setSettings(s);
       setForm(s);
       if (s.timezone) setTimezone(s.timezone);
@@ -95,9 +97,10 @@ export default function Settings() {
     setSaving(true);
     try {
       const updated = await api.put('/settings', form);
-      setSettings(updated);
-      setForm(updated);
-      if (updated.timezone) setTimezone(updated.timezone);
+      const s = updated.settings || updated;
+      setSettings(s);
+      setForm(s);
+      if (s.timezone) setTimezone(s.timezone);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
       toast('Settings saved', 'success');
@@ -235,70 +238,76 @@ export default function Settings() {
 
             {/* ── Preferences ── */}
             <SectionBlock sectionKey="preferences" label="Sending Behaviour" desc="Default delay, allowed sending window, and per-agent daily cap." refs={sectionRefs}>
-              <Field label="Default delay between sends" style={{ marginBottom: 18 }}>
+              <Field label="Default delay between sends (normal mode)" style={{ marginBottom: 18 }}>
                 <div className="seg" style={{ marginTop: 4 }}>
-                  {[['3000','3s'],['6000','6s'],['8000','8s'],['10000','10s']].map(([val, lbl]) => (
+                  {[['1000','1s'],['2000','2s'],['3000','3s'],['6000','6s'],['8000','8s'],['10000','10s']].map(([val, lbl]) => (
                     <button key={val} type="button" className={form.delay === val ? 'on' : ''} onClick={() => set('delay', val)}>
                       {lbl}
                     </button>
                   ))}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>Seconds between each SMS send in a broadcast.</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>Default 1s for high throughput. Each second ≈ 3,600 msgs/hr per broadcast.</div>
               </Field>
-              <Field label="Daily cap (per agent)" help="Soft limit — total messages all gateways can send per day.">
+              <Field label="Daily cap (system-wide)" help="Hard limit — total messages across all gateways per day. Set to 100000 to support 100K/day.">
                 <div style={{ display: 'flex' }}>
-                  <input className="input mono" type="number" value={form.daily_cap || 10000} onChange={e => set('daily_cap', e.target.value)}
+                  <input className="input mono" type="number" value={form.daily_cap ?? ''} onChange={e => set('daily_cap', e.target.value)}
+                    placeholder={settings.daily_cap || ''}
                     style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 200 }} />
                   <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                     msgs/day
                   </span>
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>With 15+ SIMs and turbo mode, you can push 100K+ daily. Monitor carrier throttling.</div>
               </Field>
               <Field label="Turbo mode delay" style={{ marginBottom: 18 }}>
                 <div style={{ display: 'flex' }}>
-                  <input className="input mono" type="number" min="0" max="1000" value={form.turbo_delay || 100} onChange={e => set('turbo_delay', e.target.value)}
+                  <input className="input mono" type="number" min="0" max="1000" value={form.turbo_delay ?? ''} onChange={e => set('turbo_delay', e.target.value)}
+                    placeholder={settings.turbo_delay || ''}
                     style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 120 }} />
                   <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                     ms
                   </span>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>Delay between message batches in Turbo mode. Lower = faster. 100ms default.</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>Delay between message batches in Turbo mode. 50ms default = up to ~20 batches/sec, ~200 msgs/sec with batch size 10.</div>
               </Field>
 
               <Field label="Turbo batch size" style={{ marginBottom: 18 }}>
                 <div style={{ display: 'flex' }}>
-                  <input className="input mono" type="number" min="1" max="20" value={form.turbo_batch_size || 5} onChange={e => set('turbo_batch_size', e.target.value)}
+                  <input className="input mono" type="number" min="1" max="20" value={form.turbo_batch_size ?? ''} onChange={e => set('turbo_batch_size', e.target.value)}
+                    placeholder={settings.turbo_batch_size || ''}
                     style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 120 }} />
                   <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                     msgs/batch
                   </span>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>How many messages to send concurrently in each Turbo batch. Higher = faster but more aggressive.</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>Messages per concurrent batch in Turbo mode. 10 = up to 200 msgs/sec with 50ms delay. ⚠️ May trigger carrier throttling.</div>
               </Field>
 
               <FieldRow cols={2}>
                 <Field label="Max concurrent broadcasts" help="How many broadcasts can run at the same time. 0 = unlimited.">
                   <div style={{ display: 'flex' }}>
-                    <input className="input mono" type="number" min="0" value={form.max_concurrent_broadcasts || 0} onChange={e => set('max_concurrent_broadcasts', e.target.value)}
+                    <input className="input mono" type="number" min="0" value={form.max_concurrent_broadcasts ?? ''} onChange={e => set('max_concurrent_broadcasts', e.target.value)}
+                      placeholder={settings.max_concurrent_broadcasts || ''}
                       style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 160 }} />
                     <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                       broadcasts
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>
-                    Set to 2 = only 2 broadcasts can send simultaneously. Others queue until a slot frees up.
+                    Default 3 = three broadcasts can run simultaneously. Set higher for more throughput. 0 = unlimited.
                   </div>
                 </Field>
                 <Field label="Max broadcasts per agent" help="How many active broadcasts each agent can have. 0 = unlimited.">
                   <div style={{ display: 'flex' }}>
-                    <input className="input mono" type="number" min="0" value={form.max_broadcasts_per_agent || 5} onChange={e => set('max_broadcasts_per_agent', e.target.value)}
+                    <input className="input mono" type="number" min="0" value={form.max_broadcasts_per_agent ?? ''} onChange={e => set('max_broadcasts_per_agent', e.target.value)}
+                      placeholder={settings.max_broadcasts_per_agent || ''}
                       style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 160 }} />
                     <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                       broadcasts
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>
-                    Agents blocked from creating new broadcasts once they reach this limit.
+                    Default 20 — agents can have up to 20 active/queued broadcasts before being blocked.
                   </div>
                 </Field>
               </FieldRow>
@@ -306,7 +315,8 @@ export default function Settings() {
               <FieldRow cols={2}>
                 <Field label="Max recipients per broadcast" help="Maximum phone numbers per broadcast. 0 = unlimited.">
                   <div style={{ display: 'flex' }}>
-                    <input className="input mono" type="number" min="0" value={form.max_recipients_per_broadcast || 0} onChange={e => set('max_recipients_per_broadcast', e.target.value)}
+                    <input className="input mono" type="number" min="0" value={form.max_recipients_per_broadcast ?? ''} onChange={e => set('max_recipients_per_broadcast', e.target.value)}
+                      placeholder={settings.max_recipients_per_broadcast || ''}
                       style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 160 }} />
                     <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                       recipients
@@ -327,7 +337,8 @@ export default function Settings() {
               <FieldRow cols={2}>
                 <Field label="Max broadcasts per day (agent)" help="How many total broadcasts an agent can create per day. 0 = unlimited.">
                   <div style={{ display: 'flex' }}>
-                    <input className="input mono" type="number" min="0" value={form.max_broadcasts_per_day_per_agent || 0} onChange={e => set('max_broadcasts_per_day_per_agent', e.target.value)}
+                    <input className="input mono" type="number" min="0" value={form.max_broadcasts_per_day_per_agent ?? ''} onChange={e => set('max_broadcasts_per_day_per_agent', e.target.value)}
+                      placeholder={settings.max_broadcasts_per_day_per_agent || ''}
                       style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 160 }} />
                     <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                       /day

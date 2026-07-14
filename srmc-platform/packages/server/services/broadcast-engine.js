@@ -15,6 +15,7 @@ import {
   sleep,
 } from './broadcast-helpers.js';
 import { computeSimMode } from './sim-utils.js';
+import { getSetting } from './config-service.js';
 
 
 // Map of broadcastId -> { cancel: boolean, paused: boolean, _resume: () => void }
@@ -87,14 +88,9 @@ export async function startBroadcast(broadcastId) {
   const startedAt = new Date().toISOString();
   db.prepare("UPDATE broadcasts SET status = 'sending', started_at = ? WHERE id = ?").run(startedAt, broadcastId);
 
-  // ── Read global settings once at the start ────────────────────────────
-  const settingsRows = db.prepare(
-    "SELECT key, value FROM settings WHERE key IN ('broadcasts_globally_paused', 'max_broadcast_duration_minutes', 'turbo_batch_size')"
-  ).all();
-  const settingsMap = {};
-  for (const r of settingsRows) settingsMap[r.key] = r.value;
-  const maxDurationMin = parseInt(settingsMap['max_broadcast_duration_minutes']) || 0;
-  const TURBO_BATCH = parseInt(settingsMap['turbo_batch_size']) || 5;
+  // ── Read global settings from DB (defaults come from config-service) ──
+  const maxDurationMin = parseInt(getSetting('max_broadcast_duration_minutes'), 10) || 0;
+  const TURBO_BATCH = parseInt(getSetting('turbo_batch_size'), 10) || 10;
   const startedMs = Date.parse(startedAt);
 
   let sent = 0;

@@ -12,9 +12,9 @@
 import { createServer } from 'http';
 import { initWss } from '@srmc/server/ws.js';
 import { startPoller } from '@srmc/server/gateway-poller.js';
-import { startNgrok, startNgrokAutoRetry, hasAuthtoken } from '@srmc/server/ngrok-tunnel.js';
+import { startNgrok, startNgrokAutoRetry, hasAuthtoken, getNgrokUrl } from '@srmc/server/ngrok-tunnel.js';
 import { flushDb } from '@srmc/server/db.js';
-import app, { HOST, PORT, NGROK_URL, NGROK_AUTHTOKEN } from '@srmc/server/app.js';
+import app, { HOST, PORT } from '@srmc/server/app.js';
 
 const server = createServer(app);
 
@@ -24,8 +24,11 @@ initWss(server);
 server.listen(PORT, HOST, async () => {
   console.log(`[server] SMS Platform running on http://${HOST}:${PORT}`);
 
-  if (NGROK_URL) {
-    console.log(`[server] Ngrok webhook URL: ${NGROK_URL}/api/webhook/inbound`);
+  // Read ngrok config from database settings (configured via Settings → Webhooks & API)
+  const ngrokUrl = getNgrokUrl();
+
+  if (ngrokUrl) {
+    console.log(`[server] Ngrok webhook URL: ${ngrokUrl}/api/webhook/inbound`);
   } else if (hasAuthtoken()) {
     console.log('[ngrok] Auto-starting this device\'s own tunnel…');
     try {
