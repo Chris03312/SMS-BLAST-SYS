@@ -126,7 +126,14 @@ public class GatewayHttpServer {
                 }
             }
 
-            // Authenticate
+            // Route: /health is public (no auth required) so the server can
+            // detect the device UUID when the admin adds this gateway.
+            if ("GET".equals(method) && "/health".equals(path)) {
+                handleHealth(client);
+                return;
+            }
+
+            // Authenticate — only /send (which sends SMS) needs auth
             if (!authenticate(authHeader)) {
                 sendResponse(client, 401, "{\"error\":\"Unauthorized\"}");
                 return;
@@ -141,9 +148,7 @@ public class GatewayHttpServer {
             }
 
             // Route
-            if ("GET".equals(method) && "/health".equals(path)) {
-                handleHealth(client);
-            } else if ("POST".equals(method) && "/send".equals(path)) {
+            if ("POST".equals(method) && "/send".equals(path)) {
                 handleSend(client, body);
             } else {
                 sendResponse(client, 404, "{\"error\":\"Not found\"}");
@@ -177,6 +182,17 @@ public class GatewayHttpServer {
         json.put("device", android.os.Build.MODEL);
         json.put("ip", localIp);
         json.put("port", port);
+
+        // Return the persistent device UUID so the server can match it when
+        // the admin adds this gateway via the web panel. The server pings
+        // /health, sees the device_id, and uses it as the gateway ID — making
+        // the heartbeat/online calls work automatically.
+        SharedPreferences prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE);
+        String deviceId = prefs.getString("device_id", "");
+        if (!deviceId.isEmpty()) {
+            json.put("device_id", deviceId);
+        }
+
         sendResponse(client, 200, json.toString());
     }
 

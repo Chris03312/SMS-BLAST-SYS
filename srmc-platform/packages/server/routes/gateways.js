@@ -68,7 +68,7 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { name, url, token, sim_carrier, number, number2 } = req.body;
     if (!name || !url) {
@@ -77,7 +77,43 @@ router.post('/', (req, res) => {
 
     const normalizedToken = token ? token.toLowerCase() : null;
 
-    const id = uuidv4();
+    // Try to detect the Lite app's persistent device UUID by pinging /health.
+    // If found, use that UUID as the gateway ID so the Lite app's heartbeat
+    // and online calls will match automatically (no manual ID sync needed).
+    let deviceId = null;
+    try {
+      const baseUrl = url.replace(/\/+$/, '');
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const healthRes = await fetch(`${baseUrl}/health`, {
+        headers: {
+          ...(normalizedToken ? { Authorization: `Bearer ${normalizedToken}` } : {}),
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (healthRes.ok) {
+        const healthData = await healthRes.json();
+        if (healthData.device_id) {
+          deviceId = healthData.device_id;
+        }
+      }
+    } catch (e) {
+      // Health check failed (offline, timeout, unreachable) —
+      // fall back to random UUID. The Lite app won't match via
+      // heartbeat, but the admin can still use PUSH mode.
+    }
+
+    // If we detected a device ID, check it's not already registered
+    if (deviceId) {
+      const existing = db.prepare('SELECT id FROM gateways WHERE id = ?').get(deviceId);
+      if (existing) {
+        return fail(res, 'This gateway device is already registered. Find it in your gateway list.', 409);
+      }
+    }
+
+    const id = deviceId || uuidv4();
+
     db.prepare('INSERT INTO gateways (id, name, url, token, sim_carrier, number, number2, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, name, url, normalizedToken, sim_carrier || null, number || null, number2 || null, req.user.id);
 

@@ -1,0 +1,111 @@
+═══════════════════════════════════════════════════════════════════
+  EXPLANATION: Lite App "Add Gateway" Error
+═══════════════════════════════════════════════════════════════════
+
+WHAT HAPPENS WHEN YOU PRESS "REGISTER WEBHOOK" IN THE LITE APP
+──────────────────────────────────────────────────────────────────
+
+1. You entered a server URL (e.g., http://192.168.1.100:3001)
+2. You clicked "Register Webhook"
+3. The app sent a request to: POST /api/auth/gateway/online
+4. The server checked its database and didn't find a matching gateway
+5. The server replied: "Gateway not found — add it in Admin > Gateways first"
+
+WHY THE ERROR SAYS "ADMIN > GATEWAYS"
+──────────────────────────────────────────────────────────────────
+
+The Lite app sends a randomly-generated device ID (a UUID like
+"a1b2c3d4-...") as the "userId" to the server. The server's
+gateway-online function looks for an EXISTING record in the
+`gateways` database table where `id = (that random UUID)`.
+
+If no record matches, it refuses the connection and tells you
+to add the gateway first — and the error text says "Admin >
+Gateways" because the server only checks the `gateways` DB table,
+it doesn't track whether the user is an admin vs. an agent.
+
+THE KEY PROBLEM
+──────────────────────────────────────────────────────────────────
+
+The gateway record must PRE-EXIST in the database before the Lite
+app can connect. The Lite app generates its own random device ID,
+but the server-generated gateway ID (when you add it via the web
+panel) will be a DIFFERENT random ID. They will NEVER match.
+
+So the flow is backwards — the app phone can't self-register;
+it can only connect to a gateway record that was already created.
+
+THERE ARE TWO SEPARATE GATEWAY FLOWS IN THE SYSTEM
+──────────────────────────────────────────────────────────────────
+
+FLOW A — "PUSH" mode (what the Lite app SHOULD do):
+  - The phone runs an HTTP server (shown as "Gateway Endpoints")
+  - The server pushes SMS directly to the phone's IP:port
+  - This doesn't need any gateway record in the DB
+  - You can send SMS just by keeping the Lite app running
+
+FLOW B — "PULL" mode (what requires a gateway record):
+  - The phone POLLS the central server for queued messages
+  - This requires the phone to authenticate via heartbeat/online
+  - The gateway must be pre-added to the DB (via web panel)
+  - The device ID on the phone must MATCH the DB gateway ID
+
+WHY THE FULL APP (SRMCGateway) WORKS DIFFERENTLY
+──────────────────────────────────────────────────────────────────
+
+The full SRMCGateway app has a LoginActivity that asks for a
+USERNAME and PASSWORD. It calls:
+
+  POST /api/auth/gateway/login  (authenticates against users table)
+
+This login succeeds independently of the gateways table. After
+login, the full app also sends heartbeats, but it uses the
+LOGGED-IN USERNAME as the userId — which still requires the
+gateway record to exist with matching ID. The full app works
+because its flow expects the admin to have pre-added the gateway
+using the same username as the gateway ID.
+
+WHAT "ADD GATEWAY" MEANS IN THE WEB APP
+──────────────────────────────────────────────────────────────────
+
+Both Admin users and Agent users can manage gateways, but:
+  - Admin users see ALL gateways in the system
+  - Agent users only see gateways they own (assigned to them)
+
+The error message says "Admin > Gateways" as a generic instruction,
+but if you're an Agent with the right permissions, you can also
+add gateways through the web app and it will work the same way.
+
+WHY THE LITE APP FAILS SPECIFICALLY
+──────────────────────────────────────────────────────────────────
+
+The Lite app was simplified — it REMOVED the login screen
+(LoginActivity). So instead of authenticating with a username
++ password (which the server can look up in the users table),
+it just generates a random UUID and tries to use that directly.
+
+The server's gateway-online and gateway-heartbeat functions
+are designed to ONLY update existing gateways, never create
+new ones. They explicitly check:
+  
+  existing = db.get("SELECT id FROM gateways WHERE id = ?", gwId)
+  if (!existing) return false  ← fails here
+
+SUMMARY
+──────────────────────────────────────────────────────────────────
+
+  • The Lite app cannot self-register — the gateway must be
+    pre-added to the database via the web admin panel.
+  
+  • The Lite app uses a random UUID, but the web panel generates
+    a different random UUID — they never match.
+  
+  • For the Lite app to work in PULL mode, it needs either:
+    (a) A login step (like the full app) to authenticate via
+        the users table instead of the gateways table.
+    (b) A way to use a known device ID that matches what was
+        entered in the web panel.
+  
+  • In PUSH mode, the Lite app works fine without registration
+    — just start the HTTP server and the server can push SMS
+    directly to the phone's IP shown on screen.
