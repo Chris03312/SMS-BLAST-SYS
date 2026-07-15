@@ -7,6 +7,30 @@ import { authMiddleware } from '../middleware/auth.js';
 import { checkGatewayNow } from '../services/gateway-poller.js';
 import { getTimezone } from '../services/timezone.js';
 
+/** Save a snapshot of the gateway's current numbers to the history table.
+ *  If the exact same number combination already exists, just bump its
+ *  changed_at timestamp so it moves to the top of the history list. */
+function saveNumberSnapshot(gatewayId, gatewayName, number, number2, simCarrier, sim2Carrier, agentName) {
+  // Check if this exact number combo already exists for this gateway
+  const existing = db.prepare(
+    `SELECT id FROM gateway_numbers
+     WHERE gateway_id = ? AND COALESCE(number,'') = COALESCE(?,'') 
+       AND COALESCE(number2,'') = COALESCE(?,'')
+       AND COALESCE(sim_carrier,'') = COALESCE(?,'')
+       AND COALESCE(sim2_carrier,'') = COALESCE(?,'')`
+  ).get(gatewayId, number || '', number2 || '', simCarrier || '', sim2Carrier || '');
+
+  if (existing) {
+    // Bump the timestamp — same numbers, just updated
+    db.prepare('UPDATE gateway_numbers SET changed_at = datetime(\'now\') WHERE id = ?').run(existing.id);
+  } else {
+    const id = uuidv4();
+    db.prepare(
+      'INSERT INTO gateway_numbers (id, gateway_id, gateway_name, agent_name, number, number2, sim_carrier, sim2_carrier) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, gatewayId, gatewayName || '', agentName || '', number || null, number2 || null, simCarrier || null, sim2Carrier || null);
+  }
+}
+
 const router = Router();
 
 function ok(res, data, status = 200) {
@@ -117,6 +141,9 @@ router.post('/', async (req, res) => {
     db.prepare('INSERT INTO gateways (id, name, url, token, sim_carrier, number, number2, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, name, url, normalizedToken, sim_carrier || null, number || null, number2 || null, req.user.id);
 
+    // Save initial numbers to history (include the agent name from the logged-in user)
+    saveNumberSnapshot(id, name, number, number2, sim_carrier, null, req.user.display_name || '');
+
     const gateway = db.prepare('SELECT * FROM gateways WHERE id = ?').get(id);
     return ok(res, { gateway }, 201);
   } catch (e) {
@@ -138,15 +165,36 @@ router.put('/:id', (req, res) => {
 
     const normalizedToken = token !== undefined ? (token || '').toLowerCase() : gateway.token;
 
+    // Before updating, save the OLD numbers to history if they changed
+    const finalNumber = number !== undefined ? number : gateway.number;
+    const finalNumber2 = number2 !== undefined ? number2 : gateway.number2;
+    const finalSimCarrier = sim_carrier !== undefined ? sim_carrier : gateway.sim_carrier;
+    const finalSim2Carrier = sim2_carrier !== undefined ? sim2_carrier : gateway.sim2_carrier;
+    const finalName = name ?? gateway.name;
+
+    // Only save snapshot if numbers actually changed
+    const numbersChanged =
+      String(finalNumber || '') !== String(gateway.number || '') ||
+      String(finalNumber2 || '') !== String(gateway.number2 || '');
+    if (numbersChanged) {
+      // Look up the owner's display name for the snapshot
+      let agentName = '';
+      if (gateway.owner_id) {
+        const owner = db.prepare('SELECT display_name FROM users WHERE id = ?').get(gateway.owner_id);
+        agentName = owner?.display_name || '';
+      }
+      saveNumberSnapshot(gateway.id, gateway.name, gateway.number, gateway.number2, gateway.sim_carrier, gateway.sim2_carrier, agentName);
+    }
+
     db.prepare('UPDATE gateways SET name = ?, url = ?, token = ?, sim_carrier = ?, sim2_carrier = ?, number = ?, number2 = ?, active = ? WHERE id = ?')
       .run(
-        name ?? gateway.name,
+        finalName,
         url ?? gateway.url,
         normalizedToken,
-        sim_carrier !== undefined ? sim_carrier : gateway.sim_carrier,
-        sim2_carrier !== undefined ? sim2_carrier : gateway.sim2_carrier,
-        number !== undefined ? number : gateway.number,
-        number2 !== undefined ? number2 : gateway.number2,
+        finalSimCarrier,
+        finalSim2Carrier,
+        finalNumber,
+        finalNumber2,
         active !== undefined ? (active ? 1 : 0) : gateway.active,
         req.params.id
       );
@@ -222,6 +270,66 @@ router.delete('/:id/log', async (req, res) => {
     return ok(res, { success: true });
   } catch (e) {
     console.error('[gateways] delete log error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Get gateway number history ────────────────────────────────────────────
+// router.use(authMiddleware) already protects all routes below it
+router.get('/numbers', (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    const offset = parseInt(req.query.offset) || 0;
+
+    let whereClause = '';
+    const params = [];
+
+    // Agents only see histories of gateways they own
+    if (req.user.role === 'agent') {
+      whereClause = 'WHERE gn.gateway_id IN (SELECT id FROM gateways WHERE owner_id = ?)';
+      params.push(req.user.id);
+    }
+
+    if (search.trim()) {
+      const term = '%' + search.trim() + '%';
+      if (whereClause) {
+        whereClause += ' AND (gn.gateway_name LIKE ? OR gn.number LIKE ? OR gn.number2 LIKE ? OR gn.agent_name LIKE ?)';
+      } else {
+        whereClause = 'WHERE (gn.gateway_name LIKE ? OR gn.number LIKE ? OR gn.number2 LIKE ? OR gn.agent_name LIKE ?)';
+      }
+      params.push(term, term, term, term);
+    }
+
+    const rows = db.prepare(
+      `SELECT gn.* FROM gateway_numbers gn ${whereClause} ORDER BY gn.changed_at DESC LIMIT ? OFFSET ?`
+    ).all(...params, limit, offset);
+
+    const count = db.prepare(
+      `SELECT COUNT(*) as c FROM gateway_numbers gn ${whereClause}`
+    ).get(...params);
+
+    return ok(res, { numbers: fixTimestamps(rows), total: count ? count.c : 0 });
+  } catch (e) {
+    console.error('[gateways] numbers error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Delete a gateway number history record (admin only) ────────────────
+router.delete('/numbers/:id', (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return fail(res, 'Forbidden — admin access required', 403);
+    }
+    const record = db.prepare('SELECT id FROM gateway_numbers WHERE id = ?').get(req.params.id);
+    if (!record) {
+      return fail(res, 'History record not found', 404);
+    }
+    db.prepare('DELETE FROM gateway_numbers WHERE id = ?').run(req.params.id);
+    return ok(res, { success: true });
+  } catch (e) {
+    console.error('[gateways] DELETE numbers error:', e);
     return fail(res, 'Internal server error', 500);
   }
 });

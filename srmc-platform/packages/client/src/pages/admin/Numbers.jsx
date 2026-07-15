@@ -9,6 +9,7 @@ import { useWS } from '../../lib/ws.js';
 import { formatTime } from '../../lib/format.js';
 import { exportGatewaysXlsx } from '../../lib/export.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import NumbersHistory from './NumbersHistory.jsx';
 
 export default function Numbers() {
   const [gateways, setGateways] = useState([]);
@@ -22,6 +23,7 @@ export default function Numbers() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [search, setSearch] = useState('');
   const { toast } = useToast();
+  const [tab, setTab] = useState('gateways');
 
   useEffect(() => { load(); }, []);
 
@@ -142,6 +144,34 @@ export default function Numbers() {
         </div>
       </div>
 
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--line)', paddingBottom: 0 }}>
+        {['gateways', 'history'].map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: '8px 18px',
+              fontSize: 13,
+              fontWeight: tab === t ? 600 : 500,
+              color: tab === t ? 'var(--ink-1)' : 'var(--ink-3)',
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--ink-1)' : '2px solid transparent',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              transition: 'all 0.12s',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'gateways' ? 'Gateways' : 'Number History'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'history' && <NumbersHistory />}
+
+      {tab === 'gateways' && (
       <div className="card">
         {/* Search bar */}
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -226,6 +256,7 @@ export default function Numbers() {
           <span>{filtered.length} of {gateways.length} gateways</span>
         </div>
       </div>
+      )}
 
       {confirmDelete && (
         <ConfirmModal

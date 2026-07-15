@@ -23,6 +23,7 @@ const TIMESTAMP_FIELDS = new Set([
   'last_poll',
   'expires_at',
   'read_at',
+  'changed_at',
 ]);
 
 /**

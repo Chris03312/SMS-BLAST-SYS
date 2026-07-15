@@ -355,6 +355,18 @@ export function initDb() {
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS gateway_numbers (
+      id           TEXT PRIMARY KEY,
+      gateway_id   TEXT NOT NULL,
+      gateway_name TEXT NOT NULL DEFAULT '',
+      agent_name   TEXT DEFAULT '',
+      number       TEXT,
+      number2      TEXT,
+      sim_carrier  TEXT,
+      sim2_carrier TEXT,
+      changed_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS activity (
       id         TEXT PRIMARY KEY,
       user_id    TEXT,
@@ -411,6 +423,9 @@ export function initDb() {
 
     -- gateway_tokens: per-gateway cleanup on logout
     CREATE INDEX IF NOT EXISTS idx_gateway_tokens_gateway_id ON gateway_tokens(gateway_id);
+    -- gateway_numbers: search by gateway_id
+    CREATE INDEX IF NOT EXISTS idx_gateway_numbers_gateway_id ON gateway_numbers(gateway_id);
+    CREATE INDEX IF NOT EXISTS idx_gateway_numbers_changed_at ON gateway_numbers(changed_at);
   `);
 
   // Seed default settings only on a fresh database. No demo/dummy accounts.
@@ -505,6 +520,8 @@ export function initDb() {
     "ALTER TABLE agent_contacts ADD COLUMN dpd_group TEXT DEFAULT ''",
     // Category label above DPD (e.g., "PRIORITY", "INSUFFICIENT")
     "ALTER TABLE agent_contacts ADD COLUMN category TEXT DEFAULT ''",
+    // Agent/owner name in gateway number history
+    "ALTER TABLE gateway_numbers ADD COLUMN agent_name TEXT DEFAULT ''",
   ];
   for (const sql of migrations) {
     try {

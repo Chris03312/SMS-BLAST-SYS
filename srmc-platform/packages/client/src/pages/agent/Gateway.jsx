@@ -4,6 +4,7 @@ import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
+import GatewayNumbers from './GatewayNumbers.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber } from '../../lib/format.js';
@@ -434,8 +435,15 @@ function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim, onRemoveClick })
   );
 }
 
+// ── Tabs ────────────────────────────────────────────────────────────────────
+const TABS = [
+  { key: 'devices', label: 'Devices' },
+  { key: 'numbers', label: 'Number History' },
+];
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function Gateway() {
+  const [tab, setTab] = useState('devices');
   const [gateways, setGateways] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -583,6 +591,31 @@ export default function Gateway() {
         </div>
       </div>
 
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--line)', paddingBottom: 0 }}>
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            style={{
+              padding: '8px 18px',
+              fontSize: 13,
+              fontWeight: tab === t.key ? 600 : 500,
+              color: tab === t.key ? 'var(--ink-1)' : 'var(--ink-3)',
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t.key ? '2px solid var(--ink-1)' : '2px solid transparent',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              transition: 'all 0.12s',
+              marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* This PC's server address — paste into the Android gateway app */}
       {serverInfo && serverInfo.primary_url && (
         <div className="card" style={{ padding: 16, marginBottom: 20, border: '1px solid var(--brand-1)' }}>
@@ -663,6 +696,12 @@ export default function Gateway() {
         ))}
       </div>
 
+      {/* Tab: Number History */}
+      {tab === 'numbers' && <GatewayNumbers />}
+
+      {/* Tab: Devices */}
+      {tab === 'devices' && (<>
+
       {/* Add / Edit form */}
       {showForm && (
         <div style={{ marginBottom: 20 }}>
@@ -725,6 +764,7 @@ export default function Gateway() {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+      </>)} {/* end tab=devices */}
     </AgentShell>
   );
 }

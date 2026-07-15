@@ -29,10 +29,27 @@ const running = new Map();
 export function markContactAsUsed(toNumber, agentId, broadcastId) {
   if (!toNumber || !agentId) return;
   try {
+    // Generate phone number format variants to match against stored contacts.
+    // Contacts store numbers as-is from Excel (e.g. "09918933458;"), but
+    // the broadcast engine normalizes to E.164 (+63918933458). We try
+    // both formats AND strip semicolons so the "used" marking works.
+    const variants = [toNumber];
+    const clean = toNumber.replace(/[\s\-().;]/g, '');
+    if (clean.startsWith('+63')) {
+      variants.push('0' + clean.slice(3));
+    }
+    if (clean.startsWith('0')) {
+      variants.push('+63' + clean.slice(1));
+    }
+
+    const unique = [...new Set(variants)];
+    const placeholders = unique.map(() => '?').join(',');
+
+    // Also strip semicolons from stored phone_number so "09918933458;" matches variant "09918933458"
     db.prepare(
       `UPDATE agent_contacts SET used = 1, broadcast_id = ?
-       WHERE agent_id = ? AND phone_number = ? AND used = 0`
-    ).run(broadcastId || null, agentId, toNumber);
+       WHERE agent_id = ? AND REPLACE(phone_number, ';', '') IN (${placeholders}) AND used = 0`
+    ).run(broadcastId || null, agentId, ...unique);
   } catch (_) {
     // Silently ignore — agent_contacts might not exist or table not set up
   }

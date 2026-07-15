@@ -24,13 +24,11 @@ initWss(server);
 server.listen(PORT, HOST, async () => {
   console.log(`[server] SMS Platform running on http://${HOST}:${PORT}`);
 
-  // Read ngrok config from database settings (configured via Settings → Webhooks & API)
-  const ngrokUrl = getNgrokUrl();
-
-  if (ngrokUrl) {
-    console.log(`[server] Ngrok webhook URL: ${ngrokUrl}/api/webhook/inbound`);
-  } else if (hasAuthtoken()) {
-    console.log('[ngrok] Auto-starting this device\'s own tunnel…');
+  // Auto-start ngrok tunnel if an auth token is configured.
+  // Always attempts to start on boot regardless of saved URL,
+  // because the saved URL may be stale from a previous session.
+  if (hasAuthtoken()) {
+    console.log('[ngrok] Auto-starting tunnel…');
     try {
       const tunnel = await startNgrok(PORT);
       console.log(`[ngrok] ✅ Public URL: ${tunnel.url}`);
@@ -40,6 +38,10 @@ server.listen(PORT, HOST, async () => {
       startNgrokAutoRetry(PORT);
     }
   } else {
+    const ngrokUrl = getNgrokUrl();
+    if (ngrokUrl) {
+      console.log(`[server] Previously saved ngrok URL (tunnel not running): ${ngrokUrl}`);
+    }
     console.log('[ngrok] No auth token — add one in Settings to enable inbound tunneling');
   }
 

@@ -159,3 +159,33 @@ export async function exportActivityXlsx(filters = {}) {
   downloadFile(blob, `sms-activity-log-${dateStr}.xlsx`);
 }
 
+/**
+ * Build and download an XLSX export of gateway number history.
+ *
+ * @param {Array} numbers - Array of gateway number history records
+ */
+export function exportNumbersHistoryXlsx(numbers) {
+  if (!numbers?.length) return;
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const wb = XLSX.utils.book_new();
+
+  const rows = numbers.map(n => ({
+    Gateway: n.gateway_name || '',
+    Agent: n.agent_name || '',
+    'SIM 1 Number': n.number || '',
+    'SIM 2 Number': n.number2 || '',
+    'SIM 1 Carrier': n.sim_carrier || '',
+    'SIM 2 Carrier': n.sim2_carrier || '',
+    'Changed At': n.changed_at || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Number History');
+
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  downloadFile(blob, `gateway-number-history-${dateStr}.xlsx`);
+}
+
+

@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../database/db.js';
 import { authMiddleware, adminOnly } from '../middleware/auth.js';
-import { normalizePhone } from '../utils/phone.js';
 
 const router = Router();
 
@@ -56,16 +55,16 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
 
       const nums = Array.isArray(agent.numbers) ? agent.numbers : [];
       for (const raw of nums) {
-        const cleaned = String(raw).trim();
-        // Normalize phone number to E.164 so it matches broadcast format
-        const normalized = normalizePhone(cleaned);
-        const digitsOnly = normalized.replace(/[\s\-().;]/g, '');
-        if (digitsOnly.length >= 7 && digitsOnly.length <= 16 && /^\+?\d+$/.test(digitsOnly)) {
+        const rawStr = String(raw).trim();
+        const cleaned = rawStr.replace(/[\s\-().;]/g, '');
+        // Store the raw number as-is from the Excel file (with semicolons).
+        // Normalization to E.164 happens later in the broadcast engine.
+        if (cleaned.length >= 7 && cleaned.length <= 16 && /^\+?\d+$/.test(cleaned)) {
           contacts.push({
             id: uuidv4(),
             agentId,
             batchId,
-            phoneNumber: normalized,
+            phoneNumber: rawStr,
             dpdGroup,
             category,
           });
@@ -86,10 +85,11 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
     const existingByAgent = {};
     for (const aid of agentIds) {
       const rows = db.prepare('SELECT phone_number FROM agent_contacts WHERE agent_id = ?').all(aid);
-      existingByAgent[aid] = new Set(rows.map(r => r.phone_number));
+      // Strip semicolons from existing values so "09918933458" matches new "09918933458;"
+      existingByAgent[aid] = new Set(rows.map(r => r.phone_number.replace(/;/g, '')));
     }
     const beforeDedup = contacts.length;
-    const afterDedup = contacts.filter(c => !existingByAgent[c.agentId]?.has(c.phoneNumber));
+    const afterDedup = contacts.filter(c => !existingByAgent[c.agentId]?.has(c.phoneNumber.replace(/;/g, '')));
     const skippedCount = beforeDedup - afterDedup.length;
 
     if (afterDedup.length === 0) {
