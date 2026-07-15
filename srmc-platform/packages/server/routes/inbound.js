@@ -206,6 +206,16 @@ function handleInboundWebhook(req, res) {
     `).get(finalSender);
     if (senderMsg) agentId = senderMsg.agent_id;
 
+    // If no broadcast was sent to this number, try linking to the gateway's
+    // owner instead. This ensures Lite app inbound messages are visible to
+    // the agent who added the gateway, even if no broadcast was sent yet.
+    if (!agentId && gatewayId) {
+      const gw = db.prepare('SELECT owner_id FROM gateways WHERE id = ?').get(gatewayId);
+      if (gw && gw.owner_id) {
+        agentId = gw.owner_id;
+      }
+    }
+
     const simSlot = parseInt(sim_slot) || 0;
 
     db.prepare('INSERT INTO inbound (id, from_number, body, flag, agent_id, gateway_id, sim_slot) VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -279,6 +289,14 @@ router.post('/webhook/inbound/:gatewayId', webhookLimiter, (req, res) => {
       ORDER BY m.created_at DESC LIMIT 1
     `).get(finalSender);
     if (senderMsg) agentId = senderMsg.agent_id;
+
+    // If no broadcast was sent to this number, fall back to the gateway's owner
+    if (!agentId && gatewayId) {
+      const gw = db.prepare('SELECT owner_id FROM gateways WHERE id = ?').get(gatewayId);
+      if (gw && gw.owner_id) {
+        agentId = gw.owner_id;
+      }
+    }
 
     const simSlot = parseInt(sim_slot) || 0;
 

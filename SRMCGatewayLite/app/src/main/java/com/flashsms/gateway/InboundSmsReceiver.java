@@ -112,9 +112,12 @@ public class InboundSmsReceiver extends BroadcastReceiver {
                 // No token — use unauthenticated format (server skips auth validation)
                 payload.put("from",    sender);
                 payload.put("body",    message);
-                payload.put("gateway_id", "");
+                // Send the device ID as gateway_id so the server can link the
+                // inbound message to the gateway's owner (agent who added it).
+                String deviceId = prefs.getString("device_id", "");
+                payload.put("gateway_id", deviceId.isEmpty() ? "" : deviceId);
                 if (simSlot >= 1) payload.put("sim_slot", simSlot);
-                Log.d(TAG, "No inbound token — using unauthenticated format");
+                Log.d(TAG, "No inbound token — using unauthenticated format with gateway_id=" + (deviceId.isEmpty() ? "" : deviceId.substring(0, 8) + "…"));
             } else {
                 // Token available — use authenticated format
                 payload.put("sender",  sender);
