@@ -296,6 +296,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void registerWebhook() {
+        // Save the EditText to prefs first so the URL is available immediately,
+        // even if the user hasn't triggered a focus-change save yet.
+        saveServerUrl();
+
         String serverUrl = prefs.getString("server_url", "");
         if (serverUrl.isEmpty()) {
             tvWebhookStatus.setText("No server configured");

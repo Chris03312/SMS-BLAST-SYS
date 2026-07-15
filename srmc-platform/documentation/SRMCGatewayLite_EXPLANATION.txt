@@ -1,111 +1,223 @@
 ═══════════════════════════════════════════════════════════════════
-  EXPLANATION: Lite App "Add Gateway" Error
+  INBOUND WEBHOOK — HOW IT WORKS FOR THE LITE APP
 ═══════════════════════════════════════════════════════════════════
 
-WHAT HAPPENS WHEN YOU PRESS "REGISTER WEBHOOK" IN THE LITE APP
+
+1. WHAT IS THE INBOUND WEBHOOK?
 ──────────────────────────────────────────────────────────────────
 
-1. You entered a server URL (e.g., http://192.168.1.100:3001)
-2. You clicked "Register Webhook"
-3. The app sent a request to: POST /api/auth/gateway/online
-4. The server checked its database and didn't find a matching gateway
-5. The server replied: "Gateway not found — add it in Admin > Gateways first"
+When someone replies to an SMS sent through your gateway, that reply
+comes back to the phone as an inbound SMS. The Lite app needs to
+forward that reply to the central server so agents can see it in
+the dashboard.
 
-WHY THE ERROR SAYS "ADMIN > GATEWAYS"
+The **inbound webhook URL** is the server's endpoint where the phone
+posts these forwarded messages.
+
+
+2. THE FULL FLOW — STEP BY STEP
 ──────────────────────────────────────────────────────────────────
 
-The Lite app sends a randomly-generated device ID (a UUID like
-"a1b2c3d4-...") as the "userId" to the server. The server's
-gateway-online function looks for an EXISTING record in the
-`gateways` database table where `id = (that random UUID)`.
+  ┌──────────────────────────────────────────────────────────────┐
+  │  STEP 1: GET THE WEBHOOK URL FROM THE SERVER                │
+  └──────────────────────────────────────────────────────────────┘
 
-If no record matches, it refuses the connection and tells you
-to add the gateway first — and the error text says "Admin >
-Gateways" because the server only checks the `gateways` DB table,
-it doesn't track whether the user is an admin vs. an agent.
+  You press "Register Webhook" in the Lite app. The app does:
 
-THE KEY PROBLEM
+    A. POST /api/auth/gateway/online
+       → Sends the phone's persistent device_id
+       → Server checks: "Do I have a gateway record with this ID?"
+       → If YES: marks it online ✓
+       → If NO:  returns "Gateway not found" ✗
+
+    B. POST /api/auth/gateway/heartbeat
+       → Server responds with:
+         { inbound_webhook_url: "https://.../api/webhook/inbound" }
+       → Phone SAVES this URL into SharedPreferences
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  STEP 2: INBOUND SMS ARRIVES                                │
+  └──────────────────────────────────────────────────────────────┘
+
+  Android broadcasts "android.provider.Telephony.SMS_RECEIVED"
+  → InboundSmsReceiver intercepts it
+  → Reads stored inbound_webhook_url from SharedPreferences
+  → Falls back to http://{server-ip}:{port}/api/inbound if empty
+  → POSTs to server:
+    { from: "+639xx...", body: "Reply text", sim_slot: 1 }
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  STEP 3: SERVER HANDLES THE MESSAGE                         │
+  └──────────────────────────────────────────────────────────────┘
+
+  Server receives the POST at /api/webhook/inbound:
+  → Auto-flags: "STOP" = opt-out, "YES" = confirmed, else needs-reply
+  → Looks up which agent sent the most recent broadcast to this number
+  → Stores in inbound table
+  → Broadcasts via WebSocket to agent dashboard (real-time)
+
+
+3. THE CHICKEN-AND-EGG PROBLEM
 ──────────────────────────────────────────────────────────────────
 
-The gateway record must PRE-EXIST in the database before the Lite
-app can connect. The Lite app generates its own random device ID,
-but the server-generated gateway ID (when you add it via the web
-panel) will be a DIFFERENT random ID. They will NEVER match.
+For Step 1 to succeed, the server needs a gateway record in the
+database with an ID that EXACTLY matches the phone's device_id.
 
-So the flow is backwards — the app phone can't self-register;
-it can only connect to a gateway record that was already created.
+  ┌────────────────────────────────────────────────────────────┐
+  │  Who generates the ID?                                     │
+  ├────────────────────────────────────────────────────────────┤
+  │  LITE APP:                                                 │
+  │    Generates a random UUID at startup:                    │
+  │    "a1b2c3d4-e5f6-7890-abcd-ef1234567890"                │
+  │    Persists it in SharedPreferences as "device_id"        │
+  │    Uses this as userId in all requests                    │
+  │                                                            │
+  │  WEB PANEL (when adding gateway):                         │
+  │    Generates a DIFFERENT random UUID:                     │
+  │    "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"                │
+  │    Stores it as the gateway.id in the database            │
+  └────────────────────────────────────────────────────────────┘
 
-THERE ARE TWO SEPARATE GATEWAY FLOWS IN THE SYSTEM
+  Result: The Lite app sends "a1b2c3d4-..." but the server has
+  "xxxxxxxx-..." stored. They NEVER match.
+
+  Server says: "Gateway not found"
+  → No webhook URL is returned
+  → Inbound SMS cannot be forwarded
+
+
+4. HOW THE /health AUTO-DETECTION FIXES THIS
 ──────────────────────────────────────────────────────────────────
 
-FLOW A — "PUSH" mode (what the Lite app SHOULD do):
-  - The phone runs an HTTP server (shown as "Gateway Endpoints")
-  - The server pushes SMS directly to the phone's IP:port
-  - This doesn't need any gateway record in the DB
-  - You can send SMS just by keeping the Lite app running
+The Lite app runs an embedded HTTP server (GatewayHttpServer).
+One of its endpoints is:
 
-FLOW B — "PULL" mode (what requires a gateway record):
-  - The phone POLLS the central server for queued messages
-  - This requires the phone to authenticate via heartbeat/online
-  - The gateway must be pre-added to the DB (via web panel)
-  - The device ID on the phone must MATCH the DB gateway ID
+  GET  /health   →  { "status": "ok", "device_id": "a1b2c3d4-...", ... }
 
-WHY THE FULL APP (SRMCGateway) WORKS DIFFERENTLY
+This /health endpoint returns the phone's persistent device_id.
+The fix works like this:
+
+  1. Start the Lite app
+     → HTTP server starts at port 8088
+     → /health now returns device_id
+
+  2. Add the gateway in the web panel
+     → Enter URL: http://192.168.1.5:8088
+     → Server pings /health BEFORE creating the gateway
+     → Server gets back the phone's device_id
+     → Server uses THAT device_id as the gateway ID
+     → Gateway created with MATCHING ID ✓
+
+  3. The Lite app's heartbeat fires (every 60 seconds)
+     → Sends the same device_id
+     → Server finds the gateway record (IDs MATCH)
+     → Returns inbound_webhook_url
+     → Webhook is registered! ✓
+
+  No manual Device ID entry needed — the server auto-detects it
+  via the /health endpoint.
+
+
+5. COMPARISON WITH THE MAIN SRMCGATEWAY APP
 ──────────────────────────────────────────────────────────────────
 
-The full SRMCGateway app has a LoginActivity that asks for a
-USERNAME and PASSWORD. It calls:
+  ┌────────────────────────────────────────────────────────────────┐
+  │  SRMCGateway (Main App):                                      │
+  │                                                               │
+  │  Has a login screen (LoginActivity)                           │
+  │  User logs in with USERNAME + PASSWORD                        │
+  │  Uses the LOGGED-IN USERNAME as the gateway identifier        │
+  │  Admin pre-creates gateway with matching username as ID       │
+  │                                                               │
+  │  Flow:                                                        │
+  │    Admin creates user "john"                                  │
+  │    Admin adds gateway with ID "john"                          │
+  │    Phone logs in as "john" → heartbeat uses "john" → match ✓ │
+  └────────────────────────────────────────────────────────────────┘
 
-  POST /api/auth/gateway/login  (authenticates against users table)
+  ┌────────────────────────────────────────────────────────────────┐
+  │  SRMCGatewayLite (Lite App):                                  │
+  │                                                               │
+  │  NO login screen (simplified)                                 │
+  │  Generates its own random device_id UUID                      │
+  │  Uses that UUID as the gateway identifier                     │
+  │  Server must detect this UUID via /health auto-detection      │
+  │                                                               │
+  │  Flow:                                                        │
+  │    Phone starts → generates device_id "abc..."                │
+  │    Web panel pings /health → gets "abc..."                    │
+  │    Gateway created with ID "abc..." → phone matches ✓        │
+  └────────────────────────────────────────────────────────────────┘
 
-This login succeeds independently of the gateways table. After
-login, the full app also sends heartbeats, but it uses the
-LOGGED-IN USERNAME as the userId — which still requires the
-gateway record to exist with matching ID. The full app works
-because its flow expects the admin to have pre-added the gateway
-using the same username as the gateway ID.
 
-WHAT "ADD GATEWAY" MEANS IN THE WEB APP
+6. PUSH MODE VS PULL MODE
 ──────────────────────────────────────────────────────────────────
 
-Both Admin users and Agent users can manage gateways, but:
-  - Admin users see ALL gateways in the system
-  - Agent users only see gateways they own (assigned to them)
+  ┌────────────────────────────────────────────────────────────────┐
+  │  PUSH MODE (NO gateway registration needed):                  │
+  │                                                               │
+  │  The phone runs an HTTP server                                │
+  │  The central server pushes SMS directly to the phone's IP     │
+  │  POST http://192.168.1.5:8088/send                            │
+  │  No gateway record in DB required                             │
+  │  Just start the Lite app and it works                         │
+  └────────────────────────────────────────────────────────────────┘
 
-The error message says "Admin > Gateways" as a generic instruction,
-but if you're an Agent with the right permissions, you can also
-add gateways through the web app and it will work the same way.
+  ┌────────────────────────────────────────────────────────────────┐
+  │  PULL MODE (gateway registration REQUIRED):                   │
+  │                                                               │
+  │  The phone POLLS the server for queued messages               │
+  │  Requires heartbeat/online to authenticate                    │
+  │  Gateway must exist in DB with matching device ID             │
+  │  Required for inbound SMS forwarding (webhook)                │
+  └────────────────────────────────────────────────────────────────┘
 
-WHY THE LITE APP FAILS SPECIFICALLY
+  If all you need is to SEND SMS, PUSH mode is sufficient —
+  no registration needed. If you need to RECEIVE replies,
+  you need PULL mode with a properly-registered gateway.
+
+
+7. KEY FILES
 ──────────────────────────────────────────────────────────────────
 
-The Lite app was simplified — it REMOVED the login screen
-(LoginActivity). So instead of authenticating with a username
-+ password (which the server can look up in the users table),
-it just generates a random UUID and tries to use that directly.
+  ANDROID:
+    MainActivity.java              → "Register Webhook" button logic
+    GatewayService.java            → Auto-heartbeat (every 60s)
+    GatewayHttpServer.java         → /health endpoint with device_id
+    InboundSmsReceiver.java        → Forwards inbound SMS to server
+    ServerConfig.java              → Server URL resolution
 
-The server's gateway-online and gateway-heartbeat functions
-are designed to ONLY update existing gateways, never create
-new ones. They explicitly check:
-  
-  existing = db.get("SELECT id FROM gateways WHERE id = ?", gwId)
-  if (!existing) return false  ← fails here
+  SERVER:
+    routes/gateway-auth.js         → /online, /heartbeat endpoints
+    routes/gateways.js             → Gateway CRUD + health check
+    routes/inbound.js              → Webhook handler
+    services/gateway-service.js    → Core gateway logic
+    services/ngrok-tunnel.js       → Public URL tunnel
 
-SUMMARY
+
+8. TROUBLESHOOTING
 ──────────────────────────────────────────────────────────────────
 
-  • The Lite app cannot self-register — the gateway must be
-    pre-added to the database via the web admin panel.
-  
-  • The Lite app uses a random UUID, but the web panel generates
-    a different random UUID — they never match.
-  
-  • For the Lite app to work in PULL mode, it needs either:
-    (a) A login step (like the full app) to authenticate via
-        the users table instead of the gateways table.
-    (b) A way to use a known device ID that matches what was
-        entered in the web panel.
-  
-  • In PUSH mode, the Lite app works fine without registration
-    — just start the HTTP server and the server can push SMS
-    directly to the phone's IP shown on screen.
+  ✗ "Gateway not found" when pressing Register Webhook
+    → The device_id doesn't match. Delete the gateway and
+      re-add it while the Lite app is running (so /health
+      auto-detection can work).
+
+  ✗ "No server configured" when pressing Register Webhook
+    → Enter the server URL in the Inbound Webhook section
+      (e.g., http://192.168.1.100:3001)
+
+  ✗ inbound_webhook_url is empty even though heartbeat succeeds
+    → ngrok is not configured. Go to Settings → Webhooks & API
+      on the server and configure ngrok or a public URL.
+
+  ✗ Heartbeat succeeds but inbound replies don't arrive
+    → Check that the Lite app has the RECEIVE_SMS permission
+    → Check that InboundSmsReceiver is registered in AndroidManifest
+    → Make sure the phone is not blocking SMS forwarding (battery
+      optimization, etc.)
+
+═══════════════════════════════════════════════════════════════════
+  END OF DOCUMENT
+═══════════════════════════════════════════════════════════════════
+
