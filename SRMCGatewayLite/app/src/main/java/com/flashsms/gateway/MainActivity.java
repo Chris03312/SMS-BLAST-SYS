@@ -376,13 +376,15 @@ public class MainActivity extends AppCompatActivity {
                     webhookUrl = resp.optString("inbound_webhook_url", "");
                 } catch (Exception ignored) {}
 
+                // Always store the webhook URL (even if empty) so InboundSmsReceiver
+                // can properly fall back to the LAN URL instead of using a stale URL.
+                prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
+
                 final boolean finalSuccess = code < 400;
                 final String msg;
                 if (finalSuccess) {
                     if (!webhookUrl.isEmpty()) {
                         msg = "\u2713 OK \u2014 " + webhookUrl;
-                        // Store the webhook URL for InboundSmsReceiver
-                        prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
                     } else {
                         msg = "\u2713 Registered (device: " + deviceId.substring(0, 8) + "\u2026)";
                     }

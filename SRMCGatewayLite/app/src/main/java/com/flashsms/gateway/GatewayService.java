@@ -306,9 +306,9 @@ public class GatewayService extends Service {
                     String responseBody = sb.toString();
                     org.json.JSONObject resp = new org.json.JSONObject(responseBody);
                     String webhookUrl = resp.optString("inbound_webhook_url", "");
-                    if (!webhookUrl.isEmpty()) {
-                        prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
-                    }
+                    // Always store (even if empty) so InboundSmsReceiver can
+                    // fall back to the LAN URL instead of using a stale URL.
+                    prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
                 } catch (Exception ignored) {}
             }
             conn.disconnect();
