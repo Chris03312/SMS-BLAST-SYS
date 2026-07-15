@@ -81,6 +81,12 @@ public class InboundSmsReceiver extends BroadcastReceiver {
 
         // Always use a background thread in BroadcastReceiver
         new Thread(() -> forwardToServer(context, finalSender, finalMessage, finalSubId)).start();
+
+        // Show toast so user can see on screen that SMS was intercepted
+        String shortMsg = finalMessage.length() > 30 ? finalMessage.substring(0, 30) + "…" : finalMessage;
+        android.widget.Toast.makeText(context.getApplicationContext(),
+                "📨 Forwarding: " + finalSender + " — " + shortMsg,
+                android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void forwardToServer(Context context, String sender, String message, int simSlot) {
@@ -144,14 +150,26 @@ public class InboundSmsReceiver extends BroadcastReceiver {
             String responseBody = code >= 400 ? readErrorBody(conn) : "";
             if (code < 400) {
                 Log.d(TAG, "✅ Server responded HTTP " + code);
+                // Toast success
+                showToast(context, "✅ SMS forwarded to server (HTTP " + code + ")");
             } else {
                 Log.w(TAG, "⚠ Server responded HTTP " + code + " — " + responseBody);
+                showToast(context, "❌ Server returned HTTP " + code);
             }
             conn.disconnect();
 
         } catch (Exception e) {
             Log.e(TAG, "❌ Failed to forward inbound SMS: " + e.getMessage(), e);
+            showToast(context, "❌ Failed: " + e.getMessage());
         }
+    }
+
+    /** Show a brief toast on the UI thread. */
+    private void showToast(Context context, String message) {
+        try {
+            android.os.Handler mainHandler = new android.os.Handler(context.getMainLooper());
+            mainHandler.post(() -> android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show());
+        } catch (Exception ignored) {}
     }
 
     /** Read error stream for debug logging. */
