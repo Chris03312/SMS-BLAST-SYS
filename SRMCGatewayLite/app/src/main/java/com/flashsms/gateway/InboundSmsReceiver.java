@@ -24,15 +24,14 @@ import java.nio.charset.StandardCharsets;
  * Intercepts every incoming SMS on the device and forwards it to the server
  * server so it can be stored and shown in the agent/admin dashboards.
  *
- * WEBHOOK URL RESOLUTION (in priority order):
- *   1. PREF_INBOUND_WEBHOOK — fetched from /api/config after login.
- *      If NGROK_WEBHOOK_URL is set on the server this is the ngrok URL
- *      (works over mobile data, from anywhere).
- *   2. Fallback: http://<serverIp>:<serverPort>/api/inbound
- *      (LAN only — only works when phone is on same Wi-Fi as server).
+ * URL: ALWAYS uses the LAN URL (http://<serverIp>:<serverPort>/api/inbound).
+ *      The stored inbound_webhook_url (returned by heartbeat when ngrok is
+ *      active) is meant for the SERVER to reach the PHONE for outbound push,
+ *      NOT for the phone to reach the server. Always using the LAN URL avoids
+ *      stale / misconfigured ngrok URLs and 401 auth issues.
  *
- * AUTH: Bearer <inbound_token>  (returned by /api/auth/gateway/login and
- *       stored in SharedPreferences by LoginActivity).
+ * AUTH: No auth required. The Lite app sends the unauthenticated format
+ *       { from, body, gateway_id } and the server skips auth validation.
  */
 public class InboundSmsReceiver extends BroadcastReceiver {
 
@@ -94,15 +93,11 @@ public class InboundSmsReceiver extends BroadcastReceiver {
 
         String token = prefs.getString(PREF_INBOUND_TOKEN, "");
 
-        // Simpler approach: use the configured server URL directly.
-        // This avoids stale webhook URL issues from previous ngrok sessions.
-        // The server's /api/inbound endpoint accepts the unauthenticated format
-        // { from, body, gateway_id } from the Lite app.
-        // If ngrok is configured, the stored webhook URL will start with https://
-        // and we use that instead (works over cellular data).
-        String lanUrl = ServerConfig.getBaseUrl(context) + "/api/inbound";
-        String storedWebhook = prefs.getString(PREF_INBOUND_WEBHOOK, "");
-        String webhookUrl = storedWebhook.startsWith("https://") ? storedWebhook : lanUrl;
+        // Always use the LAN URL for forwarding inbound SMS to the server.
+        // The stored inbound_webhook_url (e.g. ngrok URL) is for the server to
+        // reach the phone (outbound push), NOT for the phone to reach the server.
+        // Using the LAN URL avoids stale URLs, misconfiguration, and auth issues.
+        String webhookUrl = ServerConfig.getBaseUrl(context) + "/api/inbound";
 
         Log.d(TAG, "→ POST " + webhookUrl);
 
