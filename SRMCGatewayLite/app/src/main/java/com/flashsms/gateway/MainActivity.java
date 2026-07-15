@@ -369,16 +369,21 @@ public class MainActivity extends AppCompatActivity {
 
                 String responseBody = sb.toString();
 
-                // Extract webhook URL from response if available
+                // Extract webhook URL + token from response
                 String webhookUrl = "";
+                String inboundToken = "";
                 try {
                     org.json.JSONObject resp = new org.json.JSONObject(responseBody);
                     webhookUrl = resp.optString("inbound_webhook_url", "");
+                    inboundToken = resp.optString("inbound_token", "");
                 } catch (Exception ignored) {}
 
-                // Always store the webhook URL (even if empty) so InboundSmsReceiver
-                // can properly fall back to the LAN URL instead of using a stale URL.
-                prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
+                // Store both — the token lets InboundSmsReceiver use the
+                // authenticated { sender, message } format like the main app.
+                prefs.edit()
+                    .putString("inbound_webhook_url", webhookUrl)
+                    .putString("inbound_token", inboundToken)
+                    .apply();
 
                 final boolean finalSuccess = code < 400;
                 final String msg;

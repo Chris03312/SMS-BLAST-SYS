@@ -13,6 +13,7 @@
 
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import db from '../database/db.js';
 import {
   gatewayLogin,
@@ -23,6 +24,7 @@ import {
   getInboundWebhookUrl,
 } from '../services/gateway-service.js';
 import { getAllSettings } from '../services/config-service.js';
+import { JWT_SECRET } from '../configurations/secrets.js';
 
 const router = Router();
 
@@ -126,9 +128,20 @@ router.post('/auth/gateway/heartbeat', (req, res) => {
 
     // Return the gateway-specific inbound webhook URL
     const webhookUrl = getInboundWebhookUrl(deviceId || userId);
+    
+    // Generate an inbound token so the Lite app can use authenticated
+    // { sender, message } format — no login needed, same as the main app.
+    const gwId = deviceId || userId;
+    const inboundToken = jwt.sign(
+      { gatewayId: gwId, type: 'gateway' },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    
     return ok(res, {
       message: 'Heartbeat received',
       inbound_webhook_url: webhookUrl,
+      inbound_token: inboundToken,
     });
   } catch (e) {
     console.error('[gateway-auth] Heartbeat error:', e);

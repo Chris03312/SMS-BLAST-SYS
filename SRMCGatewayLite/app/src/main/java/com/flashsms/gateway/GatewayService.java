@@ -295,7 +295,7 @@ public class GatewayService extends Service {
 
             int code = conn.getResponseCode();
             if (code < 400) {
-                // Try to extract webhook URL from response
+                // Try to extract webhook URL + token from response
                 try {
                     java.io.BufferedReader reader = new java.io.BufferedReader(
                             new java.io.InputStreamReader(conn.getInputStream(),
@@ -306,9 +306,16 @@ public class GatewayService extends Service {
                     String responseBody = sb.toString();
                     org.json.JSONObject resp = new org.json.JSONObject(responseBody);
                     String webhookUrl = resp.optString("inbound_webhook_url", "");
-                    // Always store (even if empty) so InboundSmsReceiver can
-                    // fall back to the LAN URL instead of using a stale URL.
-                    prefs.edit().putString("inbound_webhook_url", webhookUrl).apply();
+                    String inboundToken = resp.optString("inbound_token", "");
+                    // Store both — the token lets InboundSmsReceiver use the
+                    // authenticated { sender, message } format like the main app.
+                    prefs.edit()
+                        .putString("inbound_webhook_url", webhookUrl)
+                        .putString("inbound_token", inboundToken)
+                        .apply();
+                    if (!inboundToken.isEmpty()) {
+                        Log.d(TAG, "Heartbeat: inbound_token received");
+                    }
                 } catch (Exception ignored) {}
             }
             conn.disconnect();

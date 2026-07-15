@@ -22,16 +22,24 @@ import java.nio.charset.StandardCharsets;
  * InboundSmsReceiver
  * ─────────────────────────────────────────────────────────────────────────────
  * Intercepts every incoming SMS on the device and forwards it to the server
- * server so it can be stored and shown in the agent/admin dashboards.
+ * so it can be stored and shown in the agent/admin dashboards.
  *
- * URL: ALWAYS uses the LAN URL (http://<serverIp>:<serverPort>/api/inbound).
- *      The stored inbound_webhook_url (returned by heartbeat when ngrok is
- *      active) is meant for the SERVER to reach the PHONE for outbound push,
- *      NOT for the phone to reach the server. Always using the LAN URL avoids
- *      stale / misconfigured ngrok URLs and 401 auth issues.
+ * DUAL-FLOW APPROACH (mirrors main app):
  *
- * AUTH: No auth required. The Lite app sends the unauthenticated format
- *       { from, body, gateway_id } and the server skips auth validation.
+ *   1. TOKEN AVAILABLE (heartbeat returned inbound_token):
+ *      - URL: stored inbound_webhook_url (ngrok URL if configured),
+ *             falls back to LAN URL: http://<serverIp>:<serverPort>/api/inbound
+ *      - Format: { sender, message } + Authorization: Bearer <token>
+ *      - Auth: Server validates the JWT token.
+ *
+ *   2. NO TOKEN (first run, before first heartbeat):
+ *      - URL: LAN URL only
+ *      - Format: { from, body, gateway_id }
+ *      - Auth: Server skips validation when { from, body } format is detected.
+ *
+ * The heartbeat endpoint on the server now returns inbound_token along with
+ * inbound_webhook_url, so the Lite app gets a token without needing a login
+ * activity. This makes inbound SMS work exactly like the main SRMCGateway app.
  */
 public class InboundSmsReceiver extends BroadcastReceiver {
 
@@ -93,11 +101,19 @@ public class InboundSmsReceiver extends BroadcastReceiver {
 
         String token = prefs.getString(PREF_INBOUND_TOKEN, "");
 
-        // Always use the LAN URL for forwarding inbound SMS to the server.
-        // The stored inbound_webhook_url (e.g. ngrok URL) is for the server to
-        // reach the phone (outbound push), NOT for the phone to reach the server.
-        // Using the LAN URL avoids stale URLs, misconfiguration, and auth issues.
-        String webhookUrl = ServerConfig.getBaseUrl(context) + "/api/inbound";
+        // URL resolution mirrors the main app's approach:
+        //   - When a token IS available (heartbeat now returns one), use the stored
+        //     inbound_webhook_url (ngrok URL if configured) with Bearer auth.
+        //     Falls back to the LAN URL if the stored URL is empty or malformed.
+        //   - When NO token (backward compat), use the LAN URL directly with the
+        //     unauthenticated { from, body, gateway_id } format.
+        String stored = prefs.getString(PREF_INBOUND_WEBHOOK, "");
+        String webhookUrl;
+        if (!token.isEmpty() && !stored.isEmpty() && (stored.startsWith("http://") || stored.startsWith("https://"))) {
+            webhookUrl = stored;
+        } else {
+            webhookUrl = ServerConfig.getBaseUrl(context) + "/api/inbound";
+        }
 
         Log.d(TAG, "→ POST " + webhookUrl);
 
@@ -109,10 +125,9 @@ public class InboundSmsReceiver extends BroadcastReceiver {
             //   1. Authenticated (requires Bearer token): { sender, message }
             //   2. Unauthenticated (no token needed):      { from, body }
             //
-            // The Lite gateway has no login flow, so it never gets an inbound_token.
-            // Use the unauthenticated format ({ from, body }) when no token is stored.
-            // When a token IS available (e.g. configured via external setup), use the
-            // authenticated format for better security.
+            // The heartbeat now returns an inbound_token, so the Lite app can use
+            // the authenticated format just like the main app. When no token is
+            // available (first run before heartbeats), use unauthenticated format.
             if (token.isEmpty()) {
                 // No token — use unauthenticated format (server skips auth validation)
                 payload.put("from",    sender);
@@ -124,10 +139,11 @@ public class InboundSmsReceiver extends BroadcastReceiver {
                 if (simSlot >= 1) payload.put("sim_slot", simSlot);
                 Log.d(TAG, "No inbound token — using unauthenticated format with gateway_id=" + (deviceId.isEmpty() ? "" : deviceId.substring(0, 8) + "…"));
             } else {
-                // Token available — use authenticated format
+                // Token available — use authenticated format (mirrors main app)
                 payload.put("sender",  sender);
                 payload.put("message", message);
                 if (simSlot >= 1) payload.put("sim_slot", simSlot);
+                Log.d(TAG, "Inbound token present — using authenticated format");
             }
             bodyBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
 
