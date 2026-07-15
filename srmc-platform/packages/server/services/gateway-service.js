@@ -183,10 +183,16 @@ export function gatewayHeartbeat(userId, deviceId, extra = {}) {
 
 /**
  * Get the inbound webhook URL from settings (ngrok or LAN fallback).
+ * Falls through the chain: DB > env var (NGROK_URL) > empty.
+ *
+ * NOTE: Reads process.env directly instead of importing config-service
+ * to avoid a circular dependency (config-service already imports from here).
  */
 export function getInboundWebhookUrl(gatewayId) {
   const setting = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_url'").get();
-  const ngrokUrl = setting ? setting.value : '';
+  let ngrokUrl = setting ? setting.value : '';
+  // Fallback to env var when DB is empty
+  if (!ngrokUrl) ngrokUrl = process.env.NGROK_URL || '';
   if (ngrokUrl) {
     const base = `${ngrokUrl}/api/webhook/inbound`;
     if (gatewayId) return `${base}/${gatewayId}`;

@@ -29,6 +29,7 @@ import { initDb, DB_PATH } from './database/db.js';
 import db from './database/db.js';
 import { registerNgrokWebhook } from './services/gateway-service.js';
 import { startNgrok, stopNgrok, getNgrokStatus, getNgrokUrl, getNgrokAuthtoken, hasAuthtoken } from './services/ngrok-tunnel.js';
+import { getSetting } from './services/config-service.js';
 import { authMiddleware, adminOnly } from './middleware/auth.js';
 import { loginLimiter, broadcastLimiter, webhookLimiter, gatewayOutboundLimiter, ngrokLimiter } from './middleware/rate-limit.js';
 
@@ -112,8 +113,8 @@ app.get('*', (req, res, next) => {
 
 app.get('/api/ngrok/status', authMiddleware, (req, res) => {
   const status = getNgrokStatus();
-  const savedUrl = db.prepare("SELECT value FROM settings WHERE key = 'public_url'").get();
-  return res.json({ success: true, ...status, saved_url: savedUrl ? savedUrl.value : '' });
+  const savedUrl = getSetting('public_url');
+  return res.json({ success: true, ...status, saved_url: savedUrl || '' });
 });
 
 app.post('/api/ngrok/start', ngrokLimiter, authMiddleware, adminOnly, async (req, res) => {
@@ -236,8 +237,7 @@ app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
 app.get('/api/system/health', authMiddleware, (req, res) => {
   try {
     const sentToday = db.prepare('SELECT COALESCE(SUM(sent_today), 0) AS c FROM gateways').get();
-    const capRow = db.prepare("SELECT value FROM settings WHERE key = 'daily_cap'").get();
-    const dailyCap = parseInt(capRow?.value) || 100000;
+    const dailyCap = parseInt(getSetting('daily_cap')) || 100000;
 
     const gwCounts = db.prepare(`
       SELECT

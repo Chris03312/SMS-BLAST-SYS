@@ -11,57 +11,53 @@
 import ngrok from '@ngrok/ngrok';
 import db from '../database/db.js';
 import { registerNgrokWebhook, getInboundWebhookUrl } from './gateway-service.js';
+import { getSetting } from './config-service.js';
 
 let activeListener = null;
-let currentUrl     = null;
-let retryTimer     = null;
+let currentUrl = null;
+let retryTimer = null;
 
 const RETRY_INTERVAL_MS = 30_000; // check every 30s when offline
 
 /**
- * Resolve the ngrok authtoken from the database settings.
+ * Resolve the ngrok authtoken through the fallback chain:
+ *   DB > env var (NGROK_AUTHTOKEN) > DEFAULTS
  * Set via Settings → Webhooks & API → Ngrok auth token.
  */
 function resolveAuthtoken(explicit) {
   if (explicit) return explicit;
-  try {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_authtoken'").get();
-    if (row && row.value) return row.value.trim();
-  } catch (_) {}
+  const val = getSetting('ngrok_authtoken');
+  if (val) return val.trim();
   return '';
 }
 
 /**
- * Resolve an optional reserved domain from database settings.
+ * Resolve an optional reserved domain through the fallback chain:
+ *   DB > env var (NGROK_DOMAIN) > DEFAULTS
  * Set via Settings → Webhooks & API → Reserved domain.
  */
 function resolveDomain() {
-  try {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_domain'").get();
-    if (row && row.value) return row.value.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-  } catch (_) {}
+  const val = getSetting('ngrok_domain');
+  if (val) return val.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
   return '';
 }
 
-/** Whether this device has an ngrok authtoken saved in the database. */
+/** Whether this device has an ngrok authtoken (DB, env, or default). */
 export function hasAuthtoken() {
   return !!resolveAuthtoken();
 }
 
 /**
- * Resolve the saved public URL from database settings.
+ * Resolve the saved public URL through the fallback chain:
+ *   DB > env var (PUBLIC_URL) > DEFAULTS
  * Set automatically when ngrok starts, or manually via Settings.
  */
 export function getNgrokUrl() {
-  try {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'public_url'").get();
-    if (row && row.value) return row.value;
-  } catch (_) {}
-  return '';
+  return getSetting('public_url') || '';
 }
 
 /**
- * Resolve the ngrok authtoken from database settings.
+ * Resolve the ngrok authtoken through the fallback chain.
  */
 export function getNgrokAuthtoken() {
   return resolveAuthtoken();
@@ -70,7 +66,7 @@ export function getNgrokAuthtoken() {
 /**
  * Start an ngrok tunnel pointing to the given local port.
  *
- * @param {number} port      - Local server port to expose (default: 3001)
+ * @param {number} port      - Local server port to expose (default: 3003)
  * @param {string} [authtoken] - Optional explicit authtoken (else resolved per-device)
  * @returns {Promise<{url:string, webhookUrl:string}>}
  */
@@ -78,7 +74,7 @@ export function getNgrokAuthtoken() {
  * Start the auto-retry loop. When the tunnel fails (e.g. no internet),
  * it will keep retrying every 30s until the tunnel comes up.
  */
-export function startNgrokAutoRetry(port = 3001) {
+export function startNgrokAutoRetry(port = 3003) {
   stopNgrokAutoRetry();
   async function attempt() {
     if (activeListener) return; // already connected
@@ -102,11 +98,11 @@ export function stopNgrokAutoRetry() {
   }
 }
 
-export async function startNgrok(port = 3001, authtoken) {
+export async function startNgrok(port = 3003, authtoken) {
   await stopNgrok();
   stopNgrokAutoRetry();
 
-  const token  = resolveAuthtoken(authtoken);
+  const token = resolveAuthtoken(authtoken);
   const domain = resolveDomain();
 
   try {
@@ -119,7 +115,7 @@ export async function startNgrok(port = 3001, authtoken) {
     const url = listener.url().replace(/\/+$/, '');
 
     activeListener = listener;
-    currentUrl     = url;
+    currentUrl = url;
 
     // Save URL in the database so Android gateways discover it via /api/config
     registerNgrokWebhook(url);
@@ -151,7 +147,7 @@ export async function stopNgrok() {
       console.warn('[ngrok] Warning during disconnect:', err.message);
     }
     activeListener = null;
-    currentUrl     = null;
+    currentUrl = null;
     console.log('[ngrok] Tunnel closed');
   }
 }
@@ -164,7 +160,7 @@ export async function stopNgrok() {
 export function getNgrokStatus() {
   return {
     running: activeListener !== null,
-    url:     currentUrl,
+    url: currentUrl,
     webhookUrl: currentUrl ? `${currentUrl}/api/webhook/inbound` : null,
   };
 }
