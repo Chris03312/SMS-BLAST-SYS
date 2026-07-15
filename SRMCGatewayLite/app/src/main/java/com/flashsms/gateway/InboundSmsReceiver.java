@@ -94,11 +94,15 @@ public class InboundSmsReceiver extends BroadcastReceiver {
 
         String token = prefs.getString(PREF_INBOUND_TOKEN, "");
 
-        // Resolve webhook URL: prefer stored URL (from heartbeat), fall back to LAN
-        String webhookUrl = prefs.getString(PREF_INBOUND_WEBHOOK, "");
-        if (!webhookUrl.startsWith("http://") && !webhookUrl.startsWith("https://")) {
-            webhookUrl = ServerConfig.getBaseUrl(context) + "/api/inbound";
-        }
+        // Simpler approach: use the configured server URL directly.
+        // This avoids stale webhook URL issues from previous ngrok sessions.
+        // The server's /api/inbound endpoint accepts the unauthenticated format
+        // { from, body, gateway_id } from the Lite app.
+        // If ngrok is configured, the stored webhook URL will start with https://
+        // and we use that instead (works over cellular data).
+        String lanUrl = ServerConfig.getBaseUrl(context) + "/api/inbound";
+        String storedWebhook = prefs.getString(PREF_INBOUND_WEBHOOK, "");
+        String webhookUrl = storedWebhook.startsWith("https://") ? storedWebhook : lanUrl;
 
         Log.d(TAG, "→ POST " + webhookUrl);
 
