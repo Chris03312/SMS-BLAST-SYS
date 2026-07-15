@@ -3,6 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { useWS, useConnectionStatus } from '../lib/ws.js';
+import Modal from './Modal.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 
 const TABS = [
   { label: 'Broadcast Task', path: '/dashboard' },
@@ -21,6 +23,11 @@ export default function AgentShell({ children }) {
   const [connectivity, setConnectivity] = useState(null); // null = loading, object = status
   const [showNetInfo, setShowNetInfo] = useState(false);
   const [broadcastsPaused, setBroadcastsPaused] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState('');
+  const { toast } = useToast();
   const wsStatus = useConnectionStatus();
 
   const fetchConnectivity = useCallback(() => {
@@ -56,6 +63,32 @@ export default function AgentShell({ children }) {
   function initials(name) {
     if (!name) return '?';
     return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  }
+
+  async function handlePasswordChange(e) {
+    e.preventDefault();
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwError('Passwords do not match');
+      return;
+    }
+    if (pwForm.newPassword.length < 4) {
+      setPwError('Password must be at least 4 characters');
+      return;
+    }
+    setPwSaving(true);
+    setPwError('');
+    try {
+      await api.put('/auth/password', {
+        currentPassword: pwForm.currentPassword,
+        newPassword: pwForm.newPassword,
+      });
+      setShowPasswordModal(false);
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      toast('Password changed successfully', 'success');
+    } catch (e) {
+      setPwError(e.message);
+    }
+    setPwSaving(false);
   }
 
   function handleLogout() {
@@ -195,9 +228,47 @@ export default function AgentShell({ children }) {
             )}
           </div>
 
+          <button className="btn-ghost" onClick={() => setShowPasswordModal(true)} style={{ fontSize: 12 }}>Password</button>
           <button className="btn-ghost" onClick={handleLogout}>Sign out</button>
         </div>
       </div>
+
+      {/* ── Change Password Modal ── */}
+      {showPasswordModal && (
+        <Modal title="Change Password" onClose={() => {
+          setShowPasswordModal(false);
+          setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+          setPwError('');
+        }}>
+          <form onSubmit={handlePasswordChange}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Current password</label>
+                <input className="input" type="password" value={pwForm.currentPassword}
+                  onChange={e => setPwForm(p => ({ ...p, currentPassword: e.target.value }))} required />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>New password</label>
+                <input className="input" type="password" value={pwForm.newPassword}
+                  onChange={e => setPwForm(p => ({ ...p, newPassword: e.target.value }))} required minLength={4} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Confirm new password</label>
+                <input className="input" type="password" value={pwForm.confirmPassword}
+                  onChange={e => setPwForm(p => ({ ...p, confirmPassword: e.target.value }))} required minLength={4} />
+              </div>
+              {pwError && <div style={{ color: 'var(--err)', fontSize: 12 }}>{pwError}</div>}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-ghost" onClick={() => setShowPasswordModal(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={pwSaving}>
+                  {pwSaving ? 'Saving...' : 'Change password'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column' }} className="agent-content">
         {children}
       </div>

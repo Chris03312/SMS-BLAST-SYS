@@ -209,10 +209,36 @@ function handleInboundWebhook(req, res) {
     // If no broadcast was sent to this number, try linking to the gateway's
     // owner instead. This ensures Lite app inbound messages are visible to
     // the agent who added the gateway, even if no broadcast was sent yet.
+    //
+    // Fallback chain:
+    //   1. Try gatewayId as a gateway device ID → get its owner_id
+    //   2. Try gatewayId as a user UUID → find any gateway owned by this user
+    //   3. Try gatewayId as a user UUID directly → use it as agent_id
+    //
+    // Step 3 is critical for the main Android app's inbound flow:
+    //   - Agent logs in → JWT contains gatewayId = agent's user UUID
+    //   - Admin added the gateway → owner_id = admin UUID (not agent UUID)
+    //   - Steps 1-2 fail to match → without step 3, agentId stays null
     if (!agentId && gatewayId) {
+      // Try as gateway device ID first
       const gw = db.prepare('SELECT owner_id FROM gateways WHERE id = ?').get(gatewayId);
       if (gw && gw.owner_id) {
         agentId = gw.owner_id;
+      } else {
+        // gatewayId might be a user UUID from the login token —
+        // find any gateway owned by this user
+        const gwByOwner = db.prepare('SELECT owner_id FROM gateways WHERE owner_id = ? AND active = 1 LIMIT 1').get(gatewayId);
+        if (gwByOwner) {
+          agentId = gatewayId;
+        } else {
+          // Final fallback: gatewayId IS the agent's user UUID from the
+          // login token. No gateway ownership check needed — the JWT was
+          // validated, so this is a legitimate agent.
+          const user = db.prepare('SELECT id FROM users WHERE id = ?').get(gatewayId);
+          if (user) {
+            agentId = gatewayId;
+          }
+        }
       }
     }
 
@@ -295,6 +321,18 @@ router.post('/webhook/inbound/:gatewayId', webhookLimiter, (req, res) => {
       const gw = db.prepare('SELECT owner_id FROM gateways WHERE id = ?').get(gatewayId);
       if (gw && gw.owner_id) {
         agentId = gw.owner_id;
+      } else {
+        // gatewayId might be a user UUID — find any gateway owned by this user
+        const gwByOwner = db.prepare('SELECT owner_id FROM gateways WHERE owner_id = ? AND active = 1 LIMIT 1').get(gatewayId);
+        if (gwByOwner) {
+          agentId = gatewayId;
+        } else {
+          // Final fallback: gatewayId is the agent's user UUID directly
+          const user = db.prepare('SELECT id FROM users WHERE id = ?').get(gatewayId);
+          if (user) {
+            agentId = gatewayId;
+          }
+        }
       }
     }
 

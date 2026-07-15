@@ -93,7 +93,7 @@ function startBackupSchedule() {
       const data = rawDb.export();
       const backupPath = DB_PATH.replace('.db', '.backup.1.db');
       writeFileSync(backupPath, Buffer.from(data));
-      console.log('[db] Backup saved to', backupPath.replace(DATA_DIR, ''));
+      // console.log('[db] Backup saved to', backupPath.replace(DATA_DIR, ''));
     } catch (e) {
       console.error('[db] Backup failed:', e.message);
     }
@@ -522,6 +522,8 @@ export function initDb() {
     "ALTER TABLE agent_contacts ADD COLUMN category TEXT DEFAULT ''",
     // Agent/owner name in gateway number history
     "ALTER TABLE gateway_numbers ADD COLUMN agent_name TEXT DEFAULT ''",
+    // Track last login time so the admin panel can show who's actively using the system
+    "ALTER TABLE users ADD COLUMN last_login_at TEXT",
   ];
   for (const sql of migrations) {
     try {

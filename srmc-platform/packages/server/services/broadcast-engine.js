@@ -110,8 +110,10 @@ export async function startBroadcast(broadcastId) {
   const TURBO_BATCH = parseInt(getSetting('turbo_batch_size'), 10) || 10;
   const startedMs = Date.parse(startedAt);
 
-  let sent = 0;
-  let failed = 0;
+  // Seed counters from the DB record so recovery shows continuous progress.
+  // E.g. if 9000/10000 were sent before crash, sent starts at 9000.
+  let sent = broadcastRecord.sent || 0;
+  let failed = broadcastRecord.failed || 0;
   const total = broadcastRecord.total;
 
   emitProgress(broadcastId, sent, failed, total, 'sending', agentId, startedAt);
@@ -461,4 +463,83 @@ export function getRunningBroadcasts() {
 
 export function getRunningCount() {
   return running.size;
+}
+
+/**
+ * Recover orphaned broadcasts after a server crash/restart.
+ *
+ * Finds all broadcasts stuck in 'sending' or 'paused' status, recalculates
+ * progress from the messages table, and restarts the engine for those that
+ * still have pending messages. Already-sent messages are automatically
+ * skipped because startBroadcast only processes 'queued'/'pending' rows.
+ *
+ * Call this once during server startup — never during normal operation.
+ */
+export async function recoverBroadcasts() {
+  const orphans = db.prepare(
+    "SELECT * FROM broadcasts WHERE status IN ('sending', 'paused') ORDER BY created_at ASC"
+  ).all();
+
+  if (orphans.length === 0) {
+    console.log('[broadcast-engine] ✓ No orphaned broadcasts to recover');
+    return;
+  }
+
+  console.log(`[broadcast-engine] ♻ Recovering ${orphans.length} orphaned broadcast(s)...`);
+
+  for (const bcast of orphans) {
+    // Recalculate progress from actual message states
+    const counts = db.prepare(
+      "SELECT status, COUNT(*) AS c FROM messages WHERE broadcast_id = ? GROUP BY status"
+    ).all(bcast.id);
+
+    let sent = 0, failed = 0, open = 0;
+    for (const row of counts) {
+      if (row.status === 'sent' || row.status === 'delivered') sent += row.c;
+      else if (row.status === 'failed') failed = row.c;
+      else if (['queued', 'pending', 'sending'].includes(row.status)) open += row.c;
+    }
+
+    db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(sent, failed, bcast.id);
+
+    if (open === 0) {
+      // Nothing left to send — mark as done
+      db.prepare("UPDATE broadcasts SET status = 'done', completed_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), bcast.id);
+      console.log(`[broadcast-engine] ✓ Broadcast ${bcast.id.slice(0, 8)}… — all ${bcast.total} messages resolved, marked done`);
+      continue;
+    }
+
+    // Get only the unsent messages (preserves original order via rowid)
+    const unsent = db.prepare(
+      "SELECT to_number FROM messages WHERE broadcast_id = ? AND status IN ('queued', 'pending', 'sending') ORDER BY rowid ASC"
+    ).all(bcast.id);
+    const remainingRecipients = unsent.map(m => m.to_number);
+
+    // Update broadcast with filtered recipients so startBroadcast only
+    // iterates through the messages that actually need sending — no wasted
+    // loops through already-sent numbers.
+    // Don't change total here — startBroadcast reads initial sent/failed
+    // from the DB record (which we already updated above) so progress
+    // shows continuous numbers (e.g. 9000/10000 → 10000/10000).
+    db.prepare("UPDATE broadcasts SET recipients = ?, status = 'pending' WHERE id = ?")
+      .run(JSON.stringify(remainingRecipients), bcast.id);
+
+    logActivity(
+      bcast.agent_id || null,
+      'broadcast:resumed',
+      `Broadcast ${bcast.id.slice(0, 8)}… auto-recovered after server restart — ${open}/${bcast.total} messages remaining`,
+      'info',
+      bcast.campaign_id || null
+    );
+
+    // Fire-and-forget to avoid blocking startup on long broadcasts.
+    // A small delay between each prevents max-concurrent limit issues.
+    setImmediate(() => {
+      startBroadcast(bcast.id).catch(err =>
+        console.error(`[broadcast-engine] ❌ Failed to recover broadcast ${bcast.id}:`, err.message)
+      );
+    });
+    await new Promise(r => setTimeout(r, 100));
+  }
 }

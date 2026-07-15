@@ -193,6 +193,7 @@ router.get('/agent/contacts', (req, res) => {
   try {
     const dateFilter = req.query.date; // optional YYYY-MM-DD
     const usedFilter = req.query.used || 'all'; // 'all', 'available', 'used'
+    const search = req.query.search; // optional phone number search
 
     // Build WHERE clauses
     const conditions = ['agent_id = ?'];
@@ -209,6 +210,11 @@ router.get('/agent/contacts', (req, res) => {
       conditions.push('used = 1');
     }
     // 'all' — no used filter
+
+    if (search) {
+      conditions.push('phone_number LIKE ?');
+      params.push(`%${search}%`);
+    }
 
     const whereClause = conditions.join(' AND ');
 
@@ -227,6 +233,10 @@ router.get('/agent/contacts', (req, res) => {
       availConditions.push('DATE(created_at) = ?');
       availParams.push(dateFilter);
     }
+    if (search) {
+      availConditions.push('phone_number LIKE ?');
+      availParams.push(`%${search}%`);
+    }
     const availableTotal = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts WHERE ${availConditions.join(' AND ')}`).get(...availParams);
 
     // Used count
@@ -235,6 +245,10 @@ router.get('/agent/contacts', (req, res) => {
     if (dateFilter) {
       usedConditions.push('DATE(created_at) = ?');
       usedParams.push(dateFilter);
+    }
+    if (search) {
+      usedConditions.push('phone_number LIKE ?');
+      usedParams.push(`%${search}%`);
     }
     const usedTotal = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts WHERE ${usedConditions.join(' AND ')}`).get(...usedParams);
 
@@ -246,6 +260,30 @@ router.get('/agent/contacts', (req, res) => {
     });
   } catch (e) {
     console.error('[contacts] Agent list error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Agent: Edit a single contact (phone number only) ──────────────────
+
+router.put('/agent/contacts/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phone_number } = req.body;
+
+    if (!phone_number) {
+      return fail(res, 'Phone number is required', 400);
+    }
+
+    const contact = db.prepare('SELECT id FROM agent_contacts WHERE id = ? AND agent_id = ?').get(id, req.user.id);
+    if (!contact) {
+      return fail(res, 'Contact not found', 404);
+    }
+
+    db.prepare('UPDATE agent_contacts SET phone_number = ? WHERE id = ?').run(phone_number, id);
+    return ok(res, { updated: true, phone_number });
+  } catch (e) {
+    console.error('[contacts] Agent edit error:', e);
     return fail(res, 'Internal server error', 500);
   }
 });
@@ -278,14 +316,24 @@ router.put('/agent/contacts/mark-sent', (req, res) => {
 
 router.get('/admin/contacts/batch/:batchId', adminOnly, (req, res) => {
   try {
+    const search = req.query.search; // optional phone number search
+
+    let whereSql = 'ac.batch_id = ?';
+    const params = [req.params.batchId];
+
+    if (search) {
+      whereSql += ' AND (ac.phone_number LIKE ? OR u.display_name LIKE ? OR ac.category LIKE ? OR ac.dpd_group LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
     const contacts = db.prepare(`
       SELECT ac.id, ac.phone_number, ac.used, ac.broadcast_id, ac.created_at,
              u.display_name as agent_name, ac.dpd_group, ac.category
       FROM agent_contacts ac
       JOIN users u ON ac.agent_id = u.id
-      WHERE ac.batch_id = ?
+      WHERE ${whereSql}
       ORDER BY ac.category, ac.dpd_group, u.display_name, ac.created_at
-    `).all(req.params.batchId);
+    `).all(...params);
 
     // Tally per agent + category combo
     const byAgent = {};
@@ -324,7 +372,7 @@ router.get('/admin/contacts/agents', adminOnly, (req, res) => {
 router.put('/admin/contacts/:id', adminOnly, (req, res) => {
   try {
     const { id } = req.params;
-    const { category, agent_id, dpd_group } = req.body;
+    const { category, agent_id, dpd_group, phone_number } = req.body;
 
     const contact = db.prepare('SELECT id FROM agent_contacts WHERE id = ?').get(id);
     if (!contact) return fail(res, 'Contact not found', 404);
@@ -346,6 +394,10 @@ router.put('/admin/contacts/:id', adminOnly, (req, res) => {
     if (dpd_group !== undefined) {
       updates.push('dpd_group = ?');
       params.push(dpd_group);
+    }
+    if (phone_number !== undefined) {
+      updates.push('phone_number = ?');
+      params.push(phone_number);
     }
 
     if (updates.length === 0) return fail(res, 'No fields to update', 400);

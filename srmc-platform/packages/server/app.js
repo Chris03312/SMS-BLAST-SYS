@@ -27,7 +27,6 @@ import { createSocket } from 'dgram';
 import { fileURLToPath } from 'url';
 import { initDb, DB_PATH } from './database/db.js';
 import db from './database/db.js';
-import { registerNgrokWebhook } from './services/gateway-service.js';
 import { startNgrok, stopNgrok, getNgrokStatus, getNgrokUrl, getNgrokAuthtoken, hasAuthtoken } from './services/ngrok-tunnel.js';
 import { getSetting } from './services/config-service.js';
 import { authMiddleware, adminOnly } from './middleware/auth.js';
@@ -307,13 +306,10 @@ initDb();
 initTimezone();
 
 
-// Restore webhook from saved database settings.
-// The tunnel itself is auto-started by apps/web/index.js.
-const savedUrl = getNgrokUrl();
-if (savedUrl) {
-  registerNgrokWebhook(savedUrl);
-  console.log('[ngrok] Restored webhook from saved URL:', savedUrl);
-}
+// The ngrok tunnel is auto-started by apps/web/index.js after the server
+// begins listening. The ngrok_url setting is only updated when the tunnel
+// actually starts — never restored from a stale previous session URL.
+// This prevents the Android app from getting a dead URL during startup.
 const token = getNgrokAuthtoken();
 if (token) {
   console.log('[ngrok] Auth token found — will auto-start tunnel after server is ready');

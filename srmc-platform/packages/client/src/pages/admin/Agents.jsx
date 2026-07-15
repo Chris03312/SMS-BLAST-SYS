@@ -7,6 +7,15 @@ import { api } from '../../lib/api.js';
 import { formatDateShort } from '../../lib/format.js';
 import { useToast } from '../../context/ToastContext.jsx';
 
+function lastSeen(iso) {
+  if (!iso) return null;
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 300) return 'online'; // within 5 min = actively logged in
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return formatDateShort(iso);
+}
+
 export default function Admins() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -156,10 +165,27 @@ export default function Admins() {
                   </span>
                 </td>
                 <td>
-                  <span className={`pill ${a.active ? 'ok' : 'idle'}`}>
-                    <span className="dot" />
-                    {a.active ? 'Active' : 'Inactive'}
-                  </span>
+                  {!a.active ? (
+                    <span className="pill idle">
+                      <span className="dot" />
+                      Disabled
+                    </span>
+                  ) : (
+                    (() => {
+                      const seen = lastSeen(a.last_login_at);
+                      return seen === 'online' ? (
+                        <span className="pill ok">
+                          <span className="dot" />
+                          Active
+                        </span>
+                      ) : (
+                        <span className="pill idle">
+                          <span className="dot" />
+                          {seen ? `Last seen ${seen}` : 'Inactive'}
+                        </span>
+                      );
+                    })()
+                  )}
                 </td>
                 <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>
                   {formatDateShort(a.created_at)}

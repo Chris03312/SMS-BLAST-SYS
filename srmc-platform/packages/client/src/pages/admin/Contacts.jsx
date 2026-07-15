@@ -16,6 +16,7 @@ export default function AdminContacts() {
   const [batchContacts, setBatchContacts] = useState([]);
   const [batchByAgent, setBatchByAgent] = useState({});
   const [viewLoading, setViewLoading] = useState(false);
+  const [batchSearch, setBatchSearch] = useState('');
   const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
   const [deletingContact, setDeletingContact] = useState(null);
   
@@ -207,7 +208,7 @@ export default function AdminContacts() {
 
   // ── Batch view ──────────────────────────────────────────────────────
 
-  async function openBatchView(batchId) {
+  async function openBatchView(batchId, searchVal) {
     setViewBatch(batchId);
     setViewLoading(true);
     setBatchContacts([]);
@@ -215,7 +216,8 @@ export default function AdminContacts() {
     setSelectedContactIds(new Set());
     loadAgents();
     try {
-      const data = await api.get(`/admin/contacts/batch/${batchId}`);
+      const qs = searchVal ? `?search=${encodeURIComponent(searchVal)}` : '';
+      const data = await api.get(`/admin/contacts/batch/${batchId}${qs}`);
       setBatchContacts(data.contacts || []);
       setBatchByAgent(data.by_agent || {});
     } catch (e) {
@@ -250,6 +252,7 @@ export default function AdminContacts() {
     if (field === 'category') payload.category = editingValue;
     else if (field === 'agent') payload.agent_id = editingValue;
     else if (field === 'dpd') payload.dpd_group = editingValue;
+    else if (field === 'phone') payload.phone_number = editingValue;
     else return;
 
     setUpdatingIds(prev => new Set(prev).add(id));
@@ -644,10 +647,39 @@ export default function AdminContacts() {
                             </button>
                           </div>
 
+                          {/* ── Search inside batch ── */}
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                              <svg style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--ink-4)' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                              </svg>
+                              <input
+                                type="text"
+                                placeholder="Search contacts…"
+                                value={batchSearch}
+                                onChange={e => {
+                                  setBatchSearch(e.target.value);
+                                  // Debounce: wait for user to finish typing before searching
+                                  if (window._batchSearchTimer) clearTimeout(window._batchSearchTimer);
+                                  window._batchSearchTimer = setTimeout(() => openBatchView(viewBatch, e.target.value), 300);
+                                }}
+                                style={{
+                                  width: '100%', padding: '5px 8px 5px 28px', borderRadius: 5,
+                                  border: '1px solid var(--line)', fontSize: 11, fontFamily: 'var(--mono)',
+                                  color: 'var(--ink-1)', background: 'var(--bg)', outline: 'none',
+                                }}
+                              />
+                              {batchSearch && (
+                                <button onClick={() => { setBatchSearch(''); openBatchView(viewBatch, ''); }}
+                                  style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 12, padding: '2px 4px' }}>×</button>
+                              )}
+                            </div>
+                          </div>
+
                           {viewLoading ? (
                             <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>Loading...</div>
                           ) : batchContacts.length === 0 ? (
-                            <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>No contacts.</div>
+                            <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>{batchSearch ? 'No contacts match your search.' : 'No contacts.'}</div>
                           ) : (
                             <>
                               {/* ── Bulk action toolbar ── */}
@@ -815,7 +847,40 @@ export default function AdminContacts() {
                                           </td>
 
                                           <td style={{ padding: '5px 10px', fontFamily: 'var(--mono)', color: 'var(--ink-1)' }}>
-                                            {c.phone_number}
+                                            {isEditing && editingField.field === 'phone' ? (
+                                              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                                <input
+                                                  type="text"
+                                                  value={editingValue}
+                                                  onChange={e => setEditingValue(e.target.value)}
+                                                  autoFocus
+                                                  style={{
+                                                    padding: '2px 4px', borderRadius: 4, border: '1px solid var(--line)',
+                                                    fontSize: 11, fontFamily: 'var(--mono)', width: 140,
+                                                  }}
+                                                  onBlur={() => setTimeout(saveEdit, 150)}
+                                                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                                                />
+                                                <button className="iconlink" onClick={saveEdit} title="Save">✓</button>
+                                              </div>
+                                            ) : (
+                                              <span
+                                                onClick={() => startEdit(c.id, 'phone', c.phone_number)}
+                                                style={{
+                                                  cursor: 'pointer',
+                                                  borderBottom: '1px dashed var(--line-soft)',
+                                                  paddingBottom: 1,
+                                                  transition: 'border-color 0.12s',
+                                                  fontFamily: 'var(--mono)',
+                                                }}
+                                                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand-1)'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line-soft)'; }}
+                                                title="Click to edit"
+                                              >
+                                                {c.phone_number}
+                                                <span style={{ fontSize: 9, color: 'var(--ink-4)', marginLeft: 4 }}>✎</span>
+                                              </span>
+                                            )}
                                           </td>
 
                                           {/* Category — clickable to edit */}

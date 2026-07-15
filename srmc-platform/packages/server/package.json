@@ -18,7 +18,9 @@
     "./ngrok-tunnel": "./services/ngrok-tunnel.js",
     "./ngrok-tunnel.js": "./services/ngrok-tunnel.js",
     "./gateway-poller": "./services/gateway-poller.js",
-    "./gateway-poller.js": "./services/gateway-poller.js"
+    "./gateway-poller.js": "./services/gateway-poller.js",
+    "./broadcast-engine": "./services/broadcast-engine.js",
+    "./broadcast-engine.js": "./services/broadcast-engine.js"
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",

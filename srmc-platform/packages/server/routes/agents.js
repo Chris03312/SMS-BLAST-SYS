@@ -20,7 +20,7 @@ router.use(authMiddleware, adminOnly);
 router.get('/', (req, res) => {
   try {
     const agents = db.prepare(`
-      SELECT u.id, u.username, u.display_name, u.role, u.active, u.created_at,
+      SELECT u.id, u.username, u.display_name, u.role, u.active, u.created_at, u.last_login_at,
         (SELECT COUNT(*) FROM broadcasts b WHERE b.agent_id = u.id) as broadcast_count,
         (SELECT COALESCE(SUM(b.sent), 0) FROM broadcasts b WHERE b.agent_id = u.id AND b.created_at >= date('now', '-1 day')) as sent_today
       FROM users u
@@ -113,7 +113,7 @@ router.delete('/:id', (req, res) => {
 router.get('/admins', superAdminOnly, (req, res) => {
   try {
     const admins = db.prepare(`
-      SELECT id, username, display_name, role, active, created_at
+      SELECT id, username, display_name, role, active, created_at, last_login_at
       FROM users
       WHERE role IN ('admin', 'super_admin')
       ORDER BY created_at DESC
