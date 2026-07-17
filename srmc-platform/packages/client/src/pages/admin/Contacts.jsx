@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx-js-style';
 import AdminShell from '../../components/AdminShell.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDateShort } from '../../lib/format.js';
 import Skeleton, { SkeletonTable } from '../../components/Skeleton.jsx';
@@ -10,7 +11,6 @@ import Skeleton, { SkeletonTable } from '../../components/Skeleton.jsx';
 export default function AdminContacts() {
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(null);
   const [parsedAgents, setParsedAgents] = useState([]);
   const [viewBatch, setViewBatch] = useState(null);     // batchId being viewed

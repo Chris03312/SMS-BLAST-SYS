@@ -51,12 +51,14 @@ function authGateway(req, res) {
 }
 
 // ── Claim pending outbound messages for this gateway ──────────────────────
+// The phone polls the server, grabs whatever messages are queued for it,
+// sends them via SIM, and reports back. The engine handles the delay pacing
+// between message releases — this endpoint just serves what's available.
 router.get('/gateway/outbound', gatewayOutboundLimiter, (req, res) => {
   const gatewayId = authGateway(req, res);
   if (!gatewayId) return;
 
   try {
-    const max = Math.min(parseInt(req.query.max, 10) || 10, 50);
     const now = new Date().toISOString();
 
     // Keep the gateway marked alive while it polls.
@@ -74,7 +76,7 @@ router.get('/gateway/outbound', gatewayOutboundLimiter, (req, res) => {
                  OR (m.status = 'queued' AND m.created_at < datetime('now', ?)) )
          ORDER BY m.created_at ASC
          LIMIT ?`
-    ).all(gatewayId, `-${CLAIM_TIMEOUT_S} seconds`, `-${STALE_QUEUED_S} seconds`, max);
+    ).all(gatewayId, `-${CLAIM_TIMEOUT_S} seconds`, `-${STALE_QUEUED_S} seconds`, 1);
 
     const claim = db.prepare("UPDATE messages SET status = 'sending', sent_at = ? WHERE id = ?");
     const claimAll = db.transaction(() => { for (const r of rows) claim.run(now, r.id); });

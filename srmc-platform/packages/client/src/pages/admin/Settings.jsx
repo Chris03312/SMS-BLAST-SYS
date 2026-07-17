@@ -435,6 +435,7 @@ export default function Settings() {
 
             {/* ── SMS Gateways ── */}
             <SectionBlock sectionKey="gateways" label="SMS Gateways" desc="Android relay devices. Toggle active/inactive per device." refs={sectionRefs}>
+
               {gateways.length === 0 && (
                 <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '8px 0' }}>
                   No gateways configured. Add them in <strong>Numbers</strong>.

@@ -121,10 +121,16 @@ router.post('/admin/contacts/upload', adminOnly, (req, res) => {
       dedupMatched.push(val);
     }
 
-    // Bulk-insert all contacts — uses a single prepared statement + one flushDb()
-    // instead of 100K individual flushDb() calls. ~100x faster for large uploads.
-    const rows = afterDedup.map(c => [c.id, c.agentId, c.batchId, c.phoneNumber, 0, c.dpdGroup, c.category]);
-    db.bulkInsert('agent_contacts', ['id', 'agent_id', 'batch_id', 'phone_number', 'used', 'dpd_group', 'category'], rows);
+    // Bulk-insert all contacts inside a transaction for speed
+    const insertStmt = db.prepare(
+      `INSERT INTO agent_contacts (id, agent_id, batch_id, phone_number, used, dpd_group, category) VALUES (?, ?, ?, ?, 0, ?, ?)`
+    );
+    const insertAll = db.transaction(() => {
+      for (const c of afterDedup) {
+        insertStmt.run(c.id, c.agentId, c.batchId, c.phoneNumber, c.dpdGroup, c.category);
+      }
+    });
+    insertAll();
 
     // Log activity
     const detail = dedupMatched.map(a => `${a.name}: ${a.count}`).join(', ');

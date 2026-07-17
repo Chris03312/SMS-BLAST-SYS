@@ -5,6 +5,7 @@ import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { useApiQuery, useApiMutation } from '../../lib/useApiQuery.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 export default function AdminTemplates() {
   const { toast } = useToast();
@@ -17,7 +18,7 @@ export default function AdminTemplates() {
   const [page, setPage] = useState(0);
   const perPage = 15;
 
-  const { data: tData } = useApiQuery('templates', '/templates');
+  const { data: tData, isLoading } = useApiQuery('templates', '/templates');
   const { data: cData } = useApiQuery('campaigns', '/campaigns');
   const templates = tData?.templates || [];
   const campaigns = cData?.campaigns || [];
@@ -109,7 +110,8 @@ export default function AdminTemplates() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && (
+            {isLoading && <SkeletonTable cols={6} rows={5} />}
+            {!isLoading && filtered.length === 0 && (
               <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No templates found.</td></tr>
             )}
             {paginated.map(t => (

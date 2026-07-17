@@ -178,7 +178,7 @@ export async function startBroadcast(broadcastId) {
   // Processes one message: either sends via PUSH or releases to PULL.
   // Mutates sent/failed/counters and broadcasts progress.
   async function sendMessage(number, msgRecord, gateway, simMode, idx, perGwIdx, combinedPos) {
-    const isPush = gateway && gateway.url && gateway.mode !== 'pull';
+    const isPush = gateway && gateway.url;
     const gid = gateway.id;
 
     // Compute SIM mode (use index within this gateway's batch)
@@ -246,7 +246,7 @@ export async function startBroadcast(broadcastId) {
         const pushItems = [];
         const pullItems = [];
         for (const item of batch) {
-          const isPush = item.gateway && item.gateway.url && item.gateway.mode !== 'pull';
+          const isPush = item.gateway && item.gateway.url;
           if (isPush) {
             if (perGwCounters[item.gateway.id] === undefined) perGwCounters[item.gateway.id] = 0;
             const gwIdx = perGwCounters[item.gateway.id]++;
@@ -319,16 +319,16 @@ export async function startBroadcast(broadcastId) {
         if (state.cancel) break;
         if (!(await iterationChecks())) break;
 
+        // ── Pre-send delay (ALWAYS applied, even if message is skipped) ──
+        await sleep(broadcastRecord.delay_ms);
+        if (state.cancel) break;
+
         const msgRecord = db.prepare(
           "SELECT * FROM messages WHERE broadcast_id = ? AND to_number = ? AND status IN ('queued', 'pending')"
         ).get(broadcastId, number);
         if (!msgRecord) continue;
 
         const gateway = gatewayMap[msgRecord.gateway_id] || gateways[0];
-
-        // ── Pre-send delay ────────────────────────────────────────────
-        await sleep(broadcastRecord.delay_ms);
-        if (state.cancel) break;
 
         // Track per-gateway message index
         const gid = gateway.id;

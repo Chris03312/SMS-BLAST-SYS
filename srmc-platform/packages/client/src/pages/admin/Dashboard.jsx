@@ -5,10 +5,11 @@ import Modal from '../../components/Modal.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber, formatDate, formatTime } from '../../lib/format.js';
-import Skeleton from '../../components/Skeleton.jsx';
+import Skeleton, { SkeletonStats, SkeletonTable } from '../../components/Skeleton.jsx';
 
 function Sparkline({ data, color = 'var(--brand-1)', width = 100, height = 28, fill = false }) {
   if (!data || data.length === 0) return <svg width={width} height={height} />;
@@ -46,18 +47,21 @@ function MiniRing({ pct, size = 44, stroke = 4, color = 'var(--ok)' }) {
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState(null);
-  const [campaigns, setCampaigns] = useState([]);
-  const [agents, setAgents] = useState([]);
-  const [inbound, setInbound] = useState([]);
-  const [runningBroadcasts, setRunningBroadcasts] = useState([]);
   const [confirmCancelAll, setConfirmCancelAll] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [cancelledIds, setCancelledIds] = useState(new Set());
   const [viewBroadcast, setViewBroadcast] = useState(null);
   const [viewMessages, setViewMessages] = useState([]);
   const [viewLoading, setViewLoading] = useState(false);
-  const [loading, setLoading] = useState(true);
+
+  const CACHE_KEY = 'admin-dashboard';
+  const cached = PageCache.get(CACHE_KEY);
+  const [stats, setStats] = useState(cached?.stats ?? null);
+  const [campaigns, setCampaigns] = useState(cached?.campaigns?.campaigns?.slice(0, 5) || []);
+  const [agents, setAgents] = useState(cached?.agents?.agents?.slice(0, 5) || []);
+  const [inbound, setInbound] = useState(cached?.inbound?.messages || []);
+  const [runningBroadcasts, setRunningBroadcasts] = useState(cached?.broadcasts?.broadcasts || []);
+  const [loading, setLoading] = useState(!cached);
 
   // ── Debounced data refresh ───────────────────────────────────────────
   // Avoids hammering the server when WS events fire rapidly (e.g. every
@@ -157,6 +161,7 @@ export default function AdminDashboard() {
       if (a && a.agents) setAgents(a.agents.slice(0, 5));
       if (i && i.messages) setInbound(i.messages);
       if (r && r.broadcasts) setRunningBroadcasts(r.broadcasts);
+      PageCache.set(CACHE_KEY, { stats: s, campaigns: c, agents: a, inbound: i, broadcasts: r });
     } catch (e) {}
     setLoading(false);
   }
@@ -263,9 +268,9 @@ export default function AdminDashboard() {
 
       {/* KPIs — mini analytic cards with sparklines and rings */}
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
-        {loading ? Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="card" style={{ padding: '18px 20px', height: 120 }} />
-        )) : kpis.map(k => (
+        {loading && !stats ? (
+          <SkeletonStats count={5} />
+        ) : kpis.map(k => (
           <div key={k.label} className="card" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
@@ -470,7 +475,9 @@ export default function AdminDashboard() {
           <h3>Throughput (7 days)</h3>
         </div>
         <div style={{ padding: '18px 20px' }}>
-          {stats?.daily && stats.daily.length > 0 ? (() => {
+          {loading && !stats?.daily ? (
+            <Skeleton variant="chart" />
+          ) : stats?.daily && stats.daily.length > 0 ? (() => {
             const w = 800, h = 200, pad = 36;
             const data = stats.daily;
             const max = Math.max(...data.map(d => d.sent), 1);
@@ -522,7 +529,19 @@ export default function AdminDashboard() {
             <h3>Gateways</h3>
           </div>
           <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'auto' }} className="table-wrap">
-            {(stats?.gateways_status || []).map(g => (
+            {loading && !stats?.gateways_status ? (
+              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <Skeleton variant="text" width={120} />
+                      <Skeleton variant="text" width={80} />
+                    </div>
+                    <Skeleton variant="badge" />
+                  </div>
+                ))}
+              </div>
+            ) : (stats?.gateways_status || []).map(g => (
               <div key={g.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-soft)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-1)' }}>{g.name}</div>
@@ -534,13 +553,13 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ))}
-            {(!stats?.gateways_status || stats.gateways_status.length === 0) && (
+            {(!stats?.gateways_status || stats.gateways_status.length === 0) && !loading && (
               <div style={{ padding: '16px 18px', fontSize: 13, color: 'var(--ink-3)' }}>No gateways configured.</div>
             )}
           </div>
         </div>
 
-        {/* Campaigns — now in the right column */}
+        {/* Campaigns */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="card-head" style={{ flexShrink: 0 }}>
             <h3>Active Campaigns</h3>
@@ -556,7 +575,8 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {campaigns.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No campaigns.</td></tr>}
+                {loading && campaigns.length === 0 && <SkeletonTable cols={3} rows={4} />}
+                {!loading && campaigns.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No campaigns.</td></tr>}
                 {campaigns.map(c => (
                   <tr key={c.id}>
                     <td>
@@ -589,7 +609,8 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {agents.length === 0 && <tr><td colSpan={2} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No agents.</td></tr>}
+                {loading && agents.length === 0 && <SkeletonTable cols={2} rows={4} />}
+                {!loading && agents.length === 0 && <tr><td colSpan={2} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '16px 18px' }}>No agents.</td></tr>}
                 {agents.map(a => (
                   <tr key={a.id}>
                     <td>
@@ -616,7 +637,19 @@ export default function AdminDashboard() {
             <a href="/admin/inbound" style={{ color: 'var(--brand-1)', fontSize: 12, fontWeight: 500 }}>View all →</a>
           </div>
           <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-            {inbound.length === 0 && <div style={{ padding: '16px 18px', fontSize: 13, color: 'var(--ink-3)' }}>No inbound messages.</div>}
+            {loading && inbound.length === 0 && (
+              <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 2px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                      <Skeleton variant="text" width={100} />
+                      <Skeleton variant="text" width="70%" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loading && inbound.length === 0 && <div style={{ padding: '16px 18px', fontSize: 13, color: 'var(--ink-3)' }}>No inbound messages.</div>}
             {inbound.map(m => (
               <div key={m.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-soft)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>

@@ -154,7 +154,7 @@ function BroadcastDetail({ broadcast, onClose }) {
               </tr>
             </thead>
             <tbody>
-              {loading && (
+              {loading && messages.length === 0 && (
                 <>
                   <SkeletonRow cols={4} />
                   <SkeletonRow cols={4} />
@@ -572,7 +572,7 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {loading && broadcasts.length === 0 && (
               <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '32px 18px' }}>
                 Loading broadcasts...
               </td></tr>
@@ -670,19 +670,16 @@ export default function Dashboard() {
 
                   {/* Progress bar */}
                   <td style={{ minWidth: 180 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{
-                        flex: 1, height: 8, background: 'var(--bg-soft)',
-                        borderRadius: 4, overflow: 'hidden', display: 'flex',
-                      }}>
-                        <div style={{
-                          height: '100%',
-                          width: `${Math.max(b.total > 0 ? Math.round((b.sent||0) / b.total * 100) : 0, isSending ? 2 : 0)}%`,
-                          background: 'var(--ok)',
-                          transition: 'width 0.5s ease',
-                          minWidth: isSending ? 4 : 0,
-                          boxShadow: isSending ? '0 0 6px rgba(5,150,105,0.4)' : 'none',
-                        }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>                        <div style={{
+                          flex: 1, height: 8, background: 'var(--bg-soft)',
+                          borderRadius: 4, overflow: 'hidden', display: 'flex',
+                        }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${b.total > 0 ? Math.round((b.sent||0) / b.total * 100) : 0}%`,
+                            background: 'var(--ok)',
+                            transition: 'width 0.5s ease',
+                          }} />
                         {(b.failed||0) > 0 && (
                           <div style={{
                             height: '100%',

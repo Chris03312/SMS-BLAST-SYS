@@ -3,6 +3,7 @@ import AdminShell from '../../components/AdminShell.jsx';
 import Pill from '../../components/Pill.jsx';
 
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { useWS } from '../../lib/ws.js';
 import { formatDate } from '../../lib/format.js';
 import { SkeletonTable } from '../../components/Skeleton.jsx';
@@ -16,11 +17,13 @@ const FLAG_LABELS = {
 const FLAGS = ['all', 'opt-out', 'confirmed', 'needs-reply'];
 
 export default function AdminInbound() {
-  const [messages, setMessages] = useState([]);
-  const [total, setTotal] = useState(0);
+  const CACHE_KEY = 'admin-inbound';
+  const cached = PageCache.get(CACHE_KEY);
+  const [messages, setMessages] = useState(cached?.messages || []);
+  const [total, setTotal] = useState(cached?.total || 0);
   const [flag, setFlag] = useState('all');
   const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
   const [convMessage, setConvMessage] = useState(null);
   const [conversation, setConversation] = useState([]);
   const [convLoading, setConvLoading] = useState(false);
@@ -36,6 +39,7 @@ export default function AdminInbound() {
       const data = await api.get(`/inbound?${params}`);
       setMessages(data.messages || []);
       setTotal(data.total || 0);
+      PageCache.set(CACHE_KEY, data);
     } catch (e) {
       console.error('[admin-inbound] Load:', e);
     }
@@ -155,7 +159,7 @@ export default function AdminInbound() {
             </tr>
           </thead>
           <tbody>
-            {loading && <SkeletonTable cols={6} rows={5} />}
+            {loading && messages.length === 0 && <SkeletonTable cols={6} rows={5} />}
             {!loading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No messages match your search.' : 'No inbound messages.'}</td></tr>}
             {filtered.map(m => (
               <tr

@@ -3,6 +3,7 @@ import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { formatDate } from '../../lib/format.js';
 import Skeleton, { SkeletonRow, SkeletonTable } from '../../components/Skeleton.jsx';
 
@@ -332,7 +333,7 @@ export default function History() {
             </tr>
           </thead>
           <tbody>
-            {loading && <SkeletonTable cols={10} rows={5} />}
+            {loading && broadcasts.length === 0 && <SkeletonTable cols={10} rows={5} />}
             {!loading && broadcasts.length === 0 && (
               <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No broadcasts found.</td></tr>
             )}

@@ -1,0 +1,294 @@
+═══════════════════════════════════════════════════════════════════
+  HOW MESSAGES ARE SENT — FROM BROADCAST TO PHONE TO SIM
+═══════════════════════════════════════════════════════════════════
+
+
+1. THE BIG PICTURE
+──────────────────────────────────────────────────────────────────
+
+  You (agent)          Server (broadcast engine)         Phone (Android gateway)
+     │                         │                                │
+     │  1. Create broadcast    │                                │
+     │  ─────────────────────► │                                │
+     │                         │                                │
+     │                         │  2. Engine starts              │
+     │                         │     (iterates through each     │
+     │                         │      recipient one-by-one)     │
+     │                         │                                │
+     │                         │  3. For each recipient:        │
+    ─┤─────────────────────────├── Sleep(delay) ← YOUR SETTING  ├───
+   │ │                         │                                │ │
+   │ │                         │  4. POST directly to phone     │ │
+   │ │                         │  ────────────────────────────► │ │
+   │ │                         │          5. Phone sends via SIM│ │
+   │ │                         │  ◄──── HTTP response ───────── │ │
+   │ │                         │                                │ │
+   │ │  6. See progress live   │                                │ │
+   │ │  ◄───────────────────── │                                │ │
+   │ │                         │                                │ │
+   │ └── Loop → back to step 3 → next recipient ────────────────┘ │
+   │                                                              │
+   └── 200 msgs × 4s delay = ~13 minutes total ──────────────────┘
+
+
+2. HOW IT WORKS — SIMPLE
+──────────────────────────────────────────────────────────────────
+
+  There is ONE timer and ONE flow:
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  THE ENGINE (runs on the server)                            ║
+  ║                                                             ║
+  ║  For each recipient, in order:                              ║
+  ║                                                             ║
+  ║     1. Sleep(delay_ms)        ← the 4-second wait           ║
+  ║     2. POST message to phone  ← directly to phone's HTTP    ║
+  ║     3. Phone sends via SIM    ← phone's local SIM card      ║
+  ║     4. Phone responds OK/fail ← HTTP response               ║
+  ║     5. Update progress        ← WebSocket to dashboard      ║
+  ║     6. Back to step 1 → next recipient                      ║
+  ║                                                             ║
+  ║  The 4-second delay is between EACH message — that's the    ║
+  ║  ONLY pacing. No waiting for the phone to poll.             ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  ⚠️  The engine sends (POSTs) each message directly to the
+      phone's HTTP server. The phone does NOT need to poll for
+      outgoing messages. This works when the phone is on the
+      same WiFi/LAN as the server.
+
+      For phones on mobile data (no direct server-to-phone
+      connection), the phone must use PULL mode (phone polls
+      the server for messages).
+
+
+3. THE MESSAGE'S STATUS — WHAT THE BADGES MEAN
+──────────────────────────────────────────────────────────────────
+
+  ┌─────────────┬────────────────────────────────────────────────┐
+  │  queued     │  Just created. Not yet processed.              │
+  ├─────────────┼────────────────────────────────────────────────┤
+  │  sent      │  Phone confirmed: sent via SIM. ✅             │
+  ├─────────────┼────────────────────────────────────────────────┤
+  │  failed    │  Phone reported: SIM send failed. ❌            │
+  └─────────────┴────────────────────────────────────────────────┘
+
+  Note: In PUSH mode, messages go directly from 'queued' to
+  'sent' or 'failed' — there's no 'pending' or 'sending' wait.
+  The server POSTs to the phone and gets an immediate response.
+
+
+4. THE FULL FLOW — DETAILED STEP BY STEP
+──────────────────────────────────────────────────────────────────
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  STEP 1: YOU CREATE A BROADCAST                             ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  You fill in the compose form:
+    • Recipients (phone numbers)
+    • Message
+    • Gateway(s) — must have the phone's URL set
+    • Delay: e.g. 4 seconds (4000ms)
+
+  Click "Send" → POST /api/broadcasts
+    → Server creates a record in the `broadcasts` table
+    → Creates one row in the `messages` table per recipient
+    → All messages start with status = 'queued'
+    → Server immediately calls startBroadcast(broadcastId)
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  STEP 2: ENGINE SETS STATUS TO 'sending'                    ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  startBroadcast() does first:
+    • UPDATE broadcasts SET status = 'sending'
+    • Emit progress: broadcast:progress (sent=0, total=N)
+    • Log activity: "Broadcast started — N recipients"
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  STEP 3: ENGINE LOOPS — ONE RECIPIENT AT A TIME             ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  The engine enters a for-loop over the recipients array.
+  For each recipient number:
+
+    ┌────────────────────────────────────────────────────────┐
+    │  A. Sleep(delay_ms) — e.g. 4 seconds                  │
+    │     ← THIS IS THE DELAY YOU SELECTED                   │
+    └────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────┐
+    │  B. Check: global pause / time window / daily cap      │
+    │     → If outside window, wait until inside             │
+    │     → If at daily cap, wait until reset                │
+    └────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────┐
+    │  C. Look up the message row in the database            │
+    │     SELECT * FROM messages WHERE broadcast_id = ?      │
+    │       AND to_number = ? AND status = 'queued'          │
+    │                                                        │
+    │     If already sent (status='sent'), skip to next.     │
+    └────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────┐
+    │  D. POST the message directly to the phone             │
+    │     POST {gateway.url}/send                            │
+    │     { to: "+639...", message: "Hello!", sim_mode }     │
+    │                                                        │
+    │     The phone's HTTP server receives this and sends     │
+    │     the SMS via the phone's local SIM card.            │
+    └────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────┐
+    │  E. Phone responds with result                         │
+    │     HTTP 200 OK → message sent ✅                      │
+    │     UPDATE messages SET status = 'sent'                │
+    │     Mark contact as 'used'                              │
+    │     sent++                                              │
+    │                                                        │
+    │     HTTP error → message failed ❌                     │
+    │     UPDATE messages SET status = 'failed', error = ... │
+    │     failed++                                            │
+    └────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────┐
+    │  F. Update progress (WebSocket broadcast)              │
+    │     broadcast:progress { sent, failed, total }         │
+    │     → Your dashboard updates in real-time ✅           │
+    └────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────┐
+    │  G. Back to the top — next recipient                   │
+    │     Sleep(4s) → POST to phone → response →             │
+    │     Sleep(4s) → POST to phone → response → ...         │
+    └────────────────────────────────────────────────────────┘
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  STEP 4: BROADCAST COMPLETES                                ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  After the last recipient:
+    • All 200 messages are either 'sent' or 'failed'
+    • No need to wait for phone ACKs — results are instant
+    • onMessageAcked() recalculates final progress
+    • Mark broadcast as 'done'
+    • Emit broadcast:complete
+    • Log: "Broadcast done — N/M sent, X failed"
+
+  Done! 200 messages at 4s delay = 200 × 4s = 800s = ~13 min ✓
+
+
+5. ESTIMATED TIME CALCULATION
+──────────────────────────────────────────────────────────────────
+
+  The dashboard shows an estimated time. Here's how it's computed:
+
+    Estimated time = N recipients × delay_ms
+
+  Example:
+    200 recipients × 4000ms = 800,000ms = 800 seconds ≈ 13 minutes
+
+  ✅ In PUSH mode, this estimate is ALWAYS accurate.
+     The engine sends messages at `delay_ms` intervals directly
+     to the phone. No polling bottleneck, no extra waiting.
+     What you see is what you get.
+
+  ❌ In PULL mode (phone behind NAT), the estimate may be WRONG.
+     If the phone polls slower than `delay_ms`, actual time
+     will be: N recipients × MAX(delay_ms, poll_interval).
+
+
+6. PUSH MODE VS PULL MODE
+──────────────────────────────────────────────────────────────────
+
+  ┌────────────────────────────────────────────────────────────────┐
+  │  PUSH MODE (same WiFi/LAN — recommended)                      │
+  │                                                               │
+  │  Server POSTs messages directly to the phone's HTTP endpoint.  │
+  │  Phone's Lite app runs an HTTP server on port 8088.           │
+  │                                                               │
+  │  ✓ No polling needed                                          │
+  │  ✓ Delay controls everything                                  │
+  │  ✓ Estimated time is always correct                           │
+  │  ✓ Messages go straight to 'sent'/'failed' — no waiting       │
+  │                                                               │
+  │  Requirement: Phone must be reachable from the server.        │
+  │  The gateway must have the phone's IP as its URL, e.g.:       │
+  │    http://192.168.1.5:8088                                    │
+  └────────────────────────────────────────────────────────────────┘
+
+  ┌────────────────────────────────────────────────────────────────┐
+  │  PULL MODE (mobile data / remote network)                     │
+  │                                                               │
+  │  Phone POLLS the server for queued messages.                   │
+  │  Server gives 1 message per poll.                              │
+  │                                                               │
+  │  ✓ Works across any network (phone only makes outbound calls)  │
+  │  ✓ No public IP needed on the phone                           │
+  │  ✗ Phone's poll interval can slow things down                 │
+  │  ✗ Messages show as 'pending'/'sending' until phone claims    │
+  │                                                               │
+  │  Requirement: Gateway must be registered in PULL mode.        │
+  └────────────────────────────────────────────────────────────────┘
+
+
+7. RECOVERY AFTER SERVER RESTART
+──────────────────────────────────────────────────────────────────
+
+  If the server crashes or restarts mid-broadcast:
+
+    1. On startup, recoverBroadcasts() runs
+    2. Finds broadcasts stuck in 'sending' status
+    3. Recalculates progress from the messages table
+    4. Filters out already-sent messages
+    5. Restarts the engine for remaining messages
+    6. Continues from where it left off — no data loss
+
+
+8. KEY FILES
+──────────────────────────────────────────────────────────────────
+
+  SERVER:
+    packages/server/services/broadcast-engine.js   → The engine loop
+    packages/server/services/broadcast-helpers.js   → sleep(), pushSend(), etc.
+    packages/server/routes/broadcasts.js            → Create broadcast API
+    packages/server/routes/gateway-outbound.js      → PULL phone poll + ack API
+
+
+9. TROUBLESHOOTING
+──────────────────────────────────────────────────────────────────
+
+  ✗ Broadcast stuck and not progressing
+    → The phone's HTTP server might be down. Check if the phone
+      is powered on and the Lite app is running. Check the
+      gateway status in Numbers tab.
+
+  ✗ "No active gateways available" error
+    → The gateway URL is missing or wrong. Go to Numbers →
+      edit the gateway and make sure the URL is set to the
+      phone's IP + port (e.g., http://192.168.1.5:8088).
+
+  ✗ All messages failed
+    → The server can't reach the phone. Check:
+      • Phone is on the same WiFi/LAN
+      • Phone's Lite app is running (HTTP server on port 8088)
+      • Gateway URL is correct in Numbers tab
+
+  ✗ Broadcast taking much longer than estimated
+    → You're in PULL mode (phone behind NAT). The phone's
+      polling interval is limiting speed. The server cannot
+      push messages to a phone on mobile data.
+
+  ✗ Broadcast cancelled itself
+    → Max duration was reached. Increase "Max broadcast duration"
+      in Settings → Preferences.
+
+  ✗ Phone not showing as online
+    → The heartbeat may not be reaching the server. Restart
+      the Lite app on the phone. Check WiFi connection.
+
+═══════════════════════════════════════════════════════════════════
+  END OF DOCUMENT
+═══════════════════════════════════════════════════════════════════

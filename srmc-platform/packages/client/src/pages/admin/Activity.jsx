@@ -3,6 +3,7 @@ import AdminShell from '../../components/AdminShell.jsx';
 import Pill from '../../components/Pill.jsx';
 
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { useWS } from '../../lib/ws.js';
 import { formatDate } from '../../lib/format.js';
 import { exportActivityXlsx } from '../../lib/export.js';
@@ -11,11 +12,13 @@ import { SkeletonTable } from '../../components/Skeleton.jsx';
 const LEVELS = ['all', 'info', 'warn', 'error'];
 
 export default function Activity() {
-  const [activities, setActivities] = useState([]);
-  const [total, setTotal] = useState(0);
+  const CACHE_KEY = 'admin-activity';
+  const cached = PageCache.get(CACHE_KEY);
+  const [activities, setActivities] = useState(cached?.activities || []);
+  const [total, setTotal] = useState(cached?.total || 0);
   const [level, setLevel] = useState('all');
   const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
   const [search, setSearch] = useState('');
   const limit = 50;
 
@@ -27,6 +30,7 @@ export default function Activity() {
       const data = await api.get(`/activity?${params}`);
       setActivities(data.activities || []);
       setTotal(data.total || 0);
+      PageCache.set(CACHE_KEY, data);
     } catch (e) {}
     setLoading(false);
   }
@@ -116,7 +120,7 @@ export default function Activity() {
             </tr>
           </thead>
           <tbody>
-            {loading && <SkeletonTable cols={6} rows={5} />}
+            {loading && activities.length === 0 && <SkeletonTable cols={6} rows={5} />}
             {!loading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No activity matches your search.' : 'No activity found.'}</td></tr>}
             {filtered.map((a, i) => (
               <tr key={a.id || i}>

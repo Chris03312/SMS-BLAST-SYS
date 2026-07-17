@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { formatNumber } from '../../lib/format.js';
 import { exportAnalyticsXlsx } from '../../lib/export.js';
+import Skeleton from '../../components/Skeleton.jsx';
 
 const PERIODS = [
   { key: 'day',   label: 'Daily' },
@@ -90,8 +92,10 @@ export default function AdminAnalytics() {
   const [period, setPeriod] = useState('day');
   const [campaignFilter, setCampaignFilter] = useState('');
   const [campaigns, setCampaigns] = useState([]);
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const CACHE_KEY = 'admin-analytics';
+  const cached = PageCache.get(CACHE_KEY);
+  const [data, setData] = useState(cached ?? null);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
 
   // Load campaigns list on mount
@@ -124,6 +128,7 @@ export default function AdminAnalytics() {
       if (campaignFilter) url += `&campaign_id=${campaignFilter}`;
       const result = await api.get(url);
       setData(result);
+      PageCache.set(CACHE_KEY, result);
     } catch (e) {
       setError(e.message);
     }
@@ -202,200 +207,234 @@ export default function AdminAnalytics() {
         </div>
       </div>
 
-      {loading && (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
-          Loading analytics...
-        </div>
-      )}
-
       {error && (
         <div style={{ padding: '12px 16px', background: 'var(--err-bg)', border: '1px solid var(--err-line)', borderRadius: 8, color: 'var(--err)', fontSize: 13, marginBottom: 16 }}>
           {error}
         </div>
       )}
 
-      {!loading && !error && data && (
-        <>
-          {/* KPI cards row — 4 cards: Sent, Failed, Rate, Avg Daily */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
-            {[
-              { label: 'Total Sent', value: formatNumber(totals.sent), color: 'var(--brand-1)' },
-              { label: 'Total Failed', value: formatNumber(totals.failed), color: 'var(--err)' },
-              { label: 'Delivery Rate', value: `${totals.delivery_rate}%`, color: totals.delivery_rate >= 80 ? 'var(--ok)' : totals.delivery_rate >= 50 ? 'var(--warn)' : 'var(--err)' },
-              { label: 'Avg Daily', value: series.length > 0 ? formatNumber(Math.round(totals.sent / series.length)) : '0', color: 'var(--ink-1)' },
-            ].map(k => (
-              <div key={k.label} className="card" style={{ padding: '16px 18px' }}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{k.label}</div>
-                <div className="num" style={{ fontSize: 26, fontWeight: 700, color: k.color }}>{k.value}</div>
-              </div>
-            ))}
+      {/* KPI cards row — 4 cards: Sent, Failed, Rate, Avg Daily */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
+        {loading || !data ? [
+          { label: 'Total Sent' },
+          { label: 'Total Failed' },
+          { label: 'Delivery Rate' },
+          { label: 'Avg Daily' },
+        ].map(k => (
+          <div key={k.label} className="card" style={{ padding: '16px 18px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{k.label}</div>
+            <Skeleton variant="title" width="50%" style={{ marginTop: 2 }} />
           </div>
-
-          {/* Two charts side by side — Sent + Failed */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-            <div className="card">
-              <div className="card-head">
-                <h3>Sent</h3>
-                <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{totals.sent} total</span>
-              </div>
-              <div style={{ padding: '8px 12px 4px' }}>
-                {series.length > 0 ? (
-                  <MiniBarChart data={sentSeries} color="var(--brand-1)" labels={series.map(s => s.date)} />
-                ) : (
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
-                )}
-              </div>
-            </div>
-            <div className="card">
-              <div className="card-head">
-                <h3>Failed</h3>
-                <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{totals.failed} total</span>
-              </div>
-              <div style={{ padding: '8px 12px 4px' }}>
-                {series.length > 0 ? (
-                  <MiniBarChart data={failedSeries} color="var(--err)" labels={series.map(s => s.date)} />
-                ) : (
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
-                )}
-              </div>
-            </div>
+        )) : [
+          { label: 'Total Sent', value: formatNumber(totals.sent), color: 'var(--brand-1)' },
+          { label: 'Total Failed', value: formatNumber(totals.failed), color: 'var(--err)' },
+          { label: 'Delivery Rate', value: `${totals.delivery_rate}%`, color: totals.delivery_rate >= 80 ? 'var(--ok)' : totals.delivery_rate >= 50 ? 'var(--warn)' : 'var(--err)' },
+          { label: 'Avg Daily', value: series.length > 0 ? formatNumber(Math.round(totals.sent / series.length)) : '0', color: 'var(--ink-1)' },
+        ].map(k => (
+          <div key={k.label} className="card" style={{ padding: '16px 18px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{k.label}</div>
+            <div className="num" style={{ fontSize: 26, fontWeight: 700, color: k.color }}>{k.value}</div>
           </div>
+        ))}
+      </div>
 
-          {/* Tables row — Campaign + Gateway side by side */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-            <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="card-head" style={{ flexShrink: 0 }}>
-                <h3>By Campaign</h3>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byCampaign.length} campaigns</span>
-              </div>
-              <div style={{ overflowY: 'auto', maxHeight: 300 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Campaign</th>
-                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
-                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
-                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
+      {/* Two charts side by side — Sent + Failed */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+        <div className="card">
+          <div className="card-head">
+            <h3>Sent</h3>
+            <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{data ? totals.sent : ''} total</span>
+          </div>
+          <div style={{ padding: '8px 12px 4px' }}>
+            {loading || !data ? (
+              <Skeleton variant="chart" />
+            ) : series.length > 0 ? (
+              <MiniBarChart data={sentSeries} color="var(--brand-1)" labels={series.map(s => s.date)} />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
+            )}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head">
+            <h3>Failed</h3>
+            <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{data ? totals.failed : ''} total</span>
+          </div>
+          <div style={{ padding: '8px 12px 4px' }}>
+            {loading || !data ? (
+              <Skeleton variant="chart" />
+            ) : series.length > 0 ? (
+              <MiniBarChart data={failedSeries} color="var(--err)" labels={series.map(s => s.date)} />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '30px 0', textAlign: 'center' }}>No data for this period.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tables row — Campaign + Gateway side by side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="card-head" style={{ flexShrink: 0 }}>
+            <h3>By Campaign</h3>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{data ? `${byCampaign.length} campaigns` : ''}</span>
+          </div>
+          <div style={{ overflowY: 'auto', maxHeight: 300 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Campaign</th>
+                  <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
+                  <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
+                  <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading || !data ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      {Array.from({ length: 4 }).map((_, j) => (
+                        <td key={j} style={{ padding: '8px 14px' }}>
+                          <Skeleton variant="text" width={j === 0 ? '70%' : '40%'} />
+                        </td>
+                      ))}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {byCampaign.length === 0 && (
-                      <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
-                    )}
-                    {(() => {
-                      const maxSent = Math.max(...byCampaign.map(c => c.sent), 1);
-                      return byCampaign.map(c => {
-                        const rate = (c.sent + c.failed) > 0 ? Math.round((c.sent / (c.sent + c.failed)) * 100) : 0;
-                        return (
-                          <tr key={c.campaign_id || '__nc__'}>
-                            <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500 }}>
-                              <div>{c.campaign_name || 'Uncategorized'}</div>
-                              <div style={{ marginTop: 3, width: 80 }}><MiniBar value={c.sent} max={maxSent} height={3} /></div>
-                            </td>
-                            <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{c.sent}</td>
-                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: c.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{c.failed}</td>
-                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
-                          </tr>
-                        );
-                      });
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="card-head" style={{ flexShrink: 0 }}>
-                <h3>By Gateway</h3>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byGateway.length} devices</span>
-              </div>
-              <div style={{ overflowY: 'auto', maxHeight: 300 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Gateway</th>
-                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
-                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
-                      <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byGateway.length === 0 && (
-                      <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
-                    )}
-                    {(() => {
-                      const maxSent = Math.max(...byGateway.map(g => g.sent), 1);
-                      return byGateway.map(g => {
-                        const rate = (g.sent + g.failed) > 0 ? Math.round((g.sent / (g.sent + g.failed)) * 100) : 0;
-                        return (
-                          <tr key={g.gateway_id}>
-                            <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500 }}>
-                              <div>{g.gateway_name}</div>
-                              {g.number && <div className="cell-id num" style={{ fontSize: 10 }}>{g.number}</div>}
-                              <div style={{ marginTop: 3, width: 80 }}><MiniBar value={g.sent} max={maxSent} height={3} /></div>
-                            </td>
-                            <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{g.sent}</td>
-                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: g.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{g.failed}</td>
-                            <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
-                          </tr>
-                        );
-                      });
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  ))
+                ) : byCampaign.length === 0 ? (
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
+                ) : (() => {
+                  const maxSent = Math.max(...byCampaign.map(c => c.sent), 1);
+                  return byCampaign.map(c => {
+                    const rate = (c.sent + c.failed) > 0 ? Math.round((c.sent / (c.sent + c.failed)) * 100) : 0;
+                    return (
+                      <tr key={c.campaign_id || '__nc__'}>
+                        <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500 }}>
+                          <div>{c.campaign_name || 'Uncategorized'}</div>
+                          <div style={{ marginTop: 3, width: 80 }}><MiniBar value={c.sent} max={maxSent} height={3} /></div>
+                        </td>
+                        <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{c.sent}</td>
+                        <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: c.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{c.failed}</td>
+                        <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
           </div>
+        </div>
 
-          {/* By Agent — full-width table at bottom */}
-          <div className="card" style={{ marginBottom: 18 }}>
-            <div className="card-head">
-              <h3>By Agent</h3>
-              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{byUser.length} agents</span>
-            </div>
-            <div style={{ overflowY: 'auto', maxHeight: 340 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Agent</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="card-head" style={{ flexShrink: 0 }}>
+            <h3>By Gateway</h3>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{data ? `${byGateway.length} devices` : ''}</span>
+          </div>
+          <div style={{ overflowY: 'auto', maxHeight: 300 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Gateway</th>
+                  <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
+                  <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
+                  <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading || !data ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      {Array.from({ length: 4 }).map((_, j) => (
+                        <td key={j} style={{ padding: '8px 14px' }}>
+                          <Skeleton variant="text" width={j === 0 ? '70%' : '40%'} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : byGateway.length === 0 ? (
+                  <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
+                ) : (() => {
+                  const maxSent = Math.max(...byGateway.map(g => g.sent), 1);
+                  return byGateway.map(g => {
+                    const rate = (g.sent + g.failed) > 0 ? Math.round((g.sent / (g.sent + g.failed)) * 100) : 0;
+                    return (
+                      <tr key={g.gateway_id}>
+                        <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500 }}>
+                          <div>{g.gateway_name}</div>
+                          {g.number && <div className="cell-id num" style={{ fontSize: 10 }}>{g.number}</div>}
+                          <div style={{ marginTop: 3, width: 80 }}><MiniBar value={g.sent} max={maxSent} height={3} /></div>
+                        </td>
+                        <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{g.sent}</td>
+                        <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: g.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{g.failed}</td>
+                        <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* By Agent — full-width table at bottom */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="card-head">
+          <h3>By Agent</h3>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{data ? `${byUser.length} agents` : ''}</span>
+        </div>
+        <div style={{ overflowY: 'auto', maxHeight: 340 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Agent</th>
+                <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Sent</th>
+                <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Failed</th>
+                <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-soft)' }}>Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading || !data ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 4 }).map((_, j) => (
+                      <td key={j} style={{ padding: '8px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {j === 0 && <Skeleton variant="avatar" />}
+                          <Skeleton variant="text" width={j === 0 ? '60%' : '40%'} />
+                        </div>
+                      </td>
+                    ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {byUser.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
-                  )}
-                  {(() => {
-                    const maxSent = Math.max(...byUser.map(u => u.sent), 1);
-                    return byUser.map(u => {
-                      const rate = (u.sent + u.failed) > 0 ? Math.round((u.sent / (u.sent + u.failed)) * 100) : 0;
-                      return (
-                        <tr key={u.agent_id}>
-                          <td style={{ padding: '8px 14px' }}>
-                            <div className="cell-name" style={{ gap: 8 }}>
-                              <div className="row-avatar" style={{ width: 24, height: 24, fontSize: 10 }}>{u.display_name?.slice(0, 2).toUpperCase() || u.username?.slice(0, 2).toUpperCase()}</div>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 12, fontWeight: 500 }}>{u.display_name || u.username}</div>
-                                <div className="cell-id" style={{ fontSize: 10 }}>{u.username}</div>
-                              </div>
-                              <div style={{ width: 60 }}><MiniBar value={u.sent} max={maxSent} height={3} /></div>
-                            </div>
-                          </td>
-                          <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{u.sent}</td>
-                          <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: u.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{u.failed}</td>
-                          <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
+                ))
+              ) : byUser.length === 0 ? (
+                <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px', fontSize: 13 }}>No data.</td></tr>
+              ) : (() => {
+                const maxSent = Math.max(...byUser.map(u => u.sent), 1);
+                return byUser.map(u => {
+                  const rate = (u.sent + u.failed) > 0 ? Math.round((u.sent / (u.sent + u.failed)) * 100) : 0;
+                  return (
+                    <tr key={u.agent_id}>
+                      <td style={{ padding: '8px 14px' }}>
+                        <div className="cell-name" style={{ gap: 8 }}>
+                          <div className="row-avatar" style={{ width: 24, height: 24, fontSize: 10 }}>{u.display_name?.slice(0, 2).toUpperCase() || u.username?.slice(0, 2).toUpperCase()}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 500 }}>{u.display_name || u.username}</div>
+                            <div className="cell-id" style={{ fontSize: 10 }}>{u.username}</div>
+                          </div>
+                          <div style={{ width: 60 }}><MiniBar value={u.sent} max={maxSent} height={3} /></div>
+                        </div>
+                      </td>
+                      <td className="num" style={{ padding: '8px 14px', fontSize: 12 }}>{u.sent}</td>
+                      <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: u.failed > 0 ? 'var(--err)' : 'var(--ink-3)' }}>{u.failed}</td>
+                      <td className="num" style={{ padding: '8px 14px', fontSize: 12, color: rate >= 80 ? 'var(--ok)' : rate >= 50 ? 'var(--warn)' : 'var(--err)' }}>{rate}%</td>
+                    </tr>
+                  );
+                });
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </AdminShell>
   );
 }

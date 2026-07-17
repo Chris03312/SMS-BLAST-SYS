@@ -6,6 +6,7 @@ import PasswordInput from '../../components/PasswordInput.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import GatewayNumbers from './GatewayNumbers.jsx';
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber } from '../../lib/format.js';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -717,7 +718,7 @@ export default function Gateway() {
       )}
 
       {/* Loading */}
-      {loading && (
+      {loading && gateways.length === 0 && (
         <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
           Loading gateways…
         </div>

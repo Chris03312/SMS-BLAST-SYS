@@ -17,12 +17,12 @@ import { api } from './api.js'
  * @param {string}         key        - Unique cache key (e.g. 'campaigns', ['agents', page])
  * @param {string}         endpoint   - API path (e.g. '/campaigns')
  * @param {object}         [opts]     - Additional react-query options
- * @param {number}         [opts.staleTime=30000] - How long data is considered fresh (ms)
+ * @param {number}         [opts.staleTime=Infinity] - How long data is considered fresh (ms)
  * @returns {{ data, isLoading, error, refetch }}
  */
 export function useApiQuery(key, endpoint, opts = {}) {
   const queryKey = Array.isArray(key) ? key : [key]
-  const { staleTime = 30_000, ...rest } = opts
+  const { staleTime = Infinity, ...rest } = opts
 
   return useQuery({
     queryKey,

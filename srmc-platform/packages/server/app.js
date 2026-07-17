@@ -20,6 +20,7 @@ process.env.TZ = 'Asia/Manila';
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import path from 'path';
 import os from 'os';
 import { statSync } from 'fs';
@@ -70,6 +71,7 @@ export const NGROK_AUTHTOKEN = '';
 
 const app = express();
 
+app.use(compression()); // Gzip all responses (154KB vendor chunk → ~50KB)
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 
@@ -100,11 +102,22 @@ app.use('/api', contactRoutes);
 // ── Serve React client (built files) ────────────────────────────────
 
 const clientDist = path.join(__dirname, '..', '..', 'packages', 'client', 'dist');
-app.use(express.static(clientDist));
+// Cache built assets (JS/CSS/images) forever — their filenames include content hashes.
+// Don't cache index.html since it might change between builds.
+app.use(express.static(clientDist, {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    }
+  },
+}));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   if (req.path.startsWith('/ws')) return next();
   if (req.path === '/health') return next();
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
   res.sendFile(path.join(clientDist, 'index.html'));
 });
 

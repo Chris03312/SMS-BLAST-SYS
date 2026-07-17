@@ -5,6 +5,7 @@ import Modal from '../../components/Modal.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
+import { PageCache } from '../../lib/page-cache.js';
 import { useWS } from '../../lib/ws.js';
 import { formatTime } from '../../lib/format.js';
 import { exportGatewaysXlsx } from '../../lib/export.js';
@@ -13,8 +14,10 @@ import NumbersHistory from './NumbersHistory.jsx';
 import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 export default function Numbers() {
-  const [gateways, setGateways] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const CACHE_KEY = 'admin-numbers';
+  const cached = PageCache.get(CACHE_KEY);
+  const [gateways, setGateways] = useState(cached?.gateways || []);
+  const [loading, setLoading] = useState(!cached);
   const [showModal, setShowModal] = useState(false);
   const [editGateway, setEditGateway] = useState(null);
   const [form, setForm] = useState({ name: '', url: '', token: '', sim_carrier: '', number: '', number2: '' });
@@ -57,6 +60,7 @@ export default function Numbers() {
     try {
       const data = await api.get('/gateways');
       setGateways(data.gateways || []);
+      PageCache.set(CACHE_KEY, data);
     } catch (e) {}
     setLoading(false);
   }
@@ -203,7 +207,7 @@ export default function Numbers() {
             </tr>
           </thead>
           <tbody>
-            {loading && <SkeletonTable cols={10} rows={5} />}
+            {loading && gateways.length === 0 && <SkeletonTable cols={10} rows={5} />}
             {!loading && filtered.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No gateways match your search.' : 'No gateways configured.'}</td></tr>}
             {filtered.map(g => (
               <tr key={g.id}>
