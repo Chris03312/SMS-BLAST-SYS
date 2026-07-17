@@ -4,6 +4,7 @@ import Pill from '../../components/Pill.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { formatDate } from '../../lib/format.js';
+import Skeleton, { SkeletonRow, SkeletonTable } from '../../components/Skeleton.jsx';
 
 // ── Broadcast Detail Modal ────────────────────────────────────────────────
 function BroadcastDetail({ broadcast, onClose }) {
@@ -144,7 +145,16 @@ function BroadcastDetail({ broadcast, onClose }) {
           </div>
           <div style={{ padding: '0 20px' }}>
           {loading && (
-            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
+            <div style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto 1fr', gap: 12, alignItems: 'center' }}>
+                  <Skeleton variant="text" width="70%" />
+                  <Skeleton variant="badge" width={50} />
+                  <Skeleton variant="badge" width={60} />
+                  <Skeleton variant="text" width="40%" />
+                </div>
+              ))}
+            </div>
           )}
           {!loading && messages.length === 0 && (
             <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No messages found.</div>
@@ -322,9 +332,7 @@ export default function History() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>
-            )}
+            {loading && <SkeletonTable cols={10} rows={5} />}
             {!loading && broadcasts.length === 0 && (
               <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No broadcasts found.</td></tr>
             )}

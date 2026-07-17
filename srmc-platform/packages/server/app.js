@@ -54,7 +54,7 @@ import { initTimezone } from './services/timezone.js';
 // can reach it — this is required for ngrok (which connects to localhost).
 // SERVER_HOST is read separately for URL generation in the desktop app.
 function resolveServerConfig() {
-  const port = parseInt(process.env.SERVER_PORT) || 3001;
+  const port = parseInt(process.env.SERVER_PORT) || 3003;
   return { host: '0.0.0.0', port };
 }
 
@@ -232,9 +232,19 @@ app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
 });
 
 // ── System health (consolidated status for the sidebar widget) ──────
+// This endpoint is polled by the frontend sidebar widget on navigation
+// and on a timer. Cache the result for 2 seconds to avoid hammering the DB.
+
+let _healthCache = { data: null, ts: 0 };
+const HEALTH_TTL = 2000;
 
 app.get('/api/system/health', authMiddleware, (req, res) => {
   try {
+    const now = Date.now();
+    if (_healthCache.data && (now - _healthCache.ts) < HEALTH_TTL) {
+      return res.json({ success: true, ..._healthCache.data });
+    }
+
     const sentToday = db.prepare('SELECT COALESCE(SUM(sent_today), 0) AS c FROM gateways').get();
     const dailyCap = parseInt(getSetting('daily_cap')) || 100000;
 
@@ -253,10 +263,9 @@ app.get('/api/system/health', authMiddleware, (req, res) => {
     ).get();
 
     let dbSize = 0;
-    try { dbSize = statSync(DB_PATH).size; } catch (_) {}
+    try { dbSize = statSync(DB_PATH).size; } catch (_) { }
 
-    return res.json({
-      success: true,
+    const data = {
       sent_today: sentToday?.c || 0,
       daily_cap: dailyCap,
       gateways: {
@@ -268,7 +277,10 @@ app.get('/api/system/health', authMiddleware, (req, res) => {
       },
       active_broadcasts: activeBc?.c || 0,
       db_size: dbSize,
-    });
+    };
+
+    _healthCache = { data, ts: now };
+    return res.json({ success: true, ...data });
   } catch (e) {
     console.error('[system] health error:', e);
     return res.status(500).json({ success: false, error: 'Internal server error' });

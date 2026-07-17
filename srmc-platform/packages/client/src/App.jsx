@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
+import { SkeletonPage } from './components/Skeleton.jsx';
 
 // ── Code-split page components ──────────────────────────────────────────
 // Each page is loaded only when its route is visited, reducing the initial
@@ -41,14 +42,14 @@ function RoleRedirect() {
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div style={{ padding: 40, color: '#737373', fontFamily: 'Inter, sans-serif' }}>Loading...</div>;
+  if (loading) return <SkeletonPage />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
 function AdminRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div style={{ padding: 40, color: '#737373', fontFamily: 'Inter, sans-serif' }}>Loading...</div>;
+  if (loading) return <SkeletonPage />;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== 'admin' && user.role !== 'super_admin') return <Navigate to="/compose" replace />;
   return children;
@@ -56,35 +57,10 @@ function AdminRoute({ children }) {
 
 function AgentRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div style={{ padding: 40, color: '#737373', fontFamily: 'Inter, sans-serif' }}>Loading...</div>;
+  if (loading) return <SkeletonPage />;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === 'admin' || user.role === 'super_admin') return <Navigate to="/admin" replace />;
   return children;
-}
-
-// ── Page loading spinner ───────────────────────────────────────────────
-
-function PageFallback() {
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      fontFamily: 'Inter, system-ui, sans-serif',
-      color: '#737373',
-      fontSize: 14,
-      gap: 12,
-      background: '#f5f5f5',
-    }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 0.8s linear infinite' }}>
-        <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-        <path d="M12 2a10 10 0 0 1 10 10" />
-      </svg>
-      Loading…
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
 }
 
 // ── App ────────────────────────────────────────────────────────────────
@@ -94,7 +70,7 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
       <BrowserRouter>
-        <Suspense fallback={<PageFallback />}>
+        <Suspense fallback={<SkeletonPage />}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><RoleRedirect /></ProtectedRoute>} />

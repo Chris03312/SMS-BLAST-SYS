@@ -1,49 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import Modal from '../../components/Modal.jsx';
 import { api } from '../../lib/api.js';
+import { useApiQuery, useApiMutation } from '../../lib/useApiQuery.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDateShort } from '../../lib/format.js';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 export default function Campaigns() {
-  const [campaigns, setCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const { toast } = useToast();
   const [form, setForm] = useState({ name: '', status: 'active' });
   const [editForm, setEditForm] = useState({ name: '', status: 'active' });
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => { load(); }, []);
+  const { data, isLoading } = useApiQuery('campaigns', '/campaigns');
+  const campaigns = data?.campaigns || [];
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await api.get('/campaigns');
-      setCampaigns(data.campaigns || []);
-    } catch (e) {}
-    setLoading(false);
-  }
-
-  async function handleCreate(e) {
-    e.preventDefault();
-    setSaving(true);
-    setError('');
-    try {
-      const c = await api.post('/campaigns', form);
-      setCampaigns(prev => [c.campaign, ...prev]);
+  const createMut = useApiMutation('/campaigns', {
+    onRefetch: 'campaigns',
+    onSuccess: () => {
       setShowModal(false);
       setForm({ name: '', status: 'active' });
       toast(`Campaign "${form.name}" created`, 'success');
-    } catch (e) {
-      setError(e.message);
-      toast(e.message, 'error');
-    }
-    setSaving(false);
+    },
+  });
+
+  const updateMut = useApiMutation((body) => api.put(`/campaigns/${editItem.id}`, body), {
+    onRefetch: 'campaigns',
+    onSuccess: () => {
+      setShowEditModal(false);
+      setEditItem(null);
+      toast(`Campaign "${editForm.name}" updated`, 'success');
+    },
+  });
+
+  const statusMut = useApiMutation(({ id, status }) => api.put(`/campaigns/${id}`, { status }), {
+    onRefetch: 'campaigns',
+    onSuccess: (_, vars) => toast(`Campaign status changed to "${vars.status}"`, 'success'),
+  });
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setError('');
+    try { await createMut.mutateAsync(form); }
+    catch (e) { setError(e.message); toast(e.message, 'error'); }
+  }
+
+  async function handleSaveEdit(e) {
+    e.preventDefault();
+    if (!editItem) return;
+    setError('');
+    try { await updateMut.mutateAsync({ name: editForm.name, status: editForm.status }); }
+    catch (e) { setError(e.message); toast(e.message, 'error'); }
   }
 
   function handleEdit(c) {
@@ -53,37 +65,9 @@ export default function Campaigns() {
     setShowEditModal(true);
   }
 
-  async function handleSaveEdit(e) {
-    e.preventDefault();
-    if (!editItem) return;
-    setSaving(true);
-    setError('');
-    try {
-      const updated = await api.put(`/campaigns/${editItem.id}`, editForm);
-      setCampaigns(prev => prev.map(c => c.id === editItem.id ? updated.campaign : c));
-      setShowEditModal(false);
-      setEditItem(null);
-      toast(`Campaign "${editForm.name}" updated`, 'success');
-    } catch (e) {
-      setError(e.message);
-      toast(e.message, 'error');
-    }
-    setSaving(false);
-  }
-
   async function handleStatusChange(id, status) {
-    try {
-      const updated = await api.put(`/campaigns/${id}`, { status });
-      setCampaigns(prev => prev.map(c => c.id === id ? updated.campaign : c));
-      toast(`Campaign status changed to "${status}"`, 'success');
-    } catch (e) {
-      toast(e.message, 'error');
-    }
-  }
-
-  function formatDate(iso) {
-    if (!iso) return '—';
-    return formatDateShort(iso);
+    try { await statusMut.mutateAsync({ id, status }); }
+    catch (e) { toast(e.message, 'error'); }
   }
 
   return (
@@ -114,10 +98,8 @@ export default function Campaigns() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>
-            )}
-            {!loading && campaigns.length === 0 && (
+            {isLoading && <SkeletonTable cols={7} rows={5} />}
+            {!isLoading && campaigns.length === 0 && (
               <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No campaigns yet.</td></tr>
             )}
             {campaigns.map(c => (
@@ -130,7 +112,7 @@ export default function Campaigns() {
                 <td><Pill status={c.status} label={c.status} /></td>
                 <td className="num">{c.broadcast_count || 0}</td>
                 <td className="num">{c.total_sent || 0}</td>
-                <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>{formatDate(c.created_at)}</td>
+                <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>{c.created_at ? formatDateShort(c.created_at) : '—'}</td>
                 <td>
                   <div className="row-actions" style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
                     <button
@@ -191,7 +173,7 @@ export default function Campaigns() {
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Creating...' : 'Create campaign'}</button>
+                <button type="submit" className="btn-primary" disabled={createMut.isPending}>{createMut.isPending ? 'Creating...' : 'Create campaign'}</button>
               </div>
             </div>
           </form>
@@ -224,7 +206,7 @@ export default function Campaigns() {
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={() => { setShowEditModal(false); setEditItem(null); }}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button>
+                <button type="submit" className="btn-primary" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving...' : 'Save changes'}</button>
               </div>
             </div>
           </form>

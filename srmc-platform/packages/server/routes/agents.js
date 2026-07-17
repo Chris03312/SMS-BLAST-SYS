@@ -21,9 +21,20 @@ router.get('/', (req, res) => {
   try {
     const agents = db.prepare(`
       SELECT u.id, u.username, u.display_name, u.role, u.active, u.created_at, u.last_login_at,
-        (SELECT COUNT(*) FROM broadcasts b WHERE b.agent_id = u.id) as broadcast_count,
-        (SELECT COALESCE(SUM(b.sent), 0) FROM broadcasts b WHERE b.agent_id = u.id AND b.created_at >= date('now', '-1 day')) as sent_today
+        COALESCE(bc.broadcast_count, 0) as broadcast_count,
+        COALESCE(bs.sent_today, 0) as sent_today
       FROM users u
+      LEFT JOIN (
+        SELECT agent_id, COUNT(*) as broadcast_count
+        FROM broadcasts
+        GROUP BY agent_id
+      ) bc ON bc.agent_id = u.id
+      LEFT JOIN (
+        SELECT agent_id, COALESCE(SUM(sent), 0) as sent_today
+        FROM broadcasts
+        WHERE created_at >= date('now', '-1 day')
+        GROUP BY agent_id
+      ) bs ON bs.agent_id = u.id
       WHERE u.role = 'agent'
       ORDER BY u.created_at DESC
     `).all();

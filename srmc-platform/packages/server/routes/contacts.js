@@ -15,6 +15,15 @@ function fail(res, error, status = 400) {
   return res.status(status).json({ success: false, error });
 }
 
+// Helper: convert 'YYYY-MM-DD' date to next-day range for index-friendly comparison
+// Replaces DATE(created_at) = ? which disables index usage
+function dateRangeFilter(filterDate) {
+  const [yy, mm, dd] = filterDate.split('-').map(Number);
+  const nd = new Date(yy, mm - 1, dd + 1);
+  const nextStr = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
+  return { start: `${filterDate} 00:00:00`, end: `${nextStr} 00:00:00` };
+}
+
 // ── Admin: Upload contacts (client sends pre-parsed JSON) ─────────────
 // Expected body: { agents: [{ name: "Maria", numbers: ["..."], dpd_group: "DPD 1", category: "PRIORITY" }, ...], fileName: "..." }
 
@@ -157,28 +166,62 @@ router.get('/admin/contacts/batches', adminOnly, (req, res) => {
       LIMIT 50
     `).all();
 
-    const batchDetails = batches.map(b => {
-      const agents = db.prepare(`
-        SELECT u.display_name as agent_name, COUNT(*) as count
-        FROM agent_contacts ac
-        JOIN users u ON ac.agent_id = u.id
-        WHERE ac.batch_id = ?
-        GROUP BY ac.agent_id
-        ORDER BY count DESC
-      `).all(b.batch_id);
+    if (batches.length === 0) {
+      return ok(res, { batches: [] });
+    }
 
-      // Get unique DPD groups for this batch
-      const dpdGroups = db.prepare(`
-        SELECT DISTINCT dpd_group FROM agent_contacts WHERE batch_id = ? AND dpd_group != '' ORDER BY dpd_group
-      `).all(b.batch_id).map(r => r.dpd_group);
+    const batchIds = batches.map(b => b.batch_id);
+    const placeholders = batchIds.map(() => '?').join(',');
 
-      // Get unique categories for this batch
-      const categories = db.prepare(`
-        SELECT DISTINCT category FROM agent_contacts WHERE batch_id = ? AND category != '' ORDER BY category
-      `).all(b.batch_id).map(r => r.category);
+    // Batch all agent groupings across all batches (was N×1 queries)
+    const agentsByBatch = {};
+    const agentRows = db.prepare(`
+      SELECT ac.batch_id, u.display_name as agent_name, COUNT(*) as count
+      FROM agent_contacts ac
+      JOIN users u ON ac.agent_id = u.id
+      WHERE ac.batch_id IN (${placeholders})
+      GROUP BY ac.batch_id, ac.agent_id
+      ORDER BY count DESC
+    `).all(...batchIds);
+    for (const row of agentRows) {
+      if (!agentsByBatch[row.batch_id]) agentsByBatch[row.batch_id] = [];
+      agentsByBatch[row.batch_id].push({ agent_name: row.agent_name, count: row.count });
+    }
 
-      return { ...b, agents, dpd_groups: dpdGroups, categories };
-    });
+    // Batch all DPD groups across all batches
+    const dpdByBatch = {};
+    const dpdRows = db.prepare(`
+      SELECT batch_id, dpd_group
+      FROM agent_contacts
+      WHERE batch_id IN (${placeholders}) AND dpd_group != ''
+      GROUP BY batch_id, dpd_group
+      ORDER BY dpd_group
+    `).all(...batchIds);
+    for (const row of dpdRows) {
+      if (!dpdByBatch[row.batch_id]) dpdByBatch[row.batch_id] = [];
+      dpdByBatch[row.batch_id].push(row.dpd_group);
+    }
+
+    // Batch all categories across all batches
+    const catByBatch = {};
+    const catRows = db.prepare(`
+      SELECT batch_id, category
+      FROM agent_contacts
+      WHERE batch_id IN (${placeholders}) AND category != ''
+      GROUP BY batch_id, category
+      ORDER BY category
+    `).all(...batchIds);
+    for (const row of catRows) {
+      if (!catByBatch[row.batch_id]) catByBatch[row.batch_id] = [];
+      catByBatch[row.batch_id].push(row.category);
+    }
+
+    const batchDetails = batches.map(b => ({
+      ...b,
+      agents: agentsByBatch[b.batch_id] || [],
+      dpd_groups: dpdByBatch[b.batch_id] || [],
+      categories: catByBatch[b.batch_id] || [],
+    }));
 
     return ok(res, { batches: batchDetails });
   } catch (e) {
@@ -187,21 +230,25 @@ router.get('/admin/contacts/batches', adminOnly, (req, res) => {
   }
 });
 
-// ── Agent: Get my contacts ─────────────────────────────────────────────
+// ── Agent: Get my contacts (paginated) ────────────────────────────────
 
 router.get('/agent/contacts', (req, res) => {
   try {
     const dateFilter = req.query.date; // optional YYYY-MM-DD
     const usedFilter = req.query.used || 'all'; // 'all', 'available', 'used'
     const search = req.query.search; // optional phone number search
+    const categoryFilter = req.query.category; // optional category name to filter by
+    const page = parseInt(req.query.page) || 0;
+    const perPage = parseInt(req.query.perPage) || 200;
 
     // Build WHERE clauses
     const conditions = ['agent_id = ?'];
     const params = [req.user.id];
 
     if (dateFilter) {
-      conditions.push('DATE(created_at) = ?');
-      params.push(dateFilter);
+      const dr = dateRangeFilter(dateFilter);
+      conditions.push('created_at >= ? AND created_at < ?');
+      params.push(dr.start, dr.end);
     }
 
     if (usedFilter === 'available') {
@@ -216,47 +263,90 @@ router.get('/agent/contacts', (req, res) => {
       params.push(`%${search}%`);
     }
 
+    // Category filter — when a category tab is clicked
+    if (categoryFilter === '__nocat__') {
+      conditions.push("(category = '' OR category IS NULL)");
+    } else if (categoryFilter) {
+      conditions.push('category = ?');
+      params.push(categoryFilter);
+    }
+
     const whereClause = conditions.join(' AND ');
 
-    // Fetch contacts with used field included
-    const contactsSql = `SELECT id, phone_number, used, batch_id, created_at, dpd_group, category FROM agent_contacts WHERE ${whereClause} ORDER BY category, dpd_group, created_at DESC`;
-    const contacts = db.prepare(contactsSql).all(...params);
-
-    // Total count matching filter
-    const totalSql = `SELECT COUNT(*) as c FROM agent_contacts WHERE ${whereClause}`;
-    const total = db.prepare(totalSql).get(...params);
-
-    // Available (unused) count
-    const availConditions = ['agent_id = ?', 'used = 0'];
-    const availParams = [req.user.id];
+    // Build base filter params (agent_id + dateFilter + search) for count queries
+    const baseConditions = ['agent_id = ?'];
+    const baseParams = [req.user.id];
     if (dateFilter) {
-      availConditions.push('DATE(created_at) = ?');
-      availParams.push(dateFilter);
+      const dr = dateRangeFilter(dateFilter);
+      baseConditions.push('created_at >= ? AND created_at < ?');
+      baseParams.push(dr.start, dr.end);
     }
     if (search) {
-      availConditions.push('phone_number LIKE ?');
-      availParams.push(`%${search}%`);
+      baseConditions.push('phone_number LIKE ?');
+      baseParams.push(`%${search}%`);
     }
-    const availableTotal = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts WHERE ${availConditions.join(' AND ')}`).get(...availParams);
+    if (categoryFilter === '__nocat__') {
+      baseConditions.push("(category = '' OR category IS NULL)");
+    } else if (categoryFilter) {
+      baseConditions.push('category = ?');
+      baseParams.push(categoryFilter);
+    }
+    const baseWhere = baseConditions.join(' AND ');
 
-    // Used count
-    const usedConditions = ['agent_id = ?', 'used = 1'];
-    const usedParams = [req.user.id];
+    // Single GROUP BY query to get available + used counts (was 2 separate COUNT queries)
+    const countRows = db.prepare(
+      `SELECT used, COUNT(*) as c FROM agent_contacts WHERE ${baseWhere} GROUP BY used`
+    ).all(...baseParams);
+    let availableCount = 0;
+    let usedCount = 0;
+    for (const row of countRows) {
+      if (row.used === 0) availableCount = row.c;
+      else if (row.used === 1) usedCount = row.c;
+    }
+
+    // Total matching the current usedFilter — derive from GROUP BY or useFiltered count
+    let totalCount;
+    if (usedFilter === 'all') {
+      totalCount = availableCount + usedCount;
+    } else {
+      // Must count with the usedFilter applied separately
+      const totalRow = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts WHERE ${whereClause}`).get(...params);
+      totalCount = totalRow?.c || 0;
+    }
+    const totalPages = Math.ceil(totalCount / perPage) || 1;
+
+    // Fetch paginated contacts
+    const offset = page * perPage;
+    const contactsSql = `SELECT id, phone_number, used, batch_id, created_at, dpd_group, category FROM agent_contacts WHERE ${whereClause} ORDER BY category, dpd_group, created_at DESC LIMIT ? OFFSET ?`;
+    const contacts = db.prepare(contactsSql).all(...params, perPage, offset);
+
+    // Get ALL categories with TOTAL counts for this agent (unpaginated, UNFILTERED by category)
+    // so the frontend nav bar always shows all categories even when a category filter is active.
+    // Uses the same date/search/used/available filters but NOT the category filter.
+    const catConditions = ['agent_id = ?'];
+    const catParams = [req.user.id];
     if (dateFilter) {
-      usedConditions.push('DATE(created_at) = ?');
-      usedParams.push(dateFilter);
+      const dr = dateRangeFilter(dateFilter);
+      catConditions.push('created_at >= ? AND created_at < ?');
+      catParams.push(dr.start, dr.end);
     }
     if (search) {
-      usedConditions.push('phone_number LIKE ?');
-      usedParams.push(`%${search}%`);
+      catConditions.push('phone_number LIKE ?');
+      catParams.push(`%${search}%`);
     }
-    const usedTotal = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts WHERE ${usedConditions.join(' AND ')}`).get(...usedParams);
+    const allCategories = db.prepare(
+      `SELECT category, COUNT(*) as count FROM agent_contacts WHERE ${catConditions.join(' AND ')} GROUP BY category ORDER BY category`
+    ).all(...catParams);
 
     return ok(res, {
       contacts,
-      total: total?.c || 0,
-      available: availableTotal?.c || 0,
-      used: usedTotal?.c || 0,
+      all_categories: allCategories,
+      total: totalCount,
+      available: availableCount,
+      used: usedCount,
+      page,
+      perPage,
+      totalPages,
     });
   } catch (e) {
     console.error('[contacts] Agent list error:', e);
@@ -317,6 +407,8 @@ router.put('/agent/contacts/mark-sent', (req, res) => {
 router.get('/admin/contacts/batch/:batchId', adminOnly, (req, res) => {
   try {
     const search = req.query.search; // optional phone number search
+    const page = parseInt(req.query.page) || 0;
+    const perPage = parseInt(req.query.perPage) || 200;
 
     let whereSql = 'ac.batch_id = ?';
     const params = [req.params.batchId];
@@ -326,6 +418,13 @@ router.get('/admin/contacts/batch/:batchId', adminOnly, (req, res) => {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
+    // Total count
+    const totalRow = db.prepare(`SELECT COUNT(*) as c FROM agent_contacts ac JOIN users u ON ac.agent_id = u.id WHERE ${whereSql}`).get(...params);
+    const totalCount = totalRow?.c || 0;
+    const totalPages = Math.ceil(totalCount / perPage) || 1;
+
+    // Paginated contacts
+    const offset = page * perPage;
     const contacts = db.prepare(`
       SELECT ac.id, ac.phone_number, ac.used, ac.broadcast_id, ac.created_at,
              u.display_name as agent_name, ac.dpd_group, ac.category
@@ -333,9 +432,10 @@ router.get('/admin/contacts/batch/:batchId', adminOnly, (req, res) => {
       JOIN users u ON ac.agent_id = u.id
       WHERE ${whereSql}
       ORDER BY ac.category, ac.dpd_group, u.display_name, ac.created_at
-    `).all(...params);
+      LIMIT ? OFFSET ?
+    `).all(...params, perPage, offset);
 
-    // Tally per agent + category combo
+    // Tally per agent + category combo (only for current page)
     const byAgent = {};
     for (const c of contacts) {
       const key = `${c.agent_name}__${c.category || ''}`;
@@ -344,10 +444,19 @@ router.get('/admin/contacts/batch/:batchId', adminOnly, (req, res) => {
       if (c.used) byAgent[key].used++;
     }
 
+    // Get ALL distinct categories in this batch (unpaginated)
+    const allBatchCats = db.prepare(
+      `SELECT DISTINCT category FROM agent_contacts WHERE batch_id = ? AND category != '' ORDER BY category`
+    ).all(req.params.batchId);
+
     return ok(res, {
       contacts,
-      total: contacts.length,
+      all_categories: allBatchCats.map(r => r.category),
+      total: totalCount,
       by_agent: byAgent,
+      page,
+      perPage,
+      totalPages,
     });
   } catch (e) {
     console.error('[contacts] Get batch error:', e);

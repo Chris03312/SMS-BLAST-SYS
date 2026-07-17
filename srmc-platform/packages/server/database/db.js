@@ -50,12 +50,42 @@ const rawDb = existsSync(DB_PATH)
   ? new SQL.Database(readFileSync(DB_PATH))
   : new SQL.Database();
 
+// ── Debounced disk flush ──────────────────────────────────────────────
+// sql.js keeps the DB in memory; flushDbSync() exports the entire database
+// to disk. For sql.js, this serializes the whole DB to a byte buffer (~50 MB)
+// and writes it synchronously — blocking the event loop the whole time.
+//
+// Every Statement.run() outside a transaction triggers a flush, meaning
+// rapid writes (activity logs, heartbeat updates, contact marks) would
+// each export the entire 50 MB DB — extremely slow.
+//
+// Solution: debounce the flush so multiple writes within a short window
+// (200 ms) result in a single disk write. Critical operations (transactions,
+// bulk inserts) still call flushDbSync() immediately.
+
+let _flushTimer = null;
+
 /**
- * Immediately flush the in-memory database to disk.
- * Called after every write so no data is lost on crash.
- * Can also be called externally for graceful shutdown or manual backup.
+ * Debounced flush — batches rapid writes into one disk sync.
+ * Used by Statement.run() for individual non-transactional writes.
  */
 export function flushDb() {
+  if (_flushTimer) clearTimeout(_flushTimer);
+  _flushTimer = setTimeout(() => {
+    _flushTimer = null;
+    flushDbSync();
+  }, 200);
+}
+
+/**
+ * Immediate (synchronous) flush — exports the entire DB to disk right now.
+ * Used by transactions, bulk inserts, external shutdown hooks, and backup.
+ */
+export function flushDbSync() {
+  if (_flushTimer) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
+  }
   try {
     const data = rawDb.export();
     writeFileSync(DB_PATH, Buffer.from(data));
@@ -115,11 +145,22 @@ function createInitialBackup() {
   }
 }
 
-// ── Statement wrapper ────────────────────────────────────────────────────────
+// ── Statement wrapper with prepared-statement cache ──────────────────
+// Each Statement wraps a single compiled sql.js statement handle.
+// Instead of calling rawDb.prepare() + .free() on every query (which
+// compiles SQL → WASM bytecode every time), the handle is compiled once
+// and reused with .reset() between calls. This ~3–5× faster for repeated
+// queries like the hundreds of db.prepare('SELECT ... WHERE id = ?') calls
+// across all route files.
+//
+// The cache lives on Database._stmtCache (Map<sqlString, Statement>).
+// It's unbounded but the number of unique SQL patterns in the app is
+// small (~100), so memory is negligible.
 
 class Statement {
   constructor(sql) {
     this._sql = sql;
+    this._stmt = rawDb.prepare(sql);
   }
 
   // Normalize variadic positional args to a flat array.
@@ -129,41 +170,81 @@ class Statement {
     return args;
   }
 
+  /**
+   * Execute a sql.js statement operation with auto-recovery from
+   * "Statement closed" errors.
+   *
+   * sql.js can throw "Statement closed" (as a plain string, not an Error)
+   * when the underlying compiled SQLite statement has been finalized.
+   * This happens because SQLite finalizes ALL prepared statements whenever
+   * a DDL statement (CREATE INDEX, ALTER TABLE, etc.) runs against the
+   * database connection. Since initDb() runs 50+ DDLs on every boot, and
+   * route handlers may run cached statements before or between DDL blocks,
+   * any cached statement can become invalid.
+   *
+   * When caught, we re-prepare the statement from rawDb and retry once.
+   * This makes the cache robust regardless of when DDL runs.
+   */
+  _exec(mode, args) {
+    let tries = 0;
+    while (tries < 2) {
+      try {
+        this._stmt.reset();
+        const p = this._params(args);
+        if (p.length) this._stmt.bind(p);
+
+        if (mode === 'get') {
+          return this._stmt.step() ? this._stmt.getAsObject() : undefined;
+        }
+        if (mode === 'all') {
+          const rows = [];
+          while (this._stmt.step()) rows.push(this._stmt.getAsObject());
+          return rows;
+        }
+        // run
+        this._stmt.step();
+        const changes = rawDb.getRowsModified();
+        if (!db._inTransaction && !db._initMode) flushDb();
+        return { changes };
+      } catch (e) {
+        tries++;
+        // sql.js throws "Statement closed" as a STRING, not an Error
+        const isClosed = e === 'Statement closed' ||
+          (typeof e === 'object' && e && e.message === 'Statement closed');
+        if (tries >= 2 || !isClosed) {
+          throw e;
+        }
+        // Re-prepare: the underlying WASM statement was finalized
+        this._stmt = rawDb.prepare(this._sql);
+      }
+    }
+  }
+
   /** Returns the first row as a plain object, or undefined. */
   get(...args) {
-    const stmt = rawDb.prepare(this._sql);
-    const p = this._params(args);
-    if (p.length) stmt.bind(p);
-    const row = stmt.step() ? stmt.getAsObject() : undefined;
-    stmt.free();
-    return row;
+    return this._exec('get', args);
   }
 
   /** Returns all rows as an array of plain objects. */
   all(...args) {
-    const stmt = rawDb.prepare(this._sql);
-    const p = this._params(args);
-    if (p.length) stmt.bind(p);
-    const rows = [];
-    while (stmt.step()) rows.push(stmt.getAsObject());
-    stmt.free();
-    return rows;
+    return this._exec('all', args);
   }
 
   /** Executes INSERT / UPDATE / DELETE. Returns { changes }. */
   run(...args) {
-    const stmt = rawDb.prepare(this._sql);
-    const p = this._params(args);
-    if (p.length) stmt.bind(p);
-    stmt.step();
-    const changes = rawDb.getRowsModified();
-    stmt.free();
-    // Skip disk flush inside a transaction — the transaction wrapper or
-    // bulkInsert flushes once after COMMIT. Flushing during a transaction
-    // writes uncommitted state to disk and is redundant.
-    if (!db._inTransaction) flushDb();
-    return { changes };
+    return this._exec('run', args);
   }
+
+  /**
+   * Free the underlying WASM statement handle.
+   * Called during cache cleanup; never needed during normal operation.
+   */
+  free() {
+    try { this._stmt.free(); } catch (_) { }
+  }
+
+  /** Return the SQL text this statement was compiled from. */
+  get sql() { return this._sql; }
 }
 
 // ── Database wrapper ─────────────────────────────────────────────────────────
@@ -172,15 +253,40 @@ class Database {
   /** Tracks whether we are inside a BEGIN/COMMIT transaction. */
   _inTransaction = false;
 
+  /**
+   * When true, Statement.run() skips the debounced flushDb() and exec()
+   * skips flushDbSync(). Set during initDb() so that 40+ schema migrations
+   * and seed inserts don't each export the full sql.js database to disk.
+   * A single flushDbSync() is called after _initMode is turned off.
+   */
+  _initMode = false;
+
   /** Runs one or many SQL statements (DDL, bulk DML, etc.). */
   exec(sql) {
     rawDb.run(sql);
-    flushDb();
+    if (!this._initMode) flushDbSync();
   }
 
-  /** Returns a Statement bound to the given SQL. */
+  /** Cache of compiled sql.js statements keyed by SQL text. */
+  _stmtCache = new Map();
+
+  /** Returns a cached (or newly compiled) Statement for the given SQL. */
   prepare(sql) {
-    return new Statement(sql);
+    if (this._stmtCache.has(sql)) {
+      return this._stmtCache.get(sql);
+    }
+    const stmt = new Statement(sql);
+    this._stmtCache.set(sql, stmt);
+    return stmt;
+  }
+
+  /**
+   * Free all cached prepared statements. Call during graceful shutdown
+   * to release WASM memory. Not needed during normal operation.
+   */
+  freeAll() {
+    for (const stmt of this._stmtCache.values()) stmt.free();
+    this._stmtCache.clear();
   }
 
   /**
@@ -206,7 +312,7 @@ class Database {
       } finally {
         this._inTransaction = false;
       }
-      flushDb();
+      flushDbSync();
     };
   }
 
@@ -247,7 +353,7 @@ class Database {
       this._inTransaction = false;
     }
     stmt.free();
-    flushDb();
+    flushDbSync();
   }
 
   /** No-op — WAL journal mode is not meaningful for an in-memory WASM DB. */
@@ -259,6 +365,13 @@ const db = new Database();
 // ── Schema + seed ────────────────────────────────────────────────────────────
 
 export function initDb() {
+  const t0 = Date.now();
+  // ── Bulk init mode ───────────────────────────────────────────────────
+  // Suppress all intermediate flushDb() / flushDbSync() calls during
+  // schema creation, migrations, and seed inserts. A single flushDbSync()
+  // at the end exports the initialized database to disk once.
+  db._initMode = true;
+
   // Create tables
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -524,6 +637,42 @@ export function initDb() {
     "ALTER TABLE gateway_numbers ADD COLUMN agent_name TEXT DEFAULT ''",
     // Track last login time so the admin panel can show who's actively using the system
     "ALTER TABLE users ADD COLUMN last_login_at TEXT",
+    // Associate templates with campaigns so admins can assign templates to specific campaigns
+    "ALTER TABLE templates ADD COLUMN campaign_id TEXT",
+    // Index for filtering templates by campaign
+    "CREATE INDEX IF NOT EXISTS idx_templates_campaign_id ON templates(campaign_id)",
+    // ── agent_contacts indexes: agent-scoped queries, batch views ─────
+    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_id ON agent_contacts(agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_batch_id ON agent_contacts(batch_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_phone ON agent_contacts(agent_id, phone_number)",
+    // Composite index for agent listing queries: WHERE agent_id = ? ORDER BY category, dpd_group, created_at DESC
+    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_list ON agent_contacts(agent_id, category, dpd_group, created_at)",
+    // Index for available/used COUNT queries: WHERE agent_id = ? AND used = 0/1
+    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_used ON agent_contacts(agent_id, used)",
+    // Index for date-filtered queries: WHERE agent_id = ? AND created_at >= ? AND created_at < ?
+    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_created ON agent_contacts(agent_id, created_at)",
+    // Index for batch agent grouping: WHERE batch_id = ? GROUP BY agent_id
+    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_batch_agent ON agent_contacts(batch_id, agent_id)",
+    // ── users: login query + admin/agent lookups ──────────────────────
+    "CREATE INDEX IF NOT EXISTS idx_users_username_active ON users(username, active)",
+    // ── gateways: agent-scoped listing + owner checks ──────────────────
+    "CREATE INDEX IF NOT EXISTS idx_gateways_owner_active ON gateways(owner_id, active, created_at)",
+    // ── broadcasts: agent+status filters, daily cap, history listing ──
+    "CREATE INDEX IF NOT EXISTS idx_broadcasts_agent_status ON broadcasts(agent_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_broadcasts_agent_created ON broadcasts(agent_id, created_at)",
+    // ── messages: broadcast-scoped status/ordering, recipient lookups ──
+    "CREATE INDEX IF NOT EXISTS idx_messages_broadcast_status ON messages(broadcast_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_broadcast_created ON messages(broadcast_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_to_number_status ON messages(to_number, status)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_to_number_created ON messages(to_number, created_at)",
+    // ── messages: stats queries filtering by status + time range ──
+    "CREATE INDEX IF NOT EXISTS idx_messages_status_sent ON messages(status, sent_at)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_status_created ON messages(status, created_at)",
+    // ── inbound: number/flag filtering for conversation view ───────────
+    "CREATE INDEX IF NOT EXISTS idx_inbound_from_number ON inbound(from_number)",
+    "CREATE INDEX IF NOT EXISTS idx_inbound_flag ON inbound(flag)",
+    // ── gateway_numbers: dedup check for saveNumberSnapshot ───────────
+    "CREATE INDEX IF NOT EXISTS idx_gateway_numbers_dedup ON gateway_numbers(gateway_id, number, number2, sim_carrier, sim2_carrier)",
   ];
   for (const sql of migrations) {
     try {
@@ -545,32 +694,57 @@ export function initDb() {
   // Contacts uploaded before the normalizePhone change may be in raw format
   // (e.g., "09171234567" instead of "+639171234567"). Re-normalize them so
   // the auto-mark feature works for all contacts.
-  try {
-    const unnormalized = db.prepare(
-      "SELECT id, phone_number FROM agent_contacts WHERE phone_number NOT LIKE '+%'"
-    ).all();
-    if (unnormalized.length > 0) {
-      const fixStmt = db.prepare('UPDATE agent_contacts SET phone_number = ? WHERE id = ?');
-      const fixAll = db.transaction(() => {
-        for (const c of unnormalized) {
-          const normalized = normalizePhone(c.phone_number);
-          if (normalized !== c.phone_number) {
-            fixStmt.run(normalized, c.id);
+  // Uses a settings flag to skip the scan once done — avoids scanning 81K
+  // rows on every server boot.
+  const alreadyDone = db.prepare("SELECT value FROM settings WHERE key = 'contacts_backfilled'").get();
+  if (!alreadyDone) {
+    try {
+      const unnormalized = db.prepare(
+        "SELECT id, phone_number FROM agent_contacts WHERE phone_number NOT LIKE '+%'"
+      ).all();
+      if (unnormalized.length > 0) {
+        const fixStmt = db.prepare('UPDATE agent_contacts SET phone_number = ? WHERE id = ?');
+        const fixAll = db.transaction(() => {
+          for (const c of unnormalized) {
+            const normalized = normalizePhone(c.phone_number);
+            if (normalized !== c.phone_number) {
+              fixStmt.run(normalized, c.id);
+            }
           }
-        }
-      });
-      fixAll();
-      console.log(`[db] Backfilled ${unnormalized.length} contact phone numbers to E.164 format`);
+        });
+        fixAll();
+        console.log(`[db] Backfilled ${unnormalized.length} contact phone numbers to E.164 format`);
+      }
+      // Mark done regardless so this scan never runs again
+      db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('contacts_backfilled', '1')").run();
+    } catch (_) {
+      // Silently skip if agent_contacts table doesn't exist yet
     }
-  } catch (_) {
-    // Silently skip if agent_contacts table doesn't exist yet
   }
 
   // Guarantee a known admin login on EVERY boot (fresh DB or reinstall).
   ensureAdminAccount();
 
-  // Start periodic database backups
-  createInitialBackup();
+  // ── Exit bulk init mode ─────────────────────────────────────────────
+  db._initMode = false;
+
+  // ── Deferred flush + backup (non-critical, runs after server starts) ─
+  // The final flushDbSync() exports the entire sql.js database to disk.
+  // For large databases (>50 MB) this blocks the event loop for 1-4
+  // seconds. Defer it so the server starts listening immediately.
+  // If the server crashes before this flush, the on-disk DB is stale but
+  // still valid — migrations will re-run on next boot (schema check:
+  // ~36ms). Backup creation is also deferred since it's non-critical.
+  setTimeout(() => {
+    const t1 = Date.now();
+    flushDbSync();
+    console.log(`[db] Initial write to disk: ${Date.now() - t1}ms`);
+  }, 0);
+
+  setTimeout(() => {
+    createInitialBackup();
+  }, 10);
+
   startBackupSchedule();
 
   console.log('[db] Database ready at', DB_PATH);

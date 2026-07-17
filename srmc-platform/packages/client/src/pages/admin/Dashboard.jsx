@@ -8,6 +8,7 @@ import { api } from '../../lib/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useWS } from '../../lib/ws.js';
 import { formatNumber, formatDate, formatTime } from '../../lib/format.js';
+import Skeleton from '../../components/Skeleton.jsx';
 
 function Sparkline({ data, color = 'var(--brand-1)', width = 100, height = 28, fill = false }) {
   if (!data || data.length === 0) return <svg width={width} height={height} />;
@@ -126,20 +127,36 @@ export default function AdminDashboard() {
     }
   }
 
+  /** Wrap an API call with a timeout. Cleans up the timer if the real promise wins the race. */
+  function fetchWithTimeout(promise, ms = 15000) {
+    let timer;
+    const wrapped = promise.then(
+      v => { clearTimeout(timer); return v; },
+      e => { clearTimeout(timer); throw e; }
+    );
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Timeout')), ms);
+    });
+    return Promise.race([wrapped, timeoutPromise]);
+  }
+
   async function loadData() {
     try {
-      const [s, c, a, i, r] = await Promise.all([
-        api.get('/stats'),
-        api.get('/campaigns'),
-        api.get('/agents'),
-        api.get('/inbound?limit=5'),
-        api.get('/broadcasts/running/list'),
+      const results = await Promise.allSettled([
+        fetchWithTimeout(api.get('/stats')),
+        fetchWithTimeout(api.get('/campaigns')),
+        fetchWithTimeout(api.get('/agents')),
+        fetchWithTimeout(api.get('/inbound?limit=5')),
+        fetchWithTimeout(api.get('/broadcasts/running/list')),
       ]);
-      setStats(s);
-      setCampaigns((c.campaigns || []).slice(0, 5));
-      setAgents((a.agents || []).slice(0, 5));
-      setInbound(i.messages || []);
-      setRunningBroadcasts(r.broadcasts || []);
+
+      // Apply each result only if it fulfilled — partial data is better than nothing
+      const [s, c, a, i, r] = results.map(r => r.status === 'fulfilled' ? r.value : null);
+      if (s) setStats(s);
+      if (c && c.campaigns) setCampaigns(c.campaigns.slice(0, 5));
+      if (a && a.agents) setAgents(a.agents.slice(0, 5));
+      if (i && i.messages) setInbound(i.messages);
+      if (r && r.broadcasts) setRunningBroadcasts(r.broadcasts);
     } catch (e) {}
     setLoading(false);
   }
@@ -636,7 +653,16 @@ export default function AdminDashboard() {
       {viewBroadcast && (
         <Modal title="Broadcast Details" onClose={() => { setViewBroadcast(null); setViewMessages([]); }} width={600}>
           {viewLoading ? (
-            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Skeleton variant="card" />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                <Skeleton variant="card" height={60} />
+                <Skeleton variant="card" height={60} />
+                <Skeleton variant="card" height={60} />
+                <Skeleton variant="card" height={60} />
+              </div>
+              <Skeleton variant="card" height={120} />
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {/* Broadcast info — uses viewBroadcast data directly from API */}

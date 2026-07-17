@@ -319,6 +319,10 @@ export default function BlastDashboard() {
   const recipientList = parseRecipients(recipients);
   const charCount = message.length;
   const segments = Math.ceil(charCount / 160) || 1;
+  // Filter templates by selected campaign (show all if no campaign selected)
+  const campaignTemplates = selectedCampaign
+    ? templates.filter(t => t.campaign_id === selectedCampaign)
+    : templates;
   const isTurbo = delayMs < 1000; // Turbo is the only option below 1000ms
   const isLowDelay = delayMs <= 2000 && !isTurbo;
   // ── Check recipients for re-send warning when review modal opens ──
@@ -539,25 +543,48 @@ export default function BlastDashboard() {
               <h3>Compose Broadcast</h3>
             </div>
             <form style={{ padding: 18 }} onSubmit={e => e.preventDefault()}>
-              {/* Template pills */}
+              {/* Campaign selector */}
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                  Templates
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {templates.map(t => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className={`filter-pill${selectedTemplate?.id === t.id ? ' on' : ''}`}
-                      style={selectedTemplate?.id === t.id ? { background: 'var(--ink-1)', color: '#fff', borderColor: 'var(--ink-1)' } : {}}
-                      onClick={() => handleTemplateSelect(t)}
-                    >
-                      {t.name}
-                    </button>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Campaign</label>
+                <select
+                  className="input"
+                  value={selectedCampaign}
+                  onChange={e => setSelectedCampaign(e.target.value)}
+                  style={{ fontSize: 12 }}
+                  required
+                >
+                  <option value="">No campaign</option>
+                  {campaigns.filter(c => c.status === 'active').map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
-                </div>
+                </select>
               </div>
+
+              {selectedCampaign && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                    Templates for {campaigns.find(c => c.id === selectedCampaign)?.name || ''}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {campaignTemplates.length === 0 && (
+                      <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '4px 0' }}>
+                        No templates assigned to this campaign.
+                      </div>
+                    )}
+                    {campaignTemplates.map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className={`filter-pill${selectedTemplate?.id === t.id ? ' on' : ''}`}
+                        style={selectedTemplate?.id === t.id ? { background: 'var(--ink-1)', color: '#fff', borderColor: 'var(--ink-1)' } : {}}
+                        onClick={() => handleTemplateSelect(t)}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Message textarea */}
               <div style={{ marginBottom: 12 }}>
@@ -728,22 +755,7 @@ export default function BlastDashboard() {
                 </div>
               )}
 
-              {/* Campaign selector */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Campaign</label>
-                <select
-                  className="input"
-                  value={selectedCampaign}
-                  onChange={e => setSelectedCampaign(e.target.value)}
-                  style={{ fontSize: 12 }}
-                  required
-                >
-                  <option value="">No campaign</option>
-                  {campaigns.filter(c => c.status === 'active').map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
+
 
               {/* Delay selector */}
               <div style={{ marginBottom: 12 }}>

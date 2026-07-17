@@ -1,5 +1,19 @@
 import React from 'react';
 
+/** Inject @keyframes once at module load */
+const SKELETON_STYLE_ID = '__skeleton_keyframes';
+if (!document.getElementById(SKELETON_STYLE_ID)) {
+  const style = document.createElement('style');
+  style.id = SKELETON_STYLE_ID;
+  style.textContent = `
+    @keyframes skeletonShimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 export default function Skeleton({ variant = 'text', width, height, count = 1, style }) {
   const base = {
     background: 'var(--bg-soft)',
@@ -86,5 +100,35 @@ export function SkeletonConv() {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Full-page loading skeleton for route guards / app shell */
+export function SkeletonPage() {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: '100vh', background: 'var(--bg)',
+    }}>
+      <div style={{ width: '100%', maxWidth: 360, padding: 40, display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <Skeleton variant="avatar" width={56} height={56} style={{ borderRadius: '50%' }} />
+        </div>
+        <Skeleton variant="title" width="70%" style={{ margin: '0 auto' }} />
+        <Skeleton variant="text" width="90%" style={{ margin: '0 auto' }} />
+        <Skeleton variant="text" width="60%" style={{ margin: '0 auto' }} />
+      </div>
+    </div>
+  );
+}
+
+/** Skeleton table rows — renders multiple <SkeletonRow> inside a fragment (no <tbody> wrapper) */
+export function SkeletonTable({ cols, rows = 5, avatar = false }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <SkeletonRow key={i} cols={cols} avatar={avatar} />
+      ))}
+    </>
   );
 }

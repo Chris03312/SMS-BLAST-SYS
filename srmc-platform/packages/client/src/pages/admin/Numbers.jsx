@@ -10,6 +10,7 @@ import { formatTime } from '../../lib/format.js';
 import { exportGatewaysXlsx } from '../../lib/export.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import NumbersHistory from './NumbersHistory.jsx';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 export default function Numbers() {
   const [gateways, setGateways] = useState([]);
@@ -202,7 +203,7 @@ export default function Numbers() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
+            {loading && <SkeletonTable cols={10} rows={5} />}
             {!loading && filtered.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No gateways match your search.' : 'No gateways configured.'}</td></tr>}
             {filtered.map(g => (
               <tr key={g.id}>

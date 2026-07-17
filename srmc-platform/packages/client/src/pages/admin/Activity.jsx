@@ -6,6 +6,7 @@ import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatDate } from '../../lib/format.js';
 import { exportActivityXlsx } from '../../lib/export.js';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 const LEVELS = ['all', 'info', 'warn', 'error'];
 
@@ -115,7 +116,7 @@ export default function Activity() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
+            {loading && <SkeletonTable cols={6} rows={5} />}
             {!loading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No activity matches your search.' : 'No activity found.'}</td></tr>}
             {filtered.map((a, i) => (
               <tr key={a.id || i}>

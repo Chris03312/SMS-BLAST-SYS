@@ -41,7 +41,8 @@ export function getGlobalStats() {
     SELECT COUNT(*) as total
     FROM messages
     WHERE status = 'failed'
-      AND date(created_at) = date('now')
+      AND created_at >= (date('now') || ' 00:00:00')
+      AND created_at < (date('now', '+1 day') || ' 00:00:00')
   `).get();
 
   // Count ALL sent messages (all time)
@@ -56,7 +57,8 @@ export function getGlobalStats() {
     SELECT COUNT(*) as total
     FROM messages
     WHERE status IN ('sent', 'delivered')
-      AND date(sent_at) = date('now')
+      AND sent_at >= (date('now') || ' 00:00:00')
+      AND sent_at < (date('now', '+1 day') || ' 00:00:00')
   `).get();
 
   const totalSentToday = sentToday ? sentToday.total : 0;
@@ -145,7 +147,8 @@ export function getUserStats(userId) {
     JOIN broadcasts b ON b.id = m.broadcast_id
     WHERE b.agent_id = ?
       AND m.status IN ('sent', 'delivered')
-      AND date(m.sent_at) = date('now')
+      AND m.sent_at >= (date('now') || ' 00:00:00')
+      AND m.sent_at < (date('now', '+1 day') || ' 00:00:00')
   `).get(userId);
 
   // Failed today
@@ -155,7 +158,8 @@ export function getUserStats(userId) {
     JOIN broadcasts b ON b.id = m.broadcast_id
     WHERE b.agent_id = ?
       AND m.status = 'failed'
-      AND date(m.created_at) = date('now')
+      AND m.created_at >= (date('now') || ' 00:00:00')
+      AND m.created_at < (date('now', '+1 day') || ' 00:00:00')
   `).get(userId);
 
   // Queued (not yet sent) — pending, queued, or sending
@@ -165,7 +169,8 @@ export function getUserStats(userId) {
     JOIN broadcasts b ON b.id = m.broadcast_id
     WHERE b.agent_id = ?
       AND m.status IN ('queued', 'pending', 'sending')
-      AND date(m.created_at) = date('now')
+      AND m.created_at >= (date('now') || ' 00:00:00')
+      AND m.created_at < (date('now', '+1 day') || ' 00:00:00')
   `).get(userId);
 
   // Get user's active phone / gateway info

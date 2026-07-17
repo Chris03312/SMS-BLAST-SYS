@@ -67,23 +67,27 @@ async function checkGateway(gateway) {
     }
   }
 
-  // Count sent_today
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const sentToday = db.prepare(
-    `SELECT COUNT(*) as c FROM messages WHERE gateway_id = ? AND status = 'sent' AND sent_at LIKE ?`
-  ).get(gateway.id, `${todayStr}%`);
+  try {
+    // Count sent_today
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const sentToday = db.prepare(
+      `SELECT COUNT(*) as c FROM messages WHERE gateway_id = ? AND status = 'sent' AND sent_at LIKE ?`
+    ).get(gateway.id, `${todayStr}%`);
 
-  db.prepare(`UPDATE gateways SET status = ?, last_beat = ?, sent_today = ?, last_error = ? WHERE id = ?`)
-    .run(status, lastBeat, sentToday ? sentToday.c : 0, lastError, gateway.id);
+    db.prepare(`UPDATE gateways SET status = ?, last_beat = ?, sent_today = ?, last_error = ? WHERE id = ?`)
+      .run(status, lastBeat, sentToday ? sentToday.c : 0, lastError, gateway.id);
 
-  broadcast({
-    type: 'gateway:status',
-    gatewayId: gateway.id,
-    status,
-    last_beat: lastBeat,
-    sent_today: sentToday ? sentToday.c : 0,
-    last_error: lastError,
-  });
+    broadcast({
+      type: 'gateway:status',
+      gatewayId: gateway.id,
+      status,
+      last_beat: lastBeat,
+      sent_today: sentToday ? sentToday.c : 0,
+      last_error: lastError,
+    });
+  } catch (dbErr) {
+    console.error('[poller] DB update failed for gateway', gateway.id, ':', typeof dbErr === 'string' ? dbErr : (dbErr?.message || 'unknown'));
+  }
 }
 
 export function startPoller() {
@@ -96,14 +100,25 @@ export function startPoller() {
       try {
         await checkGateway(gateway);
       } catch (e) {
-        console.error('[poller] Error checking gateway', gateway.id, e.message);
+        console.error('[poller] Error checking gateway', gateway.id, typeof e === 'string' ? e : (e?.message || 'unknown'));
       }
     }
   }
 
-  // Run immediately, then every 30s
-  poll();
-  setInterval(poll, 30000);
+  // Catch unhandled promise rejections. sql.js can throw "Statement closed"
+  // (a plain string, not an Error) when DDL invalidates cached prepared
+  // statements. The Statement class now auto-recovers from this, but the
+  // async wrapper still produces a rejected promise that must be caught.
+  poll().catch(err => {
+    const msg = typeof err === 'string' ? err : (err?.message || 'unknown');
+    console.error('[poller] Poll cycle failed:', msg);
+  });
+  setInterval(() => {
+    poll().catch(err => {
+      const msg = typeof err === 'string' ? err : (err?.message || 'unknown');
+      console.error('[poller] Poll cycle failed:', msg);
+    });
+  }, 30000);
   console.log('[poller] Gateway poller started');
 }
 

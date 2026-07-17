@@ -5,6 +5,7 @@ import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDateShort } from '../../lib/format.js';
+import Skeleton, { SkeletonTable } from '../../components/Skeleton.jsx';
 
 export default function AdminContacts() {
   const [batches, setBatches] = useState([]);
@@ -15,8 +16,13 @@ export default function AdminContacts() {
   const [viewBatch, setViewBatch] = useState(null);     // batchId being viewed
   const [batchContacts, setBatchContacts] = useState([]);
   const [batchByAgent, setBatchByAgent] = useState({});
+  const [batchAllCategories, setBatchAllCategories] = useState([]);
   const [viewLoading, setViewLoading] = useState(false);
   const [batchSearch, setBatchSearch] = useState('');
+  const [batchPage, setBatchPage] = useState(0);
+  const [batchTotalPages, setBatchTotalPages] = useState(1);
+  const [perPage, setPerPage] = useState(200);
+  const perPageOptions = [50, 100, 200, 500, 1000];
   const [confirmDeleteBatch, setConfirmDeleteBatch] = useState(null);
   const [deletingContact, setDeletingContact] = useState(null);
   
@@ -106,6 +112,8 @@ export default function AdminContacts() {
             if (!agentNames[c]) continue;
             if (cell === undefined || cell === null) continue;
             const str = String(cell).trim();
+            // Skip Excel error values like #N/A, #REF!, #VALUE!, etc.
+            if (str.startsWith('#') || str.toLowerCase().includes('#n/a')) continue;
             // Strip semicolons and formatting chars for validation only
             const cleaned = str.replace(/[\s\-().;]/g, '');
             if (cleaned.length >= 7 && /^\+?\d{7,15}$/.test(cleaned)) {
@@ -157,12 +165,26 @@ export default function AdminContacts() {
         fileName: preview.fileName,
       };
       const result = await api.post('/admin/contacts/upload', payload);
-      let msg = `Uploaded ${result.total} numbers to ${result.agents} agents`;
+      const skippedParts = [];
+      let unmatchedCount = 0;
       if (result.unmatched && result.unmatched.length > 0) {
-        const names = result.unmatched.map(u => `"${u.name}" (${u.count} numbers)`).join(', ');
-        msg += `. ⚠️ Unmatched names: ${names}. System agents: ${(result.system_agents || []).join(', ')}`;
+        unmatchedCount = result.unmatched.reduce((s, u) => s + (u.count || 0), 0);
+        const names = result.unmatched.map(u => `"${u.name}"`).join(', ');
+        skippedParts.push(`${unmatchedCount} from unknown agents (${names})`);
       }
-      toast(msg, result.unmatched?.length > 0 ? 'warning' : 'success');
+      if ((result.skipped || 0) > 0) {
+        skippedParts.push(`${result.skipped} duplicates`);
+      }
+      let msg = `Uploaded ${result.total} numbers to ${result.agents} agents`;
+      const totalSkipped = unmatchedCount + (result.skipped || 0);
+      if (totalSkipped > 0) {
+        const fromPreview = (preview?.total || 0);
+        msg += `. ${totalSkipped} skipped from ${fromPreview} found (${skippedParts.join(', ')})`;
+      }
+      if (result.unmatched?.length > 0) {
+        msg += `. System agents: ${(result.system_agents || []).join(', ')}`;
+      }
+      toast(msg, totalSkipped > 0 ? 'warning' : 'success');
       setPreview(null);
       setParsedAgents([]);
       loadBatches();
@@ -208,22 +230,43 @@ export default function AdminContacts() {
 
   // ── Batch view ──────────────────────────────────────────────────────
 
-  async function openBatchView(batchId, searchVal) {
+  const batchViewRef = useRef(null);
+
+  async function openBatchView(batchId, searchVal, pageNum, perPageOverride) {
+    const isNewBatch = batchId !== viewBatch;
+    const pp = perPageOverride ?? perPage;
     setViewBatch(batchId);
     setViewLoading(true);
-    setBatchContacts([]);
-    setBatchByAgent({});
-    setSelectedContactIds(new Set());
+    // Only clear contacts when opening a different batch (not on page change)
+    if (isNewBatch) {
+      setBatchContacts([]);
+      setBatchByAgent({});
+      setSelectedContactIds(new Set());
+    }
     loadAgents();
+    const p = pageNum ?? 0;
+    setBatchPage(p);
     try {
-      const qs = searchVal ? `?search=${encodeURIComponent(searchVal)}` : '';
+      const qs = searchVal
+        ? `?search=${encodeURIComponent(searchVal)}&page=${p}&perPage=${pp}`
+        : `?page=${p}&perPage=${pp}`;
       const data = await api.get(`/admin/contacts/batch/${batchId}${qs}`);
       setBatchContacts(data.contacts || []);
       setBatchByAgent(data.by_agent || {});
+      setBatchAllCategories(data.all_categories || []);
+      setBatchTotalPages(data.totalPages || 1);
     } catch (e) {
       toast(e.message, 'error');
     }
     setViewLoading(false);
+    // When opening a new batch, scroll it into view
+    if (isNewBatch) {
+      requestAnimationFrame(() => {
+        if (batchViewRef.current) {
+          batchViewRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    }
   }
 
   async function loadAgents() {
@@ -496,7 +539,7 @@ export default function AdminContacts() {
                   </div>
                 )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                  {preview.agents.map(a => (
+                  {preview.agents.slice(0, 10).map(a => (
                     <span key={a.name + a.dpd_group} style={{
                       padding: '3px 10px', borderRadius: 6,
                       background: 'var(--ok-bg)', border: '1px solid var(--ok-line)',
@@ -505,6 +548,15 @@ export default function AdminContacts() {
                       {a.category ? `[${a.category}] ` : ''}{a.dpd_group ? `${a.dpd_group} · ` : ''}{a.name}: {a.count}
                     </span>
                   ))}
+                  {preview.agents.length > 10 && (
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 6,
+                      background: 'var(--bg-soft)', border: '1px solid var(--line-soft)',
+                      fontSize: 11, fontWeight: 500, color: 'var(--ink-4)',
+                    }}>
+                      … and {preview.agents.length - 10} more agents
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -533,7 +585,7 @@ export default function AdminContacts() {
         </div>
 
         {loading ? (
-          <div style={{ padding: '24px 18px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
+          <div style={{ padding: '18px' }}><Skeleton variant="card" count={3} /></div>
         ) : batches.length === 0 ? (
           <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
             No uploads yet.
@@ -566,7 +618,7 @@ export default function AdminContacts() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(b.agents || []).map(a => (
+                        {(b.agents || []).slice(0, 5).map(a => (
                           <span key={a.agent_name} style={{
                             fontSize: 10.5, padding: '1px 7px', borderRadius: 4,
                             background: 'var(--bg-soft)', color: 'var(--ink-2)',
@@ -575,6 +627,15 @@ export default function AdminContacts() {
                             {a.agent_name}: {a.count}
                           </span>
                         ))}
+                        {(b.agents || []).length > 5 && (
+                          <span style={{
+                            fontSize: 10.5, padding: '1px 7px', borderRadius: 4,
+                            background: 'var(--bg-soft)', color: 'var(--ink-4)',
+                            fontFamily: 'var(--mono)',
+                          }}>
+                            … +{b.agents.length - 5} more
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>
@@ -629,12 +690,31 @@ export default function AdminContacts() {
                   </tr>
                   {/* Expanded batch detail row */}
                   {viewBatch === b.batch_id && (
-                    <tr>
+                    <tr ref={batchViewRef}>
                       <td colSpan={8} style={{ padding: '0 18px', background: 'var(--bg-soft)' }}>
                         <div style={{ padding: '14px 0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>
-                              Batch Contacts
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>
+                                Batch Contacts
+                              </div>
+                              <select
+                                value={perPage}
+                                onChange={e => {
+                                  const newPerPage = Number(e.target.value);
+                                  setPerPage(newPerPage);
+                                  openBatchView(viewBatch, batchSearch, 0, newPerPage);
+                                }}
+                                style={{
+                                  padding: '2px 6px', borderRadius: 4, border: '1px solid var(--line)',
+                                  fontSize: 10, fontFamily: 'inherit', color: 'var(--ink-2)',
+                                  background: 'var(--bg)', cursor: 'pointer', outline: 'none',
+                                }}
+                              >
+                                {perPageOptions.map(n => (
+                                  <option key={n} value={n}>{n} rows</option>
+                                ))}
+                              </select>
                             </div>
                             <button
                               className="iconlink"
@@ -661,7 +741,7 @@ export default function AdminContacts() {
                                   setBatchSearch(e.target.value);
                                   // Debounce: wait for user to finish typing before searching
                                   if (window._batchSearchTimer) clearTimeout(window._batchSearchTimer);
-                                  window._batchSearchTimer = setTimeout(() => openBatchView(viewBatch, e.target.value), 300);
+                                  window._batchSearchTimer = setTimeout(() => openBatchView(viewBatch, e.target.value, 0), 300);
                                 }}
                                 style={{
                                   width: '100%', padding: '5px 8px 5px 28px', borderRadius: 5,
@@ -670,14 +750,14 @@ export default function AdminContacts() {
                                 }}
                               />
                               {batchSearch && (
-                                <button onClick={() => { setBatchSearch(''); openBatchView(viewBatch, ''); }}
+                                <button onClick={() => { setBatchSearch(''); openBatchView(viewBatch, '', 0); }}
                                   style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 12, padding: '2px 4px' }}>×</button>
                               )}
                             </div>
                           </div>
 
                           {viewLoading ? (
-                            <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>Loading...</div>
+                            <table style={{ width: '100%' }}><SkeletonTable cols={7} rows={4} /></table>
                           ) : batchContacts.length === 0 ? (
                             <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>{batchSearch ? 'No contacts match your search.' : 'No contacts.'}</div>
                           ) : (
@@ -989,6 +1069,7 @@ export default function AdminContacts() {
                                   </tbody>
                                 </table>
                               </div>
+
                             </>
                           )}
 
@@ -1007,9 +1088,9 @@ export default function AdminContacts() {
                             </div>
                           )}
 
-                          {/* Category rename buttons */}
+                          {/* Category rename buttons — shows ALL batch categories (not just this page) */}
                           {(() => {
-                            const categories = [...new Set(batchContacts.filter(c => c.category).map(c => c.category))];
+                            const categories = batchAllCategories;
                             if (categories.length === 0) return null;
                             return (
                               <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1063,6 +1144,57 @@ export default function AdminContacts() {
                               </div>
                             );
                           })()}
+
+                          {/* Pagination footer */}
+                          {!viewLoading && batchTotalPages > 1 && (
+                            <div style={{
+                              marginTop: 12, padding: '8px 14px',
+                              borderTop: '1px solid var(--line-soft)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4,
+                            }}>
+                              <span style={{ fontSize: 10.5, color: 'var(--ink-4)', fontFamily: 'var(--mono)', marginRight: 8 }}>
+                                Page {batchPage + 1} / {batchTotalPages}
+                              </span>
+                              <button
+                                className="btn-ghost"
+                                style={{ padding: '2px 8px', fontSize: 11 }}
+                                disabled={batchPage === 0}
+                                onClick={() => openBatchView(viewBatch, batchSearch, batchPage - 1)}
+                              >
+                                ‹ Prev
+                              </button>
+                              {Array.from({ length: Math.min(batchTotalPages, 5) }, (_, i) => {
+                                const start = Math.max(0, Math.min(batchPage - 2, batchTotalPages - 5));
+                                const pNum = start + i;
+                                if (pNum >= batchTotalPages) return null;
+                                return (
+                                  <button
+                                    key={pNum}
+                                    type="button"
+                                    onClick={() => openBatchView(viewBatch, batchSearch, pNum)}
+                                    style={{
+                                      width: 24, height: 24, borderRadius: 4,
+                                      border: `1px solid ${batchPage === pNum ? 'var(--ink-1)' : 'var(--line)'}`,
+                                      background: batchPage === pNum ? 'var(--ink-1)' : '#fff',
+                                      color: batchPage === pNum ? '#fff' : 'var(--ink-2)',
+                                      fontSize: 10, fontWeight: 600,
+                                      cursor: 'pointer', fontFamily: 'var(--mono)',
+                                    }}
+                                  >
+                                    {pNum + 1}
+                                  </button>
+                                );
+                              })}
+                              <button
+                                className="btn-ghost"
+                                style={{ padding: '2px 8px', fontSize: 11 }}
+                                disabled={batchPage >= batchTotalPages - 1}
+                                onClick={() => openBatchView(viewBatch, batchSearch, batchPage + 1)}
+                              >
+                                Next ›
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

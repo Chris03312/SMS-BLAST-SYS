@@ -20,10 +20,17 @@ router.get('/', (req, res) => {
   try {
     const campaigns = db.prepare(`
       SELECT c.*, u.display_name as owner_name,
-        (SELECT COUNT(*) FROM broadcasts b WHERE b.campaign_id = c.id) as broadcast_count,
-        (SELECT COALESCE(SUM(b.sent), 0) FROM broadcasts b WHERE b.campaign_id = c.id) as total_sent
+        COALESCE(bs.broadcast_count, 0) as broadcast_count,
+        COALESCE(bs.total_sent, 0) as total_sent
       FROM campaigns c
       LEFT JOIN users u ON c.owner_id = u.id
+      LEFT JOIN (
+        SELECT campaign_id,
+          COUNT(*) as broadcast_count,
+          COALESCE(SUM(sent), 0) as total_sent
+        FROM broadcasts
+        GROUP BY campaign_id
+      ) bs ON bs.campaign_id = c.id
       ORDER BY c.created_at DESC
     `).all();
     return ok(res, { campaigns: fixTimestamps(campaigns) });

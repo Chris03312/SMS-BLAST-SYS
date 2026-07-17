@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useNavigate } from 'react-router-dom';
+import Skeleton from '../../components/Skeleton.jsx';
+
+const BATCH_SIZE = 200;
 
 function todayStr() {
   const d = new Date();
@@ -21,28 +24,37 @@ export default function Recipients() {
   const [selected, setSelected] = useState(new Set());
   const [dateFilter, setDateFilter] = useState(todayStr);
   const [usedFilter, setUsedFilter] = useState('all'); // 'all', 'available', 'used'
-  const [maxSelect, setMaxSelect] = useState(200);
-  const [activeCategory, setActiveCategory] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [allCategories, setAllCategories] = useState([]);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const perPage = 200;
+  // Cache for fetched pages — avoids re-fetching pages across selection clicks
+  const pageCacheRef = useRef({});
 
   useEffect(() => {
-    // Load max_selected_contacts setting
-    api.get('/settings').then(s => {
-      if (s.max_selected_contacts) setMaxSelect(Number(s.max_selected_contacts) || 200);
-    }).catch(() => {});
     load();
-  }, [dateFilter, usedFilter]);
+  }, [dateFilter, usedFilter, categoryFilter, page]);
+
+  // Reset to page 0 and clear page cache when filters change
+  useEffect(() => {
+    setPage(0);
+    pageCacheRef.current = {};
+  }, [dateFilter, usedFilter, categoryFilter]);
 
   async function load() {
     setLoading(true);
     try {
-      const qs = `date=${encodeURIComponent(dateFilter)}&used=${usedFilter}`;
+      const qs = `date=${encodeURIComponent(dateFilter)}&used=${usedFilter}&category=${encodeURIComponent(categoryFilter)}&page=${page}&perPage=${perPage}`;
       const data = await api.get(`/agent/contacts?${qs}`);
       setContacts(data.contacts || []);
+      setAllCategories(data.all_categories || []);
       setTotal(data.total || 0);
       setAvailable(data.available || 0);
       setUsed(data.used || 0);
+      setTotalPages(data.totalPages || 1);
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -67,18 +79,8 @@ export default function Recipients() {
       return a.localeCompare(b, undefined, { numeric: true });
     });
 
-    return { byCategory, catKeys };
-  }, [contacts]);
+    return { byCategory, catKeys };  }, [contacts]);
 
-  // Sync activeCategory when contacts load/changed
-  useEffect(() => {
-    if (grouped.catKeys.length > 0 && (!activeCategory || !grouped.catKeys.includes(activeCategory))) {
-      setActiveCategory(grouped.catKeys[0]);
-    }
-    if (grouped.catKeys.length === 0) {
-      setActiveCategory(null);
-    }
-  }, [grouped.catKeys]);
 
   function toggleSelect(id) {
     setSelected(prev => {
@@ -86,26 +88,85 @@ export default function Recipients() {
       if (next.has(id)) {
         next.delete(id);
       } else {
-        if (next.size >= maxSelect) {
-          toast(`You can select up to ${maxSelect} numbers at a time`, 'warning');
-          return prev;
-        }
         next.add(id);
       }
       return next;
     });
   }
 
-  function toggleSelectColumn(columnContacts) {
-    const unselected = columnContacts.filter(c => !selected.has(c.id));
-    const toAdd = unselected.slice(0, Math.min(maxSelect, unselected.length));
-    if (toAdd.length === 0) {
-      toast('All contacts in this group are already selected', 'info');
-      return;
+  async function selectColumn(columnContacts, dpdKey, catKey) {
+    // Snapshot which contacts are already selected at call time
+    const initiallySelected = new Set(selected);
+
+    // Find unselected contacts on the current page (within this column)
+    const unselectedCurrent = columnContacts.filter(c => !initiallySelected.has(c.id));
+    const toAdd = unselectedCurrent.slice(0, BATCH_SIZE);
+
+    // Track IDs we're adding in this invocation to avoid dupes across fetches
+    const locallyAdded = new Set();
+
+    // Add the batch from the current page
+    for (const c of toAdd) locallyAdded.add(c.id);
+    if (toAdd.length > 0) {
+      setSelected(prev => {
+        const next = new Set(prev);
+        for (const c of toAdd) next.add(c.id);
+        return next;
+      });
     }
+
+    let remaining = BATCH_SIZE - toAdd.length;
+
+    // If current page didn't have enough, fetch next pages
+    if (remaining > 0) {
+      let fetchPage = page + 1;
+      while (remaining > 0 && fetchPage < totalPages) {
+        try {
+          // Use in-memory cache to avoid redundant API calls for already-fetched pages
+          let pageContacts = pageCacheRef.current[fetchPage];
+          if (!pageContacts) {
+            const qs = `date=${encodeURIComponent(dateFilter)}&used=${usedFilter}&page=${fetchPage}&perPage=${perPage}`;
+            const data = await api.get(`/agent/contacts?${qs}`);
+            pageContacts = data.contacts || [];
+            pageCacheRef.current[fetchPage] = pageContacts;
+          }
+          const nextCol = pageContacts.filter(c =>
+            (c.dpd_group || '__none__') === dpdKey &&
+            (c.category || '__nocat__') === catKey &&
+            !initiallySelected.has(c.id) &&
+            !locallyAdded.has(c.id)
+          );
+          if (nextCol.length === 0) {
+            fetchPage++;
+            continue;
+          }
+
+          const batch = nextCol.slice(0, remaining);
+          for (const c of batch) locallyAdded.add(c.id);
+          setSelected(prev => {
+            const next = new Set(prev);
+            for (const c of batch) next.add(c.id);
+            return next;
+          });
+          remaining -= batch.length;
+          fetchPage++;
+        } catch (_) {
+          break;
+        }
+      }
+    }
+
+    // If nothing could be added at all, inform the user
+    if (locallyAdded.size === 0) {
+      toast('All contacts in this group are already selected', 'info');
+    }
+  }
+
+  function unselectColumn(columnContacts) {
+    // Remove all contacts in this column from selection
     setSelected(prev => {
       const next = new Set(prev);
-      for (const c of toAdd) next.add(c.id);
+      for (const c of columnContacts) next.delete(c.id);
       return next;
     });
   }
@@ -153,7 +214,7 @@ export default function Recipients() {
             <div className="eyebrow">Contacts</div>
             <h1>My Recipients</h1>
             <div className="page-sub">
-              Numbers assigned to you by the admin. Select up to {maxSelect} and copy or send them to the Compose page.
+              Numbers assigned to you by the admin. Use the column buttons to quickly select or unselect numbers, then copy or send them to the Compose page.
             </div>
           </div>
         </div>
@@ -257,7 +318,14 @@ export default function Recipients() {
             </div>
 
             {loading ? (
-              <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>Loading...</div>
+              <div style={{ padding: '24px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <Skeleton variant="card" height={80} count={3} />
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <Skeleton variant="card" height={200} width={200} />
+                  <Skeleton variant="card" height={200} width={200} />
+                  <Skeleton variant="card" height={200} width={200} />
+                </div>
+              </div>
             ) : contacts.length === 0 ? (
               <div style={{ padding: '40px 18px', textAlign: 'center' }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>
@@ -272,7 +340,7 @@ export default function Recipients() {
             ) : (
               <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'auto', padding: '14px 18px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {catKeys.filter(catKey => catKey === activeCategory).map((catKey) => {
+                  {catKeys.map((catKey) => {
                     const section = byCategory[catKey];
                     const isNoCat = catKey === '__nocat__';
                     const catLabel = isNoCat ? 'Uncategorized' : section.category;
@@ -381,34 +449,56 @@ export default function Recipients() {
                                     </span>
                                   </div>
                                   {(() => {
-                                    const unselectedCount = colContacts.filter(c => !selected.has(c.id)).length;
-                                    const canSelect = Math.min(maxSelect, unselectedCount);
-                                    const disabled = canSelect <= 0;
+                                    const colSelected = colContacts.filter(c => selected.has(c.id)).length;
                                     return (
-                                      <button
-                                        type="button"
-                                        disabled={disabled}
-                                        onClick={e => { e.stopPropagation(); toggleSelectColumn(colContacts); }}
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 600,
-                                          padding: '2px 8px',
-                                          borderRadius: 4,
-                                          border: `1px solid ${disabled ? 'var(--line-soft)' : 'var(--line)'}`,
-                                          background: disabled ? 'var(--bg-soft)' : 'var(--bg)',
-                                          color: disabled ? 'var(--ink-4)' : 'var(--ink-2)',
-                                          cursor: disabled ? 'default' : 'pointer',
-                                          fontFamily: 'inherit',
-                                          transition: 'all 0.12s',
-                                          width: '100%',
-                                          textAlign: 'center',
-                                          opacity: disabled ? 0.5 : 1,
-                                        }}
-                                        onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = 'var(--bg-soft)'; e.currentTarget.style.borderColor = 'var(--ink-4)'; } }}
-                                        onMouseLeave={e => { if (!disabled) { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.borderColor = 'var(--line)'; } }}
-                                      >
-                                        {disabled ? 'Full' : `Select ${canSelect}`}
-                                      </button>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        {colSelected > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={e => { e.stopPropagation(); unselectColumn(colContacts); }}
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: 600,
+                                              padding: '2px 8px',
+                                              borderRadius: 4,
+                                              border: '1px solid rgba(219,39,119,0.3)',
+                                              background: 'rgba(219,39,119,0.08)',
+                                              color: '#db2777',
+                                              cursor: 'pointer',
+                                              fontFamily: 'inherit',
+                                              transition: 'all 0.12s',
+                                              width: '100%',
+                                              textAlign: 'center',
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(219,39,119,0.15)'; e.currentTarget.style.borderColor = 'rgba(219,39,119,0.5)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(219,39,119,0.08)'; e.currentTarget.style.borderColor = 'rgba(219,39,119,0.3)'; }}
+                                          >
+                                            ✕ Unselect {colSelected}
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={e => { e.stopPropagation(); selectColumn(colContacts, dpdKey, catKey); }}
+                                          style={{
+                                            fontSize: 9,
+                                            fontWeight: 600,
+                                            padding: '2px 8px',
+                                            borderRadius: 4,
+                                            border: '1px solid var(--line)',
+                                            background: 'var(--bg)',
+                                            color: 'var(--ink-2)',
+                                            cursor: 'pointer',
+                                            fontFamily: 'inherit',
+                                            transition: 'all 0.12s',
+                                            width: '100%',
+                                            textAlign: 'center',
+                                          }}
+                                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)'; e.currentTarget.style.borderColor = 'var(--ink-4)'; }}
+                                          onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+                                        >
+                                          Select {BATCH_SIZE}
+                                        </button>
+                                      </div>
                                     );
                                   })()}
                                 </div>
@@ -498,8 +588,9 @@ export default function Recipients() {
               </div>
             )}
 
-            {/* Category nav bar — Excel-style sheet tabs at the bottom */}
-            {!loading && contacts.length > 0 && catKeys.length > 1 && (
+            {/* Category jumps — scroll-to-section tabs */}
+            {/* Shows ALL categories from the backend (not just this page's) */}
+            {!loading && allCategories.length > 0 && (
               <div style={{
                 padding: '8px 18px',
                 borderTop: '1px solid var(--line-soft)',
@@ -509,44 +600,115 @@ export default function Recipients() {
                 flexWrap: 'wrap',
                 alignItems: 'center',
               }}>
-                {catKeys.map(catKey => {
-                  const isNoCat = catKey === '__nocat__';
-                  const section = byCategory[catKey];
-                  const sectionTotal = Object.values(section.dpdGroups).reduce((sum, arr) => sum + arr.length, 0);
-                  const isActive = activeCategory === catKey;
-                  return (
-                    <button
-                      key={catKey}
-                      type="button"
-                      onClick={() => setActiveCategory(catKey)}
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        padding: '3px 10px',
-                        borderRadius: 5,
-                        border: `1px solid ${isNoCat ? 'var(--line-soft)' : isActive ? 'rgba(59,130,246,0.6)' : 'rgba(59,130,246,0.2)'}`,
-                        background: isActive ? 'rgba(59,130,246,0.12)' : isNoCat ? 'var(--bg-soft)' : 'transparent',
-                        color: isActive ? '#2563eb' : isNoCat ? 'var(--ink-4)' : '#3b82f6',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        transition: 'all 0.12s',
-                      }}
-                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; }}
-                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isNoCat ? 'var(--bg-soft)' : 'transparent'; }}
-                    >
-                      📄 {isNoCat ? 'Uncategorized' : section.category}
-                      <span style={{ marginLeft: 4, opacity: 0.6, fontFamily: 'var(--mono)' }}>{sectionTotal}</span>
-                    </button>
-                  );
-                })}
+                {/* Build unique category list from all_categories (real DB totals) */}
+                {(() => {
+                  const catMap = {};
+                  for (const c of allCategories) {
+                    const key = c.category || '__nocat__';
+                    if (!catMap[key]) catMap[key] = { name: c.category || '', label: c.category || 'Uncategorized', count: c.count || 0 };
+                  }
+                  const sortedKeys = Object.keys(catMap).sort((a, b) => {
+                    if (a === '__nocat__') return 1;
+                    if (b === '__nocat__') return -1;
+                    return a.localeCompare(b, undefined, { numeric: true });
+                  });
+                  const sectionId = (key) => `cat-section-${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                  return sortedKeys.map(catKey => {
+                    const info = catMap[catKey];
+                    const isNoCat = catKey === '__nocat__';
+                    return (
+                      <button
+                        key={catKey}
+                        type="button"
+                        onClick={() => {
+                          setCategoryFilter(catKey);
+                          setSelected(new Set());
+                        }}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: '3px 10px',
+                          borderRadius: 5,
+                          border: `1px solid ${
+                            categoryFilter === catKey
+                              ? isNoCat ? 'var(--ink-4)' : '#2563eb'
+                              : isNoCat ? 'var(--line-soft)' : 'rgba(59,130,246,0.3)'
+                          }`,
+                          background: categoryFilter === catKey
+                            ? (isNoCat ? 'var(--bg-soft)' : '#2563eb')
+                            : (isNoCat ? 'var(--bg-soft)' : 'transparent'),
+                          color: categoryFilter === catKey
+                            ? (isNoCat ? 'var(--ink-4)' : '#fff')
+                            : (isNoCat ? 'var(--ink-4)' : '#3b82f6'),
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          transition: 'all 0.12s',
+                        }}
+                        onMouseEnter={e => {
+                          if (categoryFilter !== catKey)
+                            e.currentTarget.style.background = 'rgba(59,130,246,0.12)';
+                        }}
+                        onMouseLeave={e => {
+                          if (categoryFilter !== catKey)
+                            e.currentTarget.style.background = isNoCat ? 'var(--bg-soft)' : 'transparent';
+                        }}
+                      >
+                        📄 {info.label}
+                        <span style={{ marginLeft: 4, opacity: 0.6, fontFamily: 'var(--mono)' }}>{info.count}</span>
+                      </button>
+                    );
+                  });
+                })()}
               </div>
             )}
 
-            <div className="footer" style={{ flexShrink: 0 }}>
+            <div className="footer" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>
                 {catKeys.length} categor{catKeys.length !== 1 ? 'ies' : 'y'} · {total} numbers · {used} used
                 {selected.size > 0 && <span style={{ marginLeft: 8, color: 'var(--info)' }}>· {selected.size} selected</span>}
               </span>
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    className="btn-ghost"
+                    style={{ padding: '2px 8px', fontSize: 11 }}
+                    disabled={page === 0}
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                  >
+                    ‹ Prev
+                  </button>
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    const start = Math.max(0, Math.min(page - 2, totalPages - 5));
+                    const pNum = start + i;
+                    if (pNum >= totalPages) return null;
+                    return (
+                      <button
+                        key={pNum}
+                        type="button"
+                        onClick={() => setPage(pNum)}
+                        style={{
+                          width: 24, height: 24, borderRadius: 4,
+                          border: `1px solid ${page === pNum ? 'var(--ink-1)' : 'var(--line)'}`,
+                          background: page === pNum ? 'var(--ink-1)' : '#fff',
+                          color: page === pNum ? '#fff' : 'var(--ink-2)',
+                          fontSize: 10, fontWeight: 600,
+                          cursor: 'pointer', fontFamily: 'var(--mono)',
+                        }}
+                      >
+                        {pNum + 1}
+                      </button>
+                    );
+                  })}
+                  <button
+                    className="btn-ghost"
+                    style={{ padding: '2px 8px', fontSize: 11 }}
+                    disabled={page >= totalPages - 1}
+                    onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  >
+                    Next ›
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );

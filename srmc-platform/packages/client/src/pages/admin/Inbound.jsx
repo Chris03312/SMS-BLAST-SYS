@@ -5,6 +5,7 @@ import Pill from '../../components/Pill.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatDate } from '../../lib/format.js';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 const FLAG_LABELS = {
   'confirmed': 'Confirmed',
@@ -154,7 +155,7 @@ export default function AdminInbound() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
+            {loading && <SkeletonTable cols={6} rows={5} />}
             {!loading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No messages match your search.' : 'No inbound messages.'}</td></tr>}
             {filtered.map(m => (
               <tr

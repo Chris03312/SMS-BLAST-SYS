@@ -1,43 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import AdminShell from '../../components/AdminShell.jsx';
 import Modal from '../../components/Modal.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
+import { useApiQuery, useApiMutation } from '../../lib/useApiQuery.js';
 import { formatDateShort } from '../../lib/format.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 function lastSeen(iso) {
   if (!iso) return null;
   const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (diff < 300) return 'online'; // within 5 min = actively logged in
+  if (diff < 300) return 'online';
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return formatDateShort(iso);
 }
 
 export default function Admins() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ username: '', password: '', display_name: '', role: 'admin' });
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmToggleActive, setConfirmToggleActive] = useState(null);
-  const { toast } = useToast();
 
-  useEffect(() => { load(); }, []);
+  const { data, isLoading } = useApiQuery('admins', '/agents/admins');
+  const items = data?.admins || [];
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await api.get('/agents/admins');
-      setItems(data.admins || []);
-    } catch (e) {}
-    setLoading(false);
-  }
+  const saveMut = useApiMutation(
+    (body) => editItem ? api.put(`/agents/admins/${editItem.id}`, body) : api.post('/agents', body),
+    { onRefetch: 'admins', onSuccess: () => setShowModal(false) },
+  );
+
+  const deleteMut = useApiMutation(
+    (item) => api.del(`/agents/admins/${item.id}`),
+    { onRefetch: 'admins' },
+  );
+
+  const toggleMut = useApiMutation(
+    (item) => api.put(`/agents/admins/${item.id}`, { active: item.active ? 0 : 1 }),
+    { onRefetch: 'admins' },
+  );
 
   function openNew() {
     setEditItem(null);
@@ -55,42 +61,27 @@ export default function Admins() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setSaving(true);
     setError('');
     try {
       if (editItem) {
-        const updated = await api.put(`/agents/admins/${editItem.id}`, { display_name: form.display_name, ...(form.password ? { password: form.password } : {}) });
-        setItems(prev => prev.map(a => a.id === editItem.id ? updated.admin : a));
+        await saveMut.mutateAsync({ display_name: form.display_name, ...(form.password ? { password: form.password } : {}) });
       } else {
-        const payload = { ...form, role: form.role };
-        const a = await api.post('/agents', payload);
-        setItems(prev => [a.agent, ...prev]);
+        await saveMut.mutateAsync({ ...form, role: form.role });
       }
-      setShowModal(false);
     } catch (e) {
       setError(e.message);
     }
-    setSaving(false);
   }
 
   async function handleDelete(item) {
-    try {
-      await api.del(`/agents/admins/${item.id}`);
-      setItems(prev => prev.filter(x => x.id !== item.id));
-    } catch (e) {
-      toast(e.message, 'error');
-    }
+    try { await deleteMut.mutateAsync(item); }
+    catch (e) { toast(e.message, 'error'); }
     setConfirmDelete(null);
   }
 
   async function handleToggleActive(item) {
-    try {
-      const newActive = item.active ? 0 : 1;
-      const updated = await api.put(`/agents/admins/${item.id}`, { active: newActive });
-      setItems(prev => prev.map(a => a.id === item.id ? { ...a, active: updated.admin.active } : a));
-    } catch (e) {
-      toast(e.message, 'error');
-    }
+    try { await toggleMut.mutateAsync(item); }
+    catch (e) { toast(e.message, 'error'); }
     setConfirmToggleActive(null);
   }
 
@@ -105,17 +96,12 @@ export default function Admins() {
           <div>
             <div className="eyebrow">People & Devices</div>
             <h1>Admins</h1>
-            <div className="page-sub">
-              Manage admin accounts. Super admins can create and manage other admins.
-            </div>
+            <div className="page-sub">Manage admin accounts. Super admins can create and manage other admins.</div>
           </div>
         </div>
-        <button className="btn-primary" onClick={openNew}>
-          Create admin
-        </button>
+        <button className="btn-primary" onClick={openNew}>Create admin</button>
       </div>
 
-      {/* Stats strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         {[
           { label: 'Admins', val: items.length },
@@ -142,8 +128,8 @@ export default function Admins() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
-            {!loading && items.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No admins.</td></tr>}
+            {isLoading && <SkeletonTable cols={5} rows={5} avatar />}
+            {!isLoading && items.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>No admins.</td></tr>}
             {items.map(a => (
               <tr key={a.id}>
                 <td>
@@ -156,49 +142,29 @@ export default function Admins() {
                   </div>
                 </td>
                 <td>
-                  <span style={{
-                    fontSize: 11, fontWeight: 500,
-                    color: a.role === 'super_admin' ? 'var(--brand-1)' : 'var(--ink-3)',
-                    fontFamily: 'var(--mono)',
-                  }}>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: a.role === 'super_admin' ? 'var(--brand-1)' : 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
                     {a.role === 'super_admin' ? 'Super admin' : a.role}
                   </span>
                 </td>
                 <td>
                   {!a.active ? (
-                    <span className="pill idle">
-                      <span className="dot" />
-                      Disabled
-                    </span>
+                    <span className="pill idle"><span className="dot" />Disabled</span>
                   ) : (
                     (() => {
                       const seen = lastSeen(a.last_login_at);
                       return seen === 'online' ? (
-                        <span className="pill ok">
-                          <span className="dot" />
-                          Active
-                        </span>
+                        <span className="pill ok"><span className="dot" />Active</span>
                       ) : (
-                        <span className="pill idle">
-                          <span className="dot" />
-                          {seen ? `Last seen ${seen}` : 'Inactive'}
-                        </span>
+                        <span className="pill idle"><span className="dot" />{seen ? `Last seen ${seen}` : 'Inactive'}</span>
                       );
                     })()
                   )}
                 </td>
-                <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                  {formatDateShort(a.created_at)}
-                </td>
+                <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>{formatDateShort(a.created_at)}</td>
                 <td>
                   <div className="row-actions">
                     <button className="iconlink" onClick={() => openEdit(a)} title="Edit">✎</button>
-                    <button
-                      className="iconlink"
-                      onClick={() => setConfirmToggleActive(a)}
-                      title={a.active ? 'Deactivate' : 'Activate'}
-                      style={{ color: a.active ? 'var(--warn)' : 'var(--ok)' }}
-                    >
+                    <button className="iconlink" onClick={() => setConfirmToggleActive(a)} title={a.active ? 'Deactivate' : 'Activate'} style={{ color: a.active ? 'var(--warn)' : 'var(--ok)' }}>
                       {a.active
                         ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
                         : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -211,18 +177,13 @@ export default function Admins() {
             ))}
           </tbody>
         </table>
-        <div className="footer">
-          <span>{items.length} admins</span>
-        </div>
+        <div className="footer"><span>{items.length} admins</span></div>
       </div>
 
       {confirmToggleActive && (
         <ConfirmModal
           title={confirmToggleActive.active ? 'Deactivate Admin' : 'Activate Admin'}
-          message={confirmToggleActive.active
-            ? `Deactivate "${confirmToggleActive.display_name}"? They will not be able to log in or manage the platform.`
-            : `Activate "${confirmToggleActive.display_name}"? They will regain access to the platform.`
-          }
+          message={confirmToggleActive.active ? `Deactivate "${confirmToggleActive.display_name}"? They will not be able to log in or manage the platform.` : `Activate "${confirmToggleActive.display_name}"? They will regain access to the platform.`}
           confirmLabel={confirmToggleActive.active ? 'Deactivate' : 'Activate'}
           danger={confirmToggleActive.active}
           onConfirm={() => handleToggleActive(confirmToggleActive)}
@@ -231,13 +192,7 @@ export default function Admins() {
       )}
 
       {confirmDelete && (
-        <ConfirmModal
-          title="Delete Admin"
-          message={`Permanently delete "${confirmDelete.display_name}"? This cannot be undone.`}
-          confirmLabel="Delete"
-          onConfirm={() => handleDelete(confirmDelete)}
-          onCancel={() => setConfirmDelete(null)}
-        />
+        <ConfirmModal title="Delete Admin" message={`Permanently delete "${confirmDelete.display_name}"? This cannot be undone.`} confirmLabel="Delete" onConfirm={() => handleDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} />
       )}
 
       {showModal && (
@@ -257,27 +212,20 @@ export default function Admins() {
               {!editItem && (
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Role</label>
-                  <select
-                    className="input"
-                    value={form.role}
-                    onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))}
-                    style={{ fontSize: 12 }}
-                  >
+                  <select className="input" value={form.role} onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))} style={{ fontSize: 12 }}>
                     <option value="admin">Admin</option>
                     <option value="super_admin">Super Admin</option>
                   </select>
                 </div>
               )}
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
-                  Password {editItem && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>(leave blank to keep)</span>}
-                </label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Password {editItem && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>(leave blank to keep)</span>}</label>
                 <PasswordInput value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} required={!editItem} />
               </div>
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving...' : (editItem ? 'Save' : 'Create admin')}</button>
+                <button type="submit" className="btn-primary" disabled={saveMut.isPending}>{saveMut.isPending ? 'Saving...' : (editItem ? 'Save' : 'Create admin')}</button>
               </div>
             </div>
           </form>

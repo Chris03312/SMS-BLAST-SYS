@@ -239,7 +239,7 @@ router.post('/', broadcastLimiter, async (req, res) => {
       const perDay = parseInt(perDaySetting?.value) || 0;
       if (perDay > 0) {
         const todayCount = db.prepare(
-          "SELECT COUNT(*) as c FROM broadcasts WHERE agent_id = ? AND date(created_at) = date('now')"
+          "SELECT COUNT(*) as c FROM broadcasts WHERE agent_id = ? AND created_at >= (date('now') || ' 00:00:00') AND created_at < (date('now', '+1 day') || ' 00:00:00')"
         ).get(req.user.id);
         if (todayCount && todayCount.c >= perDay) {
           return fail(res, `Daily broadcast limit reached (${perDay} today). Wait until tomorrow or ask an admin to increase the limit.`, 429);

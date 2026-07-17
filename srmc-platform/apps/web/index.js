@@ -14,7 +14,7 @@ import { initWss } from '@srmc/server/ws.js';
 import { startPoller } from '@srmc/server/gateway-poller.js';
 import { startNgrok, startNgrokAutoRetry, hasAuthtoken, getNgrokUrl } from '@srmc/server/ngrok-tunnel.js';
 import { recoverBroadcasts } from '@srmc/server/broadcast-engine.js';
-import { flushDb } from '@srmc/server/db.js';
+import { flushDbSync } from '@srmc/server/db.js';
 import app, { HOST, PORT } from '@srmc/server/app.js';
 
 const server = createServer(app);
@@ -60,7 +60,7 @@ server.listen(PORT, HOST, async () => {
 
 function handleShutdown(signal) {
   console.log(`[server] Received ${signal} — flushing DB and shutting down…`);
-  try { flushDb(); } catch (e) { console.error('[server] Flush error:', e.message); }
+  try { flushDbSync(); } catch (e) { console.error('[server] Flush error:', e.message); }
   server.close(() => {
     console.log('[server] Server closed');
     process.exit(0);

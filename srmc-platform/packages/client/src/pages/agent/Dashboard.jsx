@@ -9,6 +9,7 @@ import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatTime } from '../../lib/format.js';
+import Skeleton, { SkeletonRow } from '../../components/Skeleton.jsx';
 
 // ── Broadcast Detail Modal ────────────────────────────────────────────────
 function BroadcastDetail({ broadcast, onClose }) {
@@ -154,7 +155,12 @@ function BroadcastDetail({ broadcast, onClose }) {
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={4} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-3)' }}>Loading...</td></tr>
+                <>
+                  <SkeletonRow cols={4} />
+                  <SkeletonRow cols={4} />
+                  <SkeletonRow cols={4} />
+                  <SkeletonRow cols={4} />
+                </>
               )}
               {!loading && messages.length === 0 && (
                 <tr><td colSpan={4} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-3)' }}>No messages found.</td></tr>

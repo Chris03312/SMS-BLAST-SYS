@@ -1,41 +1,68 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import AdminShell from '../../components/AdminShell.jsx';
 import Modal from '../../components/Modal.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import PasswordInput from '../../components/PasswordInput.jsx';
 import { api } from '../../lib/api.js';
+import { useApiQuery, useApiMutation } from '../../lib/useApiQuery.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatDateShort } from '../../lib/format.js';
 import { useWS } from '../../lib/ws.js';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 
 export default function AdminAgents() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ username: '', password: '', display_name: '' });
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmToggleActive, setConfirmToggleActive] = useState(null);
   const [search, setSearch] = useState('');
   const broadcastSentRef = useRef({});
-  const { toast } = useToast();
 
-  useEffect(() => { load(); }, []);
+  const { data, isLoading } = useApiQuery('agents', '/agents');
+  const items = data?.agents || [];
+
+  const saveMut = useApiMutation(
+    (body) => editItem ? api.put(`/agents/${editItem.id}`, body) : api.post('/agents', body),
+    {
+      onRefetch: 'agents',
+      onSuccess: () => { setShowModal(false); },
+    },
+  );
+
+  const deleteMut = useApiMutation(
+    (item) => api.del(`/agents/${item.id}`),
+    { onRefetch: 'agents' },
+  );
+
+  const toggleMut = useApiMutation(
+    (item) => api.put(`/agents/${item.id}`, { active: item.active ? 0 : 1 }),
+    { onRefetch: 'agents' },
+  );
 
   // Live-update sent_today from broadcast:progress WebSocket events
   useWS((event) => {
     if (event.type === 'broadcast:progress' && event.agent_id) {
-      setItems(prev => prev.map(a => {
-        if (a.id === event.agent_id) {
-          const prevSent = broadcastSentRef.current[event.broadcastId] || 0;
-          const delta = event.sent - prevSent;
-          broadcastSentRef.current[event.broadcastId] = event.sent;
-          return delta > 0 ? { ...a, sent_today: (a.sent_today || 0) + delta } : a;
-        }
-        return a;
-      }));
+      const prevSent = broadcastSentRef.current[event.broadcastId] || 0;
+      const delta = (event.sent || 0) - prevSent;
+      broadcastSentRef.current[event.broadcastId] = event.sent;
+      if (delta > 0) {
+        queryClient.setQueryData(['agents'], (old) => {
+          if (!old?.agents) return old;
+          return {
+            ...old,
+            agents: old.agents.map(a =>
+              a.id === event.agent_id
+                ? { ...a, sent_today: (a.sent_today || 0) + delta }
+                : a
+            ),
+          };
+        });
+      }
     }
   });
 
@@ -44,15 +71,6 @@ export default function AdminAgents() {
     a.display_name?.toLowerCase().includes(search.toLowerCase()) ||
     a.username?.toLowerCase().includes(search.toLowerCase())
   );
-
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await api.get('/agents');
-      setItems(data.agents || []);
-    } catch (e) {}
-    setLoading(false);
-  }
 
   function openNew() {
     setEditItem(null);
@@ -70,30 +88,24 @@ export default function AdminAgents() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setSaving(true);
     setError('');
     try {
       if (editItem) {
-        const updated = await api.put(`/agents/${editItem.id}`, { display_name: form.display_name, ...(form.password ? { password: form.password } : {}) });
-        setItems(prev => prev.map(a => a.id === editItem.id ? updated.agent : a));
+        await saveMut.mutateAsync({ display_name: form.display_name, ...(form.password ? { password: form.password } : {}) });
         toast(`Agent "${form.display_name}" updated`, 'success');
       } else {
-        const a = await api.post('/agents', form);
-        setItems(prev => [a.agent, ...prev]);
+        await saveMut.mutateAsync(form);
         toast(`Agent "${form.display_name}" created`, 'success');
       }
-      setShowModal(false);
     } catch (e) {
       setError(e.message);
       toast(e.message, 'error');
     }
-    setSaving(false);
   }
 
   async function handleDelete(item) {
     try {
-      await api.del(`/agents/${item.id}`);
-      setItems(prev => prev.filter(x => x.id !== item.id));
+      await deleteMut.mutateAsync(item);
       toast(`Agent "${item.display_name}" deleted`, 'success');
     } catch (e) {
       toast(e.message, 'error');
@@ -103,10 +115,8 @@ export default function AdminAgents() {
 
   async function handleToggleActive(item) {
     try {
-      const newActive = item.active ? 0 : 1;
-      const updated = await api.put(`/agents/${item.id}`, { active: newActive });
-      setItems(prev => prev.map(a => a.id === item.id ? { ...a, active: updated.agent.active } : a));
-      toast(`Agent "${item.display_name}" ${newActive ? 'activated' : 'deactivated'}`, 'success');
+      await toggleMut.mutateAsync(item);
+      toast(`Agent "${item.display_name}" ${item.active ? 'deactivated' : 'activated'}`, 'success');
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -124,17 +134,12 @@ export default function AdminAgents() {
           <div>
             <div className="eyebrow">People & Devices</div>
             <h1>Agents</h1>
-            <div className="page-sub">
-              Manage agent accounts and their broadcast access.
-            </div>
+            <div className="page-sub">Manage agent accounts and their broadcast access.</div>
           </div>
         </div>
-        <button className="btn-primary" onClick={openNew}>
-          Invite agent
-        </button>
+        <button className="btn-primary" onClick={openNew}>Invite agent</button>
       </div>
 
-      {/* Stats strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         {[
           { label: 'Agents', val: items.length },
@@ -150,17 +155,9 @@ export default function AdminAgents() {
       </div>
 
       <div className="card">
-        {/* Search bar */}
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <input
-            style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 12.5, color: 'var(--ink-1)', flex: 1, fontFamily: 'inherit' }}
-            placeholder="Search agents by name or username..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 12.5, color: 'var(--ink-1)', flex: 1, fontFamily: 'inherit' }} placeholder="Search agents by name or username..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <table>
           <thead>
@@ -174,8 +171,8 @@ export default function AdminAgents() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>Loading...</td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No agents match your search.' : 'No agents.'}</td></tr>}
+            {isLoading && <SkeletonTable cols={6} rows={5} avatar />}
+            {!isLoading && filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 18px' }}>{search ? 'No agents match your search.' : 'No agents.'}</td></tr>}
             {filtered.map(a => (
               <tr key={a.id}>
                 <td>
@@ -190,23 +187,13 @@ export default function AdminAgents() {
                 <td className="num">{a.sent_today || 0}</td>
                 <td className="num">{a.broadcast_count || 0}</td>
                 <td>
-                  <span className={`pill ${a.active ? 'ok' : 'idle'}`}>
-                    <span className="dot" />
-                    {a.active ? 'Active' : 'Inactive'}
-                  </span>
+                  <span className={`pill ${a.active ? 'ok' : 'idle'}`}><span className="dot" />{a.active ? 'Active' : 'Inactive'}</span>
                 </td>
-                <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                  {formatDateShort(a.created_at)}
-                </td>
+                <td style={{ fontSize: 12, color: 'var(--ink-3)' }}>{formatDateShort(a.created_at)}</td>
                 <td>
                   <div className="row-actions">
                     <button className="iconlink" onClick={() => openEdit(a)} title="Edit">✎</button>
-                    <button
-                      className="iconlink"
-                      onClick={() => setConfirmToggleActive(a)}
-                      title={a.active ? 'Deactivate' : 'Activate'}
-                      style={{ color: a.active ? 'var(--warn)' : 'var(--ok)' }}
-                    >
+                    <button className="iconlink" onClick={() => setConfirmToggleActive(a)} title={a.active ? 'Deactivate' : 'Activate'} style={{ color: a.active ? 'var(--warn)' : 'var(--ok)' }}>
                       {a.active
                         ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
                         : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -219,33 +206,19 @@ export default function AdminAgents() {
             ))}
           </tbody>
         </table>
-        <div className="footer">
-          <span>{filtered.length} of {items.length} agents</span>
-        </div>
+        <div className="footer"><span>{filtered.length} of {items.length} agents</span></div>
       </div>
 
       {confirmToggleActive && (
-        <ConfirmModal
-          title={confirmToggleActive.active ? 'Deactivate Agent' : 'Activate Agent'}
-          message={confirmToggleActive.active
-            ? `Deactivate "${confirmToggleActive.display_name}"? They will not be able to log in or send broadcasts.`
-            : `Activate "${confirmToggleActive.display_name}"? They will regain access to the platform.`
-          }
-          confirmLabel={confirmToggleActive.active ? 'Deactivate' : 'Activate'}
-          danger={confirmToggleActive.active}
-          onConfirm={() => handleToggleActive(confirmToggleActive)}
-          onCancel={() => setConfirmToggleActive(null)}
-        />
+        <ConfirmModal title={confirmToggleActive.active ? 'Deactivate Agent' : 'Activate Agent'}
+          message={confirmToggleActive.active ? `Deactivate "${confirmToggleActive.display_name}"? They will not be able to log in or send broadcasts.` : `Activate "${confirmToggleActive.display_name}"? They will regain access to the platform.`}
+          confirmLabel={confirmToggleActive.active ? 'Deactivate' : 'Activate'} danger={confirmToggleActive.active}
+          onConfirm={() => handleToggleActive(confirmToggleActive)} onCancel={() => setConfirmToggleActive(null)} />
       )}
 
       {confirmDelete && (
-        <ConfirmModal
-          title="Delete Agent"
-          message={`Permanently delete "${confirmDelete.display_name}"? This cannot be undone.`}
-          confirmLabel="Delete"
-          onConfirm={() => handleDelete(confirmDelete)}
-          onCancel={() => setConfirmDelete(null)}
-        />
+        <ConfirmModal title="Delete Agent" message={`Permanently delete "${confirmDelete.display_name}"? This cannot be undone.`}
+          confirmLabel="Delete" onConfirm={() => handleDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} />
       )}
 
       {showModal && (
@@ -263,15 +236,13 @@ export default function AdminAgents() {
                 </div>
               )}
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
-                  Password {editItem && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>(leave blank to keep)</span>}
-                </label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Password {editItem && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>(leave blank to keep)</span>}</label>
                 <PasswordInput value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} required={!editItem} />
               </div>
               {error && <div style={{ color: 'var(--err)', fontSize: 12 }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving...' : (editItem ? 'Save' : 'Invite agent')}</button>
+                <button type="submit" className="btn-primary" disabled={saveMut.isPending}>{saveMut.isPending ? 'Saving...' : (editItem ? 'Save' : 'Invite agent')}</button>
               </div>
             </div>
           </form>
