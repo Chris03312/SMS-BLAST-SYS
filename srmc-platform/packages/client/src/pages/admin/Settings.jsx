@@ -14,6 +14,7 @@ const SECTIONS = [
   { key: 'sender-ids',   label: 'Sender IDs',      group: 'Messaging' },
   { key: 'webhooks',     label: 'Webhooks & API',  group: 'Security'  },
   { key: 'auth',         label: 'Authentication',  group: 'Security'  },
+  { key: 'backup',       label: 'DB Backup',       group: 'Advanced'  },
   { key: 'danger',       label: 'Danger Zone',     group: 'Advanced'  },
 ];
 
@@ -36,7 +37,8 @@ export default function Settings() {
   const scrollRef   = useRef(null);   // the .main scroll container
 
   useEffect(() => {
-    api.get('/settings').then(s => {
+    api.get('/settings').then(res => {
+      const s = res && res.settings ? res.settings : res;
       setSettings(s);
       setForm(s);
       if (s.timezone) setTimezone(s.timezone);
@@ -95,8 +97,9 @@ export default function Settings() {
     setSaving(true);
     try {
       const updated = await api.put('/settings', form);
-      setSettings(updated);
-      setForm(updated);
+      const s = updated && updated.settings ? updated.settings : updated;
+      setSettings(s);
+      setForm(s);
       if (updated.timezone) setTimezone(updated.timezone);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -118,6 +121,14 @@ export default function Settings() {
   async function handleNgrokStart() {
     setNgrokBusy(true);
     try {
+      // Auto-save ngrok credentials to DB before starting the tunnel,
+      // so the server can find them even if the user forgot to click Save.
+      const ngrokSave = {
+        ngrok_authtoken: form.ngrok_authtoken || '',
+        ngrok_domain:    form.ngrok_domain    || '',
+      };
+      await api.put('/settings', ngrokSave);
+
       const d = await api.post('/ngrok/start', {});
       if (d.success) {
         setNgrok({ running: true, url: d.url, webhookUrl: d.webhookUrl });
@@ -488,7 +499,7 @@ export default function Settings() {
                 </Field>
               </FieldRow>
               <div style={{ fontSize: 11, color: 'var(--ink-3)', margin: '0 0 16px', lineHeight: 1.5 }}>
-                Save changes first, then <strong>Start Tunnel</strong> below. This opens a public URL so your Android gateways can deliver inbound SMS to <em>this</em> device.
+                The <strong>Start Tunnel</strong> button saves your token &amp; domain first, then opens a public URL so your Android gateways can deliver inbound SMS to <em>this</em> device.
               </div>
 
               {/* ── Ngrok Tunnel ── */}
@@ -630,6 +641,80 @@ export default function Settings() {
                 Users are managed in <strong>Agents</strong>. Passwords can be reset there.<br />
                 Session tokens expire after <strong>24 hours</strong>.
               </div>
+            </SectionBlock>
+
+            <SectionDivider />
+
+            {/* ── DB Backup ── */}
+            <SectionBlock sectionKey="backup" label="Database Backup" desc="Automatic SQLite backups saved alongside the live database." refs={sectionRefs}>
+              <Field label="Automatic backups" help="Toggle periodic backups of the SQLite database on or off.">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => set('backup_enabled', form.backup_enabled === 'false' ? 'true' : 'false')}
+                    style={{
+                      padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                      fontSize: 13, fontWeight: 600,
+                      background: form.backup_enabled === 'false' ? 'var(--err, #EF4444)' : 'var(--ok, #059669)',
+                      color: '#fff',
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    {form.backup_enabled === 'false' ? '⏸  Disabled' : '▶  Enabled'}
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                    {form.backup_enabled === 'false'
+                      ? 'Backups are paused. No new copies will be created.'
+                      : 'Backups are active.'}
+                  </span>
+                </div>
+              </Field>
+
+              <FieldRow cols={2}>
+                <Field label="Backup interval" help="How often a new backup is created.">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      className="input mono"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      value={form.backup_interval_minutes || 15}
+                      onChange={e => set('backup_interval_minutes', String(Math.max(1, parseInt(e.target.value) || 1)))}
+                      style={{ fontSize: 12, maxWidth: 100 }}
+                    />
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>minutes</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
+                    Min: 1 minute. Changes apply after the next backup.
+                  </div>
+                </Field>
+                <Field label="Max backup copies" help="How many historic backup files to keep.">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      className="input mono"
+                      type="number"
+                      min="1"
+                      max="99"
+                      value={form.backup_max_copies || 6}
+                      onChange={e => set('backup_max_copies', String(Math.max(1, parseInt(e.target.value) || 1)))}
+                      style={{ fontSize: 12, maxWidth: 100 }}
+                    />
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>files</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
+                    Older copies are rotated out. 6 copies × 15 min = 90 min of history.
+                  </div>
+                </Field>
+              </FieldRow>
+
+              <Field label="Backup files location" style={{ marginTop: 8 }}>
+                <div className="input mono" style={{ fontSize: 12, background: 'var(--bg-soft)', color: 'var(--ink-3)', userSelect: 'all', cursor: 'text' }}>
+                  {'<data-dir>/srmc.backup.*.db'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>
+                  Backups are saved alongside the live database. Named <code>srmc.backup.1.db</code> (newest) through <code>srmc.backup.{form.backup_max_copies || 6}.db</code> (oldest).
+                </div>
+              </Field>
             </SectionBlock>
 
             <SectionDivider />

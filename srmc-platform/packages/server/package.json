@@ -23,12 +23,12 @@
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.11.1",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.18.3",
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^3.3.2",
-    "sql.js": "^1.14.1",
     "uuid": "^14.0.1",
     "ws": "^8.16.0"
   }

@@ -1,32 +1,35 @@
 /**
- * db.js — sql.js (WASM) wrapper that mimics the better-sqlite3 API.
+ * db.js — better-sqlite3 wrapper.
  *
- * Why: better-sqlite3 is a native addon that needs Python + node-gyp to compile.
- * sql.js is pure WebAssembly — zero native deps, works everywhere.
+ * better-sqlite3 is a synchronous, native Node.js addon for SQLite.
+ * It writes directly to disk, so no manual flushing is needed.
  *
- * Public API exposed (matches better-sqlite3):
+ * Public API exposed:
  *   db.prepare(sql)           → Statement
- *   db.exec(sql)              → void  (runs multi-statement DDL/DML)
+ *   db.exec(sql)              → void   (runs multi-statement DDL/DML)
  *   db.transaction(fn)        → () => void  (BEGIN/COMMIT wrapper)
- *   db.pragma(str)            → void  (no-op — WAL not needed for WASM)
+ *   db.pragma(str)            → array  (PRAGMA results)
  *
  * Statement API:
  *   stmt.get(...args)         → first row as plain object, or undefined
  *   stmt.all(...args)         → all rows as array of plain objects
  *   stmt.run(...args)         → { changes }
+ *
+ * Exported:
+ *   flushDb()                 → void (no-op — better-sqlite3 writes to disk)
+ *   initDb()                  → void (creates tables, runs seeds + migrations)
+ *   db                        → Database instance
  */
 
-import initSqlJs from 'sql.js';
+import Database from 'better-sqlite3';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, renameSync, copyFileSync, unlinkSync, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
 
 // Writable data directory.
 //   - Electron (packaged): main.js sets SRMC_DATA_DIR to app.getPath('userData')
@@ -37,170 +40,91 @@ const DB_PATH = join(DATA_DIR, 'srmc.db');
 
 mkdirSync(DATA_DIR, { recursive: true });
 
-// ── Bootstrap sql.js (top-level await — ES module) ──────────────────────────
-// Resolve the WASM binary explicitly so it loads both in dev and when packaged
-// inside Electron (sql.js must be listed under build.asarUnpack so the .wasm
-// exists on disk; Electron's patched fs then reads it through the asar path).
-const SQL_DIST = dirname(require.resolve('sql.js'));
-const SQL = await initSqlJs({
-  locateFile: (file) => join(SQL_DIST, file),
-});
-const rawDb = existsSync(DB_PATH)
-  ? new SQL.Database(readFileSync(DB_PATH))
-  : new SQL.Database();
+// ── Open database ───────────────────────────────────────────────────────────
+const db = new Database(DB_PATH);
+
+// Enable WAL mode for better concurrent read performance
+db.pragma('journal_mode = WAL');
 
 /**
- * Immediately flush the in-memory database to disk.
- * Called after every write so no data is lost on crash.
- * Can also be called externally for graceful shutdown or manual backup.
+ * flushDb() — No-op for better-sqlite3.
+ * Kept for API compatibility with modules that call it on shutdown.
  */
 export function flushDb() {
+  // better-sqlite3 writes directly to disk — nothing to flush
+}
+
+// ── Periodic backups (configurable via settings) ──────────────────────
+// Reads backup_interval_minutes, backup_max_copies, and backup_enabled
+// from the settings table. Falls back to 15 min, 6 copies, enabled.
+// A lightweight 1-minute check interval picks up config changes at runtime.
+
+let _lastBackupTime = 0;
+
+function getBackupConfig() {
+  const rows = db.prepare(
+    "SELECT key, value FROM settings WHERE key IN ('backup_enabled', 'backup_interval_minutes', 'backup_max_copies')"
+  ).all();
+  const cfg = { enabled: true, intervalMinutes: 15, maxCopies: 6 };
+  for (const r of rows) {
+    if (r.key === 'backup_enabled')          cfg.enabled         = r.value === 'true';
+    if (r.key === 'backup_interval_minutes') cfg.intervalMinutes  = parseInt(r.value) || 15;
+    if (r.key === 'backup_max_copies')       cfg.maxCopies        = parseInt(r.value) || 6;
+  }
+  return cfg;
+}
+
+function rotateAndBackup(cfg) {
   try {
-    const data = rawDb.export();
-    writeFileSync(DB_PATH, Buffer.from(data));
+    // Rotate backups: remove oldest, shift others
+    for (let i = cfg.maxCopies - 1; i >= 1; i--) {
+      const oldPath = DB_PATH.replace('.db', `.backup.${i}.db`);
+      const newPath = DB_PATH.replace('.db', `.backup.${i + 1}.db`);
+      if (existsSync(oldPath)) {
+        try {
+          renameSync(oldPath, newPath);
+        } catch (_) {
+          try {
+            copyFileSync(oldPath, newPath);
+            unlinkSync(oldPath);
+          } catch (_) { }
+        }
+      }
+    }
+    // Use better-sqlite3's backup API for an online consistent snapshot
+    const backupPath = DB_PATH.replace('.db', '.backup.1.db');
+    db.backup(backupPath);
+    _lastBackupTime = Date.now();
+    console.log('[db] Backup saved to', backupPath.replace(DATA_DIR, ''));
   } catch (e) {
-    console.error('[db] Flush failed:', e.message);
+    console.error('[db] Backup failed:', e.message);
   }
 }
 
-// ── Periodic backups ─────────────────────────────────────────────────
-// Every 15 minutes, write a copy of the DB to a numbered backup file.
-// Keeps the last 6 backups (90 minutes of history).
-const BACKUP_INTERVAL_MS = 15 * 60 * 1000;
-const MAX_BACKUPS = 6;
-
 function startBackupSchedule() {
+  // Run on a 1-minute check loop so config changes are picked up quickly
   setInterval(() => {
-    try {
-      // Rotate backups: remove oldest, shift others
-      for (let i = MAX_BACKUPS - 1; i >= 1; i--) {
-        const oldPath = DB_PATH.replace('.db', `.backup.${i}.db`);
-        const newPath = DB_PATH.replace('.db', `.backup.${i + 1}.db`);
-        if (existsSync(oldPath)) {
-          try {
-            renameSync(oldPath, newPath);
-          } catch (_) {
-            // If rename fails (cross-device), copy + delete
-            try {
-              copyFileSync(oldPath, newPath);
-              unlinkSync(oldPath);
-            } catch (_) { }
-          }
-        }
-      }
-      // Write new backup
-      const data = rawDb.export();
-      const backupPath = DB_PATH.replace('.db', '.backup.1.db');
-      writeFileSync(backupPath, Buffer.from(data));
-      console.log('[db] Backup saved to', backupPath.replace(DATA_DIR, ''));
-    } catch (e) {
-      console.error('[db] Backup failed:', e.message);
-    }
-  }, BACKUP_INTERVAL_MS);
+    const cfg = getBackupConfig();
+    if (!cfg.enabled) return;
+    if (Date.now() - _lastBackupTime < cfg.intervalMinutes * 60 * 1000) return;
+    rotateAndBackup(cfg);
+  }, 60 * 1000);
 }
 
-// ── Backup on boot (migrate old backups) ─────────────────────────────
-// If no backups exist yet, create one immediately
 function createInitialBackup() {
+  const cfg = getBackupConfig();
+  if (!cfg.enabled) return;
   const backupPath = DB_PATH.replace('.db', '.backup.1.db');
   if (!existsSync(backupPath)) {
     try {
-      const data = rawDb.export();
-      writeFileSync(backupPath, Buffer.from(data));
+      db.backup(backupPath);
+      _lastBackupTime = Date.now();
       console.log('[db] Initial backup created');
     } catch (e) {
       console.error('[db] Initial backup failed:', e.message);
     }
   }
 }
-
-// ── Statement wrapper ────────────────────────────────────────────────────────
-
-class Statement {
-  constructor(sql) {
-    this._sql = sql;
-  }
-
-  // Normalize variadic positional args to a flat array.
-  // Handles both .get(a, b, c) and .get(...arr) — both arrive as individual args.
-  _params(args) {
-    if (args.length === 0) return [];
-    return args;
-  }
-
-  /** Returns the first row as a plain object, or undefined. */
-  get(...args) {
-    const stmt = rawDb.prepare(this._sql);
-    const p = this._params(args);
-    if (p.length) stmt.bind(p);
-    const row = stmt.step() ? stmt.getAsObject() : undefined;
-    stmt.free();
-    return row;
-  }
-
-  /** Returns all rows as an array of plain objects. */
-  all(...args) {
-    const stmt = rawDb.prepare(this._sql);
-    const p = this._params(args);
-    if (p.length) stmt.bind(p);
-    const rows = [];
-    while (stmt.step()) rows.push(stmt.getAsObject());
-    stmt.free();
-    return rows;
-  }
-
-  /** Executes INSERT / UPDATE / DELETE. Returns { changes }. */
-  run(...args) {
-    const stmt = rawDb.prepare(this._sql);
-    const p = this._params(args);
-    if (p.length) stmt.bind(p);
-    stmt.step();
-    const changes = rawDb.getRowsModified();
-    stmt.free();
-    flushDb();
-    return { changes };
-  }
-}
-
-// ── Database wrapper ─────────────────────────────────────────────────────────
-
-class Database {
-  /** Runs one or many SQL statements (DDL, bulk DML, etc.). */
-  exec(sql) {
-    rawDb.run(sql);
-    flushDb();
-  }
-
-  /** Returns a Statement bound to the given SQL. */
-  prepare(sql) {
-    return new Statement(sql);
-  }
-
-  /**
-   * Wraps a function in BEGIN/COMMIT.
-   * Returns a zero-arg callable — matches the better-sqlite3 pattern:
-   *   const doInsert = db.transaction(() => { ... });
-   *   doInsert();
-   */
-  transaction(fn) {
-    return () => {
-      rawDb.run('BEGIN');
-      try {
-        fn();
-        rawDb.run('COMMIT');
-      } catch (e) {
-        rawDb.run('ROLLBACK');
-        throw e;
-      }
-      flushDb();
-    };
-  }
-
-  /** No-op — WAL journal mode is not meaningful for an in-memory WASM DB. */
-  pragma() { }
-}
-
-const db = new Database();
 
 // ── Schema + seed ────────────────────────────────────────────────────────────
 
@@ -382,6 +306,9 @@ export function initDb() {
       ['turbo_batch_size', '5'],
       ['timezone', 'Asia/Manila'],
       ['public_url', ''],
+      ['backup_enabled', 'true'],
+      ['backup_interval_minutes', '15'],
+      ['backup_max_copies', '6'],
     ]) {
       db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
     }
@@ -434,6 +361,8 @@ export function initDb() {
     "ALTER TABLE gateways ADD COLUMN owner_id TEXT",
     // SIM slot that received this inbound message (1 = SIM1, 2 = SIM2)
     "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0",
+    // Link templates to campaigns
+    "ALTER TABLE templates ADD COLUMN campaign_id TEXT",
   ];
   for (const sql of migrations) {
     try {

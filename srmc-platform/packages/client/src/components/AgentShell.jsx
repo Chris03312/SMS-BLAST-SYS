@@ -50,6 +50,13 @@ export default function AgentShell({ children }) {
     if (event.type === 'broadcasts:global-pause') {
       setBroadcastsPaused(event.paused);
     }
+    if (event.type === 'settings:changed') {
+      // Refresh global pause state & connectivity when settings change
+      api.get('/settings')
+        .then(s => setBroadcastsPaused(s.broadcasts_globally_paused === 'true'))
+        .catch(() => {});
+      fetchConnectivity();
+    }
   });
 
   function initials(name) {

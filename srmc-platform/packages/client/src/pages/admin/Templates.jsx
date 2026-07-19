@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 
 export default function AdminTemplates() {
   const [templates, setTemplates] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -16,7 +17,7 @@ export default function AdminTemplates() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const { toast } = useToast();
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(() => {}); }, []);
 
   async function load() {
     try {
@@ -27,14 +28,14 @@ export default function AdminTemplates() {
 
   function openEdit(t) {
     setSelected(t);
-    setEditing({ name: t.name, body: t.body, variables: JSON.parse(t.variables || '[]') });
+    setEditing({ name: t.name, body: t.body, variables: JSON.parse(t.variables || '[]'), campaign_id: t.campaign_id || '' });
     setShowModal(true);
     setError('');
   }
 
   function openNew() {
     setSelected(null);
-    setEditing({ name: '', body: '', variables: [] });
+    setEditing({ name: '', body: '', variables: [], campaign_id: '' });
     setShowModal(true);
     setError('');
   }
@@ -45,11 +46,12 @@ export default function AdminTemplates() {
     setError('');
     try {
       const vars = [...editing.body.matchAll(/\{[^}]+\}/g)].map(m => m[0]);
+      const payload = { name: editing.name, body: editing.body, variables: vars, campaign_id: editing.campaign_id || null };
       if (selected) {
-        const t = await api.put(`/templates/${selected.id}`, { ...editing, variables: vars });
+        const t = await api.put(`/templates/${selected.id}`, payload);
         setTemplates(prev => prev.map(x => x.id === t.id ? t.template : x));
       } else {
-        const t = await api.post('/templates', { ...editing, variables: vars });
+        const t = await api.post('/templates', payload);
         setTemplates(prev => [t.template, ...prev]);
       }
       setShowModal(false);
@@ -115,6 +117,11 @@ export default function AdminTemplates() {
                 <td>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{t.name}</div>
                   <div className="cell-id">{t.id.slice(0, 8)}</div>
+                  {t.campaign_name && (
+                    <div style={{ fontSize: 10, color: 'var(--brand-1)', marginTop: 2, fontWeight: 500 }}>
+                      📁 {t.campaign_name}
+                    </div>
+                  )}
                 </td>
                 <td style={{ maxWidth: 280 }}>
                   <div style={{ fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.body}</div>
@@ -153,6 +160,20 @@ export default function AdminTemplates() {
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Name</label>
                 <input className="input" value={editing.name} onChange={e => setEditing(prev => ({ ...prev, name: e.target.value }))} required />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Campaign</label>
+                <select
+                  className="input"
+                  value={editing.campaign_id}
+                  onChange={e => setEditing(prev => ({ ...prev, campaign_id: e.target.value }))}
+                  style={{ fontSize: 12 }}
+                >
+                  <option value="">No campaign</option>
+                  {campaigns.filter(c => c.status === 'active').map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Message body</label>

@@ -11,6 +11,7 @@
 import ngrok from '@ngrok/ngrok';
 import db from '../database/db.js';
 import { registerNgrokWebhook, getInboundWebhookUrl } from './gateway-service.js';
+import { getSetting } from './config-service.js';
 
 let activeListener = null;
 let currentUrl     = null;
@@ -26,11 +27,9 @@ const RETRY_INTERVAL_MS = 30_000; // check every 30s when offline
  */
 function resolveAuthtoken(explicit) {
   if (explicit) return explicit;
-  try {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_authtoken'").get();
-    if (row && row.value) return row.value.trim();
-  } catch (_) {}
-  return process.env.NGROK_AUTHTOKEN || process.env.NGROK_TOKEN || '';
+  const fromDb = getSetting('ngrok_authtoken', 'NGROK_AUTHTOKEN');
+  if (fromDb) return fromDb;
+  return process.env.NGROK_TOKEN || '';
 }
 
 /**
@@ -38,12 +37,7 @@ function resolveAuthtoken(explicit) {
  * stays stable across restarts. Precedence: 'ngrok_domain' setting → env.
  */
 function resolveDomain() {
-  let raw = '';
-  try {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_domain'").get();
-    if (row && row.value) raw = row.value;
-  } catch (_) {}
-  if (!raw) raw = process.env.NGROK_DOMAIN || '';
+  const raw = getSetting('ngrok_domain', 'NGROK_DOMAIN');
   // ngrok wants the bare hostname — tolerate a full URL or trailing slash.
   return raw.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
 }
@@ -88,6 +82,11 @@ export function stopNgrokAutoRetry() {
   }
 }
 
+/**
+ * Try to open an ngrok tunnel. If a reserved domain is configured and the
+ * first attempt fails because the domain is still in use (ERR_NGROK_334),
+ * retry once without the domain so the tunnel gets a random ngrok URL.
+ */
 export async function startNgrok(port = 3001, authtoken) {
   await stopNgrok();
   stopNgrokAutoRetry();
@@ -95,11 +94,11 @@ export async function startNgrok(port = 3001, authtoken) {
   const token  = resolveAuthtoken(authtoken);
   const domain = resolveDomain();
 
-  try {
+  async function tryStart(useDomain) {
     const opts = { addr: port };
     if (token) opts.authtoken = token;
     else       opts.authtoken_from_env = true;
-    if (domain) opts.domain = domain;
+    if (useDomain) opts.domain = useDomain;
 
     const listener = await ngrok.forward(opts);
     const url = listener.url().replace(/\/+$/, '');
@@ -107,19 +106,30 @@ export async function startNgrok(port = 3001, authtoken) {
     activeListener = listener;
     currentUrl     = url;
 
-    // Save URL in the database so Android gateways discover it via /api/config
     registerNgrokWebhook(url);
-
-    // Also update the public_url setting so the web UI shows it
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('public_url', ?)")
-      .run(url);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('public_url', ?)").run(url);
 
     const webhookUrl = `${url}/api/webhook/inbound`;
     console.log(`[ngrok] ✅ Tunnel established: ${url}`);
     console.log(`[ngrok] 📥 Inbound webhook: ${webhookUrl}`);
 
     return { url, webhookUrl };
+  }
+
+  // First attempt — try with domain if one is configured
+  try {
+    return await tryStart(domain);
   } catch (err) {
+    // If the domain is already in use, retry without it
+    if (domain && err.message && err.message.includes('ERR_NGROK_334')) {
+      console.warn('[ngrok] Reserved domain in use — falling back to random URL');
+      try {
+        return await tryStart('');
+      } catch (fallbackErr) {
+        console.error('[ngrok] ❌ Fallback also failed:', fallbackErr.message);
+        throw fallbackErr;
+      }
+    }
     console.error('[ngrok] ❌ Failed to start tunnel:', err.message);
     throw err;
   }
@@ -127,19 +137,25 @@ export async function startNgrok(port = 3001, authtoken) {
 
 /**
  * Stop the active ngrok tunnel gracefully.
+ * Calls ngrok.disconnect() to drop tunnels, then ngrok.kill() to stop
+ * the background agent process entirely. This ensures any lingering
+ * tunnels from a previous server instance are fully cleaned up.
  */
 export async function stopNgrok() {
   stopNgrokAutoRetry();
-  if (activeListener) {
-    try {
-      await ngrok.disconnect();
-    } catch (err) {
-      console.warn('[ngrok] Warning during disconnect:', err.message);
-    }
-    activeListener = null;
-    currentUrl     = null;
-    console.log('[ngrok] Tunnel closed');
+  try {
+    await ngrok.disconnect();
+  } catch (err) {
+    console.warn('[ngrok] Warning during disconnect:', err.message);
   }
+  try {
+    await ngrok.kill();
+  } catch (err) {
+    console.warn('[ngrok] Warning during kill:', err.message);
+  }
+  activeListener = null;
+  currentUrl     = null;
+  console.log('[ngrok] Tunnel closed');
 }
 
 /**

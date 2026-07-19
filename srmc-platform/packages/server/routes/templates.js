@@ -26,17 +26,19 @@ router.get('/', (req, res) => {
     let params;
     if (isAdmin) {
       sql = `
-        SELECT t.*, u.display_name as creator_name
+        SELECT t.*, u.display_name as creator_name, u.role as creator_role, c.name as campaign_name
         FROM templates t
         LEFT JOIN users u ON t.created_by = u.id
+        LEFT JOIN campaigns c ON t.campaign_id = c.id
         ORDER BY t.created_at DESC
       `;
       params = [];
     } else {
       sql = `
-        SELECT t.*, u.display_name as creator_name
+        SELECT t.*, u.display_name as creator_name, u.role as creator_role, c.name as campaign_name
         FROM templates t
         LEFT JOIN users u ON t.created_by = u.id
+        LEFT JOIN campaigns c ON t.campaign_id = c.id
         WHERE t.created_by = ?
            OR t.created_by IN (SELECT id FROM users WHERE role IN ('admin', 'super_admin'))
         ORDER BY t.created_at DESC
@@ -54,14 +56,14 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { name, body, category, variables } = req.body;
+    const { name, body, category, variables, campaign_id } = req.body;
     if (!name || !body) {
       return fail(res, 'Name and body are required', 400);
     }
 
     const id = uuidv4();
-    db.prepare('INSERT INTO templates (id, name, body, category, variables, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, name, body, category || 'transactional', JSON.stringify(variables || []), req.user.id);
+    db.prepare('INSERT INTO templates (id, name, body, category, variables, created_by, campaign_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, body, category || 'transactional', JSON.stringify(variables || []), req.user.id, campaign_id || null);
 
     const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
     return ok(res, { template }, 201);
@@ -78,14 +80,24 @@ router.put('/:id', (req, res) => {
       return fail(res, 'Template not found', 404);
     }
 
-    const { name, body, category, variables } = req.body;
+    // Agents cannot modify templates created by admins
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (!isAdmin) {
+      const creator = db.prepare('SELECT role FROM users WHERE id = ?').get(template.created_by);
+      if (creator && (creator.role === 'admin' || creator.role === 'super_admin')) {
+        return fail(res, 'Admin-created templates cannot be modified by agents', 403);
+      }
+    }
 
-    db.prepare(`UPDATE templates SET name = ?, body = ?, category = ?, variables = ?, updated_at = datetime('now') WHERE id = ?`)
+    const { name, body, category, variables, campaign_id } = req.body;
+
+    db.prepare(`UPDATE templates SET name = ?, body = ?, category = ?, variables = ?, campaign_id = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(
         name ?? template.name,
         body ?? template.body,
         category ?? template.category,
         variables !== undefined ? JSON.stringify(variables) : template.variables,
+        campaign_id !== undefined ? campaign_id : template.campaign_id,
         req.params.id
       );
 
@@ -102,6 +114,16 @@ router.delete('/:id', (req, res) => {
     if (!template) {
       return fail(res, 'Template not found', 404);
     }
+
+    // Agents cannot delete templates created by admins
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (!isAdmin) {
+      const creator = db.prepare('SELECT role FROM users WHERE id = ?').get(template.created_by);
+      if (creator && (creator.role === 'admin' || creator.role === 'super_admin')) {
+        return fail(res, 'Admin-created templates cannot be deleted by agents', 403);
+      }
+    }
+
     db.prepare('DELETE FROM templates WHERE id = ?').run(req.params.id);
     return ok(res, { success: true });
   } catch (e) {

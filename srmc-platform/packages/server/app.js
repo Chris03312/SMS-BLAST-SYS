@@ -57,8 +57,26 @@ function resolveServerConfig() {
 
 const { host: HOST, port: PORT } = resolveServerConfig();
 export { HOST, PORT };
-export const NGROK_URL = process.env.NGROK_URL || '';
-export const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || process.env.NGROK_TOKEN || '';
+/**
+ * Read ngrok configuration from DB settings first, falling back to env vars.
+ * The DB values are set via the Admin Settings page (Webhooks & API section).
+ * This allows each device to be configured at runtime without editing .env.
+ */
+export function getNgrokUrl() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_url'").get();
+    if (row && row.value) return row.value.trim();
+  } catch (_) {}
+  return process.env.NGROK_URL || '';
+}
+
+export function getNgrokAuthtoken() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'ngrok_authtoken'").get();
+    if (row && row.value) return row.value.trim();
+  } catch (_) {}
+  return process.env.NGROK_AUTHTOKEN || process.env.NGROK_TOKEN || '';
+}
 
 
 const app = express();
@@ -200,7 +218,7 @@ app.get('/api/server/connectivity', authMiddleware, async (req, res) => {
   const addresses = listLanIps();
   let primaryIp = await primaryLanIp();
   if (!primaryIp && addresses.length) primaryIp = addresses[0].ip;
-  const hasNgrokConfig = !!NGROK_URL || !!NGROK_AUTHTOKEN;
+  const hasNgrokConfig = !!getNgrokUrl() || !!getNgrokAuthtoken();
 
   const online = hasNgrokConfig ? await checkInternet() : true;
 
@@ -230,7 +248,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     time: new Date().toISOString(),
     port: PORT,
-    ngrok: tunnelStatus.running ? tunnelStatus.url : (NGROK_URL || 'not configured'),
+    ngrok: tunnelStatus.running ? tunnelStatus.url : (getNgrokUrl() || 'not configured'),
   });
 });
 
@@ -252,11 +270,14 @@ app.use((err, req, res, next) => {
 initDb();
 
 
-if (NGROK_URL) {
-  registerNgrokWebhook(NGROK_URL);
+const initialNgrokUrl = getNgrokUrl();
+const initialNgrokToken = getNgrokAuthtoken();
+
+if (initialNgrokUrl) {
+  registerNgrokWebhook(initialNgrokUrl);
 }
 
-if (!NGROK_URL && NGROK_AUTHTOKEN) {
+if (!initialNgrokUrl && initialNgrokToken) {
   console.log('[ngrok] Auth token found — will auto-start tunnel after server is ready');
 }
 

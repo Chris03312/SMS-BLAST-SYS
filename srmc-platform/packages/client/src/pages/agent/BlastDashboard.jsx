@@ -255,6 +255,12 @@ export default function BlastDashboard() {
   }, [turboDelay]);
 
   function handleTemplateSelect(t) {
+    // If the same template is clicked again, deselect it and clear the message
+    if (selectedTemplate?.id === t.id) {
+      setSelectedTemplate(null);
+      setMessage('');
+      return;
+    }
     setSelectedTemplate(t);
     setMessage(t.body);
   }
@@ -322,19 +328,6 @@ export default function BlastDashboard() {
         [bid]: { sent: 0, failed: 0, total: result.broadcast.total, status: 'sending', message: result.broadcast.message },
       }));
       setSending(false);
-      // Capture summary data for post-send receipt
-      setSentSummary({
-        message: result.broadcast.message || message,
-        recipients: recipientList,
-        gateways: selectedGateways,
-        campaign: campaigns.find(c => c.id === selectedCampaign)?.name || null,
-        distribution,
-        delayMs,
-        simMode,
-        simRoundStart,
-        total: result.broadcast.total,
-      });
-      setShowSummary(true);
       // Clear draft after successful send
       clearDraft();
     } catch (e) {
@@ -495,13 +488,38 @@ export default function BlastDashboard() {
               <h3>Compose Broadcast</h3>
             </div>
             <form style={{ padding: 18 }} onSubmit={e => e.preventDefault()}>
-              {/* Template pills */}
+              {/* Campaign selector — required, placed above templates */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+                  Campaign <span style={{ color: 'var(--err)' }}>*</span>
+                </label>
+                <select
+                  className="input"
+                  value={selectedCampaign}
+                  onChange={e => {
+                    setSelectedCampaign(e.target.value);
+                    setSelectedTemplate(null);
+                    setMessage('');
+                  }}
+                  style={{ fontSize: 12 }}
+                  required
+                >
+                  <option value="">Select a campaign</option>
+                  {campaigns.filter(c => c.status === 'active').map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Template pills — only shown when a campaign is selected */}
+              {selectedCampaign && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
                   Templates
+                  {selectedCampaign && <span style={{ fontSize: 10, color: 'var(--brand-1)', fontWeight: 400, marginLeft: 6 }}>· filtered by campaign</span>}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {templates.map(t => (
+                  {(selectedCampaign ? templates.filter(t => t.campaign_id === selectedCampaign) : templates).map(t => (
                     <button
                       key={t.id}
                       type="button"
@@ -514,11 +532,12 @@ export default function BlastDashboard() {
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Message textarea */}
               <div style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Message</label>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Message <span style={{ color: 'var(--err)' }}>*</span></label>
                   <span style={{ fontSize: 11, color: charCount > 160 ? 'var(--warn)' : 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
                     {charCount}ch / {segments} seg
                   </span>
@@ -550,7 +569,7 @@ export default function BlastDashboard() {
               {/* Recipients */}
               <div style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Recipients</label>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Recipients <span style={{ color: 'var(--err)' }}>*</span></label>
                   <span style={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>{recipientList.length} numbers</span>
                 </div>
                 <textarea
@@ -567,7 +586,7 @@ export default function BlastDashboard() {
               <div style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>
-                    Gateways
+                    Gateways <span style={{ color: 'var(--err)' }}>*</span>
                   </label>
                   {selectedGateways.length > 1 && recipientList.length > 0 && (
                     <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
@@ -683,23 +702,6 @@ export default function BlastDashboard() {
                   </div>
                 </div>
               )}
-
-              {/* Campaign selector */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Campaign</label>
-                <select
-                  className="input"
-                  value={selectedCampaign}
-                  onChange={e => setSelectedCampaign(e.target.value)}
-                  style={{ fontSize: 12 }}
-                  required
-                >
-                  <option value="">No campaign</option>
-                  {campaigns.filter(c => c.status === 'active').map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
 
               {/* Delay selector */}
               <div style={{ marginBottom: 12 }}>
@@ -1011,9 +1013,8 @@ export default function BlastDashboard() {
                     disabled={sending || broadcastsPaused}
                     style={{ flex: 2 }}
                     onClick={async () => {
-                      await handleSend();
                       setShowReview(false);
-                      setShowSummary(false);
+                      await handleSend();
                       navigate('/dashboard');
                     }}
                   >

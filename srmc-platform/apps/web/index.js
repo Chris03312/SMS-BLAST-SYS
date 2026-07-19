@@ -13,8 +13,8 @@ import { createServer } from 'http';
 import { initWss } from '@srmc/server/ws.js';
 import { startPoller } from '@srmc/server/gateway-poller.js';
 import { startNgrok, startNgrokAutoRetry, hasAuthtoken } from '@srmc/server/ngrok-tunnel.js';
-import { flushDb } from '@srmc/server/db.js';
-import app, { HOST, PORT, NGROK_URL, NGROK_AUTHTOKEN } from '@srmc/server/app.js';
+import db from '@srmc/server/db.js';
+import app, { HOST, PORT, getNgrokUrl } from '@srmc/server/app.js';
 
 const server = createServer(app);
 
@@ -24,8 +24,10 @@ initWss(server);
 server.listen(PORT, HOST, async () => {
   console.log(`[server] SMS Platform running on http://${HOST}:${PORT}`);
 
-  if (NGROK_URL) {
-    console.log(`[server] Ngrok webhook URL: ${NGROK_URL}/api/webhook/inbound`);
+  const serverNgrokUrl = getNgrokUrl();
+
+  if (serverNgrokUrl) {
+    console.log(`[server] Ngrok webhook URL: ${serverNgrokUrl}/api/webhook/inbound`);
   } else if (hasAuthtoken()) {
     console.log('[ngrok] Auto-starting this device\'s own tunnel…');
     try {
@@ -44,11 +46,11 @@ server.listen(PORT, HOST, async () => {
 });
 
 // ── Graceful shutdown ────────────────────────────────────────────────
-// Flush the SQLite database to disk before exiting so no data is lost.
+// better-sqlite3 writes directly to disk, so no explicit flush is needed.
 
 function handleShutdown(signal) {
-  console.log(`[server] Received ${signal} — flushing DB and shutting down…`);
-  try { flushDb(); } catch (e) { console.error('[server] Flush error:', e.message); }
+  console.log(`[server] Received ${signal} — shutting down…`);
+  try { db.close(); } catch (e) { console.error('[server] Close error:', e.message); }
   server.close(() => {
     console.log('[server] Server closed');
     process.exit(0);

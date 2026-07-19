@@ -70,14 +70,7 @@ export async function startBroadcast(broadcastId) {
   const startedAt = new Date().toISOString();
   db.prepare("UPDATE broadcasts SET status = 'sending', started_at = ? WHERE id = ?").run(startedAt, broadcastId);
 
-  // ── Read global settings once at the start ────────────────────────────
-  const settingsRows = db.prepare(
-    "SELECT key, value FROM settings WHERE key IN ('broadcasts_globally_paused', 'max_broadcast_duration_minutes', 'turbo_batch_size')"
-  ).all();
-  const settingsMap = {};
-  for (const r of settingsRows) settingsMap[r.key] = r.value;
-  const maxDurationMin = parseInt(settingsMap['max_broadcast_duration_minutes']) || 0;
-  const TURBO_BATCH = parseInt(settingsMap['turbo_batch_size']) || 5;
+  // ── Track when this broadcast started (for max-duration checks) ─────
   const startedMs = Date.parse(startedAt);
 
   let sent = 0;
@@ -119,13 +112,19 @@ export async function startBroadcast(broadcastId) {
 
   // ── Shared per-iteration checks ────────────────────────────────────
   // Returns false if the iteration should break (cancelled).
+  // Settings like max_duration, turbo_batch, and daily_cap are re-read
+  // from the DB every iteration so changes made in the Settings page
+  // take effect immediately without restarting the broadcast.
   async function iterationChecks() {
     // 1. Global pause auto-detect
     if (!state.paused) {
       checkGlobalPause(broadcastId, state, agentId, campaignId);
     }
-    // 2. Max duration
-    if (checkMaxDuration(startedMs, maxDurationMin, state, agentId, campaignId)) {
+    // 2. Max duration — re-read from DB live so setting changes apply
+    const currentMaxDurationMin = parseInt(db.prepare(
+      "SELECT value FROM settings WHERE key = 'max_broadcast_duration_minutes'"
+    ).get()?.value || '0');
+    if (checkMaxDuration(startedMs, currentMaxDurationMin, state, agentId, campaignId)) {
       return false;
     }
     // 3. Wait if paused
@@ -190,8 +189,12 @@ export async function startBroadcast(broadcastId) {
       while (msgIndex < recipients.length && !state.cancel) {
         if (!(await iterationChecks())) break;
 
-        // Build a batch of messages
-        const batchSize = Math.min(TURBO_BATCH, recipients.length - msgIndex);
+        // Build a batch of messages — re-read turbo_batch_size live so
+        // admin changes in Settings apply to currently-running broadcasts.
+        const liveTurboBatch = parseInt(db.prepare(
+          "SELECT value FROM settings WHERE key = 'turbo_batch_size'"
+        ).get()?.value || '5');
+        const batchSize = Math.min(liveTurboBatch, recipients.length - msgIndex);
         const batch = [];
         for (let j = 0; j < batchSize; j++) {
           const num = recipients[msgIndex + j];

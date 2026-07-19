@@ -34,6 +34,13 @@ router.put('/', adminOnly, (req, res) => {
       return fail(res, 'Body must be a key-value object', 400);
     }
     const settings = updateSettings(updates);
+    // Broadcast a real-time event so all clients (and the broadcast engine)
+    // know settings have changed and can re-read relevant values from DB.
+    broadcast({
+      type: 'settings:changed',
+      keys: Object.keys(updates),
+      changed_by: req.user.id,
+    });
     return ok(res, { settings });
   } catch (e) {
     console.error('[settings] PUT error:', e);
@@ -82,6 +89,9 @@ router.post('/reset', adminOnly, (req, res) => {
       ['turbo_batch_size',           '5'],
       ['timezone',                  'Asia/Manila'],
       ['public_url',     ''],
+      ['backup_enabled', 'true'],
+      ['backup_interval_minutes', '15'],
+      ['backup_max_copies', '6'],
     ];
     const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     const resetAll = db.transaction(() => {
@@ -92,6 +102,8 @@ router.post('/reset', adminOnly, (req, res) => {
     resetAll();
     console.log('[settings] All settings reset to defaults by', req.user.id);
     const settings = getAllSettings();
+    // Broadcast so clients and engine pick up the reset values
+    broadcast({ type: 'settings:changed', keys: Object.keys(settings), changed_by: req.user.id });
     return ok(res, { settings, message: 'Settings reset to factory defaults.' });
   } catch (e) {
     console.error('[settings] reset error:', e);

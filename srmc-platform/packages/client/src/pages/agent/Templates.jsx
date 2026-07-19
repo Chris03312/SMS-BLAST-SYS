@@ -6,9 +6,10 @@ import { useToast } from '../../context/ToastContext.jsx';
 
 export default function AgentTemplates() {
   const [templates, setTemplates] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState({ name: '', body: '' });
+  const [editing, setEditing] = useState({ name: '', body: '', campaign_id: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
@@ -17,6 +18,7 @@ export default function AgentTemplates() {
 
   useEffect(() => {
     load();
+    api.get('/campaigns').then(d => setCampaigns(d.campaigns || [])).catch(() => {});
   }, []);
 
   async function load() {
@@ -34,6 +36,7 @@ export default function AgentTemplates() {
     setEditing({
       name: t.name,
       body: t.body,
+      campaign_id: t.campaign_id || '',
     });
     setCreating(false);
     setError('');
@@ -42,9 +45,16 @@ export default function AgentTemplates() {
   function startNew() {
     setSelected(null);
     setCreating(true);
-    setEditing({ name: '', body: '' });
+    setEditing({ name: '', body: '', campaign_id: '' });
     setError('');
   }
+
+  /** Check if the template is admin-created — read-only for agents */
+  function isAdminTemplate(t) {
+    return t && (t.creator_role === 'admin' || t.creator_role === 'super_admin');
+  }
+
+  const selectedIsAdminTemplate = isAdminTemplate(selected);
 
   async function handleSave(e) {
     e.preventDefault();
@@ -52,13 +62,14 @@ export default function AgentTemplates() {
     setError('');
     try {
       const vars = [...editing.body.matchAll(/\{[^}]+\}/g)].map(m => m[0]);
+      const payload = { name: editing.name, body: editing.body, variables: vars, campaign_id: editing.campaign_id || null };
       if (creating) {
-        const t = await api.post('/templates', { ...editing, variables: vars });
+        const t = await api.post('/templates', payload);
         setTemplates(prev => [t.template, ...prev]);
         selectTemplate(t.template);
         setCreating(false);
       } else {
-        const t = await api.put(`/templates/${selected.id}`, { ...editing, variables: vars });
+        const t = await api.put(`/templates/${selected.id}`, payload);
         setTemplates(prev => prev.map(x => x.id === t.id ? t.template : x));
         setSelected(t.template);
       }
@@ -160,11 +171,23 @@ export default function AgentTemplates() {
             <h3>{creating ? 'New Template' : selected ? selected.name : 'Select a template'}</h3>
             {selected && !creating && (
               <div style={{ display: 'flex', gap: 6 }}>
-                <button className="btn-ghost" onClick={handleDuplicate}>Duplicate</button>
-                <button className="btn-danger" onClick={() => setConfirmDelete(selected)}>Delete</button>
+                {!selectedIsAdminTemplate && (
+                  <button className="btn-ghost" onClick={handleDuplicate}>Duplicate</button>
+                )}
+                {!selectedIsAdminTemplate && (
+                  <button className="btn-danger" onClick={() => setConfirmDelete(selected)}>Delete</button>
+                )}
               </div>
             )}
           </div>
+          {selectedIsAdminTemplate && !creating && (
+            <div style={{ padding: '10px 14px', background: 'var(--info-bg)', borderBottom: '1px solid var(--info-line)', fontSize: 11, color: 'var(--info)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+              This template is managed by an admin and is read-only.
+            </div>
+          )}
           {(selected || creating) ? (
             <form style={{ padding: 18 }} onSubmit={handleSave}>
               <div style={{ marginBottom: 14 }}>
@@ -174,7 +197,23 @@ export default function AgentTemplates() {
                   value={editing.name}
                   onChange={e => setEditing(prev => ({ ...prev, name: e.target.value }))}
                   required
+                  disabled={selectedIsAdminTemplate}
                 />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>Campaign</label>
+                <select
+                  className="input"
+                  value={editing.campaign_id}
+                  onChange={e => setEditing(prev => ({ ...prev, campaign_id: e.target.value }))}
+                  style={{ fontSize: 12 }}
+                  disabled={selectedIsAdminTemplate}
+                >
+                  <option value="">No campaign</option>
+                  {campaigns.filter(c => c.status === 'active').map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -190,6 +229,7 @@ export default function AgentTemplates() {
                   onChange={e => setEditing(prev => ({ ...prev, body: e.target.value }))}
                   placeholder="Enter message body. Use {name}, {amount} for variables."
                   required
+                  disabled={selectedIsAdminTemplate}
                   style={{ resize: 'vertical' }}
                 />
               </div>
@@ -225,9 +265,11 @@ export default function AgentTemplates() {
                   <span>By: <strong>{selected.creator_name || 'Unknown'}</strong></span>
                 </div>
               )}
-              <button className="btn-primary" type="submit" disabled={saving}>
-                {saving ? 'Saving...' : (creating ? 'Create template' : 'Save changes')}
-              </button>
+              {!selectedIsAdminTemplate && (
+                <button className="btn-primary" type="submit" disabled={saving}>
+                  {saving ? 'Saving...' : (creating ? 'Create template' : 'Save changes')}
+                </button>
+              )}
             </form>            ) : (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
               Select a template from the list or create a new one.
