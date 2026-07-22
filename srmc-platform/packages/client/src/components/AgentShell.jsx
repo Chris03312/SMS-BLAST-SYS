@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useTheme } from '../context/ThemeContext.jsx';
 import { api } from '../lib/api.js';
 import { useWS, useConnectionStatus } from '../lib/ws.js';
 import Modal from './Modal.jsx';
@@ -18,6 +19,7 @@ const TABS = [
 
 export default function AgentShell({ children }) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const [unreadCount, setUnreadCount] = useState(0);
   const [connectivity, setConnectivity] = useState(null); // null = loading, object = status
@@ -190,7 +192,7 @@ export default function AgentShell({ children }) {
                 <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowNetInfo(false)} />
                 <div style={{
                   position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                  background: '#fff', border: '1px solid var(--line)',
+                  background: 'var(--bg-card)', border: '1px solid var(--line)',
                   borderRadius: 10, padding: 14, width: 260,
                   boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
                   fontSize: 12, lineHeight: 1.6,
@@ -229,6 +231,9 @@ export default function AgentShell({ children }) {
           </div>
 
           <button className="btn-ghost" onClick={() => setShowPasswordModal(true)} style={{ fontSize: 12 }}>Password</button>
+          <button className="btn-ghost" onClick={toggleTheme} title="Toggle dark/light mode" style={{ fontSize: 12 }}>
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
           <button className="btn-ghost" onClick={handleLogout}>Sign out</button>
         </div>
       </div>

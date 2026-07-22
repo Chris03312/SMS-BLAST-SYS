@@ -13,7 +13,7 @@ import { createServer } from 'http';
 import { initWss } from '@srmc/server/ws.js';
 import { startPoller } from '@srmc/server/gateway-poller.js';
 import { startNgrok, startNgrokAutoRetry, hasAuthtoken, getNgrokUrl } from '@srmc/server/ngrok-tunnel.js';
-import { recoverBroadcasts } from '@srmc/server/broadcast-engine.js';
+import { recoverBroadcasts, startStuckMessageRecovery } from '@srmc/server/broadcast-engine.js';
 
 import app, { HOST, PORT } from '@srmc/server/app.js';
 
@@ -51,6 +51,11 @@ server.listen(PORT, HOST, async () => {
     }
     console.log('[ngrok] No auth token — add one in Settings to enable inbound tunneling');
   }
+
+  // Start periodic recovery of messages stuck in 'sending' status.
+  // This runs every 60 seconds and re-releases messages that were claimed
+  // by a phone but never ACKed back (phone crashed or lost connection).
+  startStuckMessageRecovery();
 
   startPoller();
 });

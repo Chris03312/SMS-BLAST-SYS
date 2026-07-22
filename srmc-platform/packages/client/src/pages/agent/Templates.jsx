@@ -224,7 +224,7 @@ export default function AgentTemplates() {
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Preview</div>
                 <div style={{
                   maxWidth: 240, margin: '0 auto',
-                  background: '#fff', border: '1px solid var(--line)',
+                  background: 'var(--bg-card)', border: '1px solid var(--line)',
                   borderRadius: 12, padding: 12, fontSize: 12, color: 'var(--ink-1)', lineHeight: 1.5,
                 }}>
                   {editing.body || <span style={{ color: 'var(--ink-4)' }}>Your message appears here</span>}

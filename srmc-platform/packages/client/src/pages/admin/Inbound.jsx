@@ -203,7 +203,7 @@ export default function AdminInbound() {
             style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
             onClick={e => { if (e.target === e.currentTarget) setConvMessage(null); }}
           >
-            <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.3)' }}>
+            <div style={{ background: 'var(--bg-card)', borderRadius: 16, width: '100%', maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.3)' }}>
               {/* Header — simple system-themed */}
               <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -225,7 +225,7 @@ export default function AdminInbound() {
               {/* Chat bubbles */}
               <div style={{
                 flex: 1, overflowY: 'auto', padding: 16,
-                background: 'linear-gradient(180deg, #f0f2f5 0%, #e8ecf1 100%)',
+                background: 'linear-gradient(180deg, var(--chat-bg-start, #f0f2f5) 0%, var(--chat-bg-end, #e8ecf1) 100%)',
                 display: 'flex', flexDirection: 'column', gap: 8,
               }}>
                 {convLoading && (
@@ -259,8 +259,8 @@ export default function AdminInbound() {
                         </div>
                       )}
                       <div style={{
-                        background: isInbound ? '#fff' : '#2563eb',
-                        color: isInbound ? '#1e293b' : '#fff',
+                        background: isInbound ? 'var(--bg-card)' : '#2563eb',
+                        color: isInbound ? 'var(--ink-1)' : '#fff',
                         borderRadius: isInbound
                           ? '4px 16px 16px 16px'
                           : '16px 4px 16px 16px',

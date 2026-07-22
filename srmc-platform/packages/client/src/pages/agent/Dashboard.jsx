@@ -5,6 +5,7 @@ import Pill from '../../components/Pill.jsx';
 import LiveBadge from '../../components/LiveBadge.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useTheme } from '../../context/ThemeContext.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -66,7 +67,7 @@ function BroadcastDetail({ broadcast, onClose }) {
       padding: 20,
     }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{
-        background: '#fff', borderRadius: 14,
+        background: 'var(--bg-card)', borderRadius: 14,
         width: '100%', maxWidth: 720, maxHeight: '90vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
@@ -107,14 +108,14 @@ function BroadcastDetail({ broadcast, onClose }) {
               {broadcast.sim_mode && (
                 <span style={{
                   padding: '1px 7px', borderRadius: 4,
-                  background: broadcast.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
-                    : broadcast.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
-                    : broadcast.sim_mode === 'parallel' ? 'rgba(245,158,11,0.12)'
-                    : 'rgba(5,150,105,0.12)',
-                  color: broadcast.sim_mode === 'sim2' ? '#db2777'
-                    : broadcast.sim_mode === 'round-robin' ? '#7c3aed'
-                    : broadcast.sim_mode === 'parallel' ? '#f59e0b'
-                    : '#059669',
+                  background: broadcast.sim_mode === 'sim2' ? 'var(--sim2-bg)'
+                    : broadcast.sim_mode === 'round-robin' ? 'var(--sim-rr-bg)'
+                    : broadcast.sim_mode === 'parallel' ? 'var(--sim-par-bg)'
+                    : 'var(--sim1-bg)',
+                  color: broadcast.sim_mode === 'sim2' ? 'var(--sim2-clr)'
+                    : broadcast.sim_mode === 'round-robin' ? 'var(--sim-rr-clr)'
+                    : broadcast.sim_mode === 'parallel' ? 'var(--sim-par-clr)'
+                    : 'var(--sim1-clr)',
                   fontWeight: 600,
                 }}>
                   {broadcast.sim_mode === 'sim2' ? '📱2 SIM 2'
@@ -145,7 +146,7 @@ function BroadcastDetail({ broadcast, onClose }) {
         {/* Messages table */}
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }} className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+            <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
               <tr style={{ borderBottom: '1px solid var(--line)' }}>
                 <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recipient #</th>
                 <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', width: 120 }}>SIM</th>
@@ -434,6 +435,7 @@ export default function Dashboard() {
     }
   }
 
+  const { theme } = useTheme();
   const [detailBroadcastId, setDetailBroadcastId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const { toast } = useToast();
@@ -573,9 +575,13 @@ export default function Dashboard() {
           </thead>
           <tbody>
             {loading && broadcasts.length === 0 && (
-              <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '32px 18px' }}>
-                Loading broadcasts...
-              </td></tr>
+              <>
+                <SkeletonRow cols={10} avatar />
+                <SkeletonRow cols={10} avatar />
+                <SkeletonRow cols={10} avatar />
+                <SkeletonRow cols={10} avatar />
+                <SkeletonRow cols={10} avatar />
+              </>
             )}
             {!loading && broadcasts.length === 0 && (
               <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '40px 18px' }}>
@@ -601,6 +607,15 @@ export default function Dashboard() {
               const isActive = isSending || isPaused;
               const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'failed';
 
+              // ── Estimated completion time (normal mode only) ──────
+              // Turbo mode sends batches concurrently, so the formula doesn't apply.
+              const isTurbo = b.delay_ms <= 200;
+              const remaining = (b.total || 0) - (b.sent || 0) - (b.failed || 0);
+              const estFinish = isSending && remaining > 0 && b.delay_ms && !isTurbo
+                ? new Date(Date.now() + remaining * b.delay_ms).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+                : null;
+              const estLabel = estFinish ? `Est. ${estFinish}` : null;
+
               return (
                 <tr key={b.id}>
                   {/* Broadcast name / message preview */}
@@ -624,6 +639,11 @@ export default function Dashboard() {
                       )}
                       {b.status === 'sending' && b.started_at && (
                         <span style={{ color: 'var(--info)', marginLeft: 4 }}>⟳</span>
+                      )}
+                      {estLabel && (
+                        <span style={{ color: 'var(--brand-1)', marginLeft: 6, fontSize: 10, fontWeight: 600 }}>
+                          {estLabel}
+                        </span>
                       )}
                     </div>
                   </td>
@@ -650,14 +670,14 @@ export default function Dashboard() {
                       <span style={{
                         marginLeft: 4, fontSize: 9, fontWeight: 600,
                         padding: '1px 4px', borderRadius: 3,
-                        background: b.sim_mode === 'sim2' ? 'rgba(219,39,119,0.12)'
-                          : b.sim_mode === 'round-robin' ? 'rgba(124,58,237,0.12)'
-                          : b.sim_mode === 'parallel' ? 'rgba(245,158,11,0.12)'
-                          : 'rgba(5,150,105,0.12)',
-                        color: b.sim_mode === 'sim2' ? '#db2777'
-                          : b.sim_mode === 'round-robin' ? '#7c3aed'
-                          : b.sim_mode === 'parallel' ? '#f59e0b'
-                          : '#059669',
+                        background: b.sim_mode === 'sim2' ? 'var(--sim2-bg)'
+                          : b.sim_mode === 'round-robin' ? 'var(--sim-rr-bg)'
+                          : b.sim_mode === 'parallel' ? 'var(--sim-par-bg)'
+                          : 'var(--sim1-bg)',
+                        color: b.sim_mode === 'sim2' ? 'var(--sim2-clr)'
+                          : b.sim_mode === 'round-robin' ? 'var(--sim-rr-clr)'
+                          : b.sim_mode === 'parallel' ? 'var(--sim-par-clr)'
+                          : 'var(--sim1-clr)',
                         verticalAlign: 'middle',
                       }}>{b.sim_mode === 'sim2' ? '📱2' : b.sim_mode === 'round-robin' ? '↻' : b.sim_mode === 'parallel' ? '⟗' : '📱1'}</span>
                     )}

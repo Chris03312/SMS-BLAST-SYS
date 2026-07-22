@@ -14,7 +14,7 @@ body {
 }
 /* Login page overrides body to pure white — .wrap handles its own background */
 body:has(.wrap) {
-  background: #0A0A0A;
+  background: var(--bg-page, #0A0A0A);
   overflow: auto;
 }
 #root { display: flex; flex-direction: column; height: 100%; }

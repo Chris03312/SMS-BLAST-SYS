@@ -97,10 +97,10 @@ export default function Login() {
             {error && (
               <div style={{
                 padding: '10px 14px',
-                background: 'var(--err-bg)',
-                border: '1px solid var(--err-line)',
+                background: '#FEF2F2',
+                border: '1px solid #FECACA',
                 borderRadius: 8,
-                color: 'var(--err)',
+                color: '#DC2626',
                 fontSize: 13,
               }}>
                 {error}

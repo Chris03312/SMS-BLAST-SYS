@@ -2,6 +2,7 @@ import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
+import { ThemeProvider } from './context/ThemeContext.jsx';
 import Login from './pages/Login.jsx';
 
 // ── Code-split page components ──────────────────────────────────────────
@@ -125,7 +126,8 @@ function SplashManager() {
 
 export default function App() {
   return (
-    <AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
       <SplashManager />
       <PagePreloader />
       <ToastProvider>
@@ -158,6 +160,7 @@ export default function App() {
         </Suspense>
       </BrowserRouter>
       </ToastProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

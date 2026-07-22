@@ -46,7 +46,7 @@ function BroadcastDetail({ broadcast, onClose }) {
       padding: 20,
     }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{
-        background: '#fff', borderRadius: 14,
+        background: 'var(--bg-card)', borderRadius: 14,
         width: '100%', maxWidth: 720, maxHeight: '90vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
@@ -132,7 +132,7 @@ function BroadcastDetail({ broadcast, onClose }) {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Column headers */}
           <div style={{
-            position: 'sticky', top: 0, background: '#fff', zIndex: 1,
+            position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1,
             display: 'grid', gridTemplateColumns: '1fr auto auto 1fr',
             gap: 12, alignItems: 'center',
             padding: '8px 20px', borderBottom: '1px solid var(--line)',
@@ -407,6 +407,72 @@ export default function History() {
                     </svg>
                   </button>
 
+                  {/* Clone button — for completed/done broadcasts */}
+                  {(b.status === 'done' || b.status === 'cancelled' || b.status === 'failed') && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.post(`/broadcasts/${b.id}/clone`);
+                          toast('Broadcast cloned — check your dashboard', 'success');
+                          load();
+                        } catch (e) {
+                          toast('Failed to clone: ' + e.message, 'error');
+                        }
+                      }}
+                      title="Clone broadcast"
+                      style={{
+                        width: 28, height: 28, padding: 0,
+                        border: '1px solid var(--line)',
+                        borderRadius: 6, background: 'transparent',
+                        color: 'var(--ink-3)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)'; e.currentTarget.style.color = 'var(--brand-1)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ink-3)'; }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                      </svg>
+                    </button>
+                  )}
+
+                  {/* Export CSV button — for completed broadcasts */}
+                  {(b.status === 'done' || b.status === 'cancelled' || b.status === 'failed') && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch(`/api/broadcasts/${b.id}/export`, {
+                            headers: { 'Authorization': `Bearer ${localStorage.getItem('srmc_token')}` },
+                          });
+                          if (!response.ok) throw new Error('Export failed');
+                          const blob = await response.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `broadcast-${b.id.slice(0, 8)}.csv`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast('CSV exported', 'success');
+                        } catch (e) {
+                          toast('Export failed: ' + e.message, 'error');
+                        }
+                      }}
+                      title="Export as CSV"
+                      style={{
+                        width: 28, height: 28, padding: 0,
+                        border: '1px solid var(--line)',
+                        borderRadius: 6, background: 'transparent',
+                        color: 'var(--ink-3)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)'; e.currentTarget.style.color = 'var(--ok)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ink-3)'; }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </td>
               </tr>

@@ -668,7 +668,7 @@ export default function BlastDashboard() {
                             cursor: 'pointer',
                             opacity: 1,
                             border: `1.5px solid ${checked ? 'var(--ink-1)' : 'var(--line)'}`,
-                            background: checked ? 'var(--ink-1)' : '#fff',
+                            background: checked ? 'var(--brand-1)' : 'var(--bg-card)',
                             transition: 'all 0.12s',
                           }}
                         >
@@ -739,7 +739,7 @@ export default function BlastDashboard() {
                           style={{
                             padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
                             border: `1.5px solid ${active ? 'var(--ink-1)' : 'var(--line)'}`,
-                            background: active ? 'var(--ink-1)' : '#fff',
+                            background: active ? 'var(--brand-1)' : 'var(--bg-card)',
                           }}
                         >
                           <div style={{ fontSize: 12, fontWeight: 600, color: active ? '#fff' : 'var(--ink-1)', marginBottom: 3 }}>
@@ -827,7 +827,7 @@ export default function BlastDashboard() {
                           style={{
                             padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
                             border: `1.5px solid ${active ? 'var(--brand-1)' : 'var(--line)'}`,
-                            background: active ? 'var(--brand-1)' : '#fff',
+                            background: active ? 'var(--brand-1)' : 'var(--bg-card)',
                             transition: 'all 0.12s',
                           }}
                         >
@@ -855,7 +855,7 @@ export default function BlastDashboard() {
                           style={{
                             padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
                             border: `1.5px solid ${simRoundStart === s ? 'var(--brand-1)' : 'var(--line)'}`,
-                            background: simRoundStart === s ? 'var(--brand-1)' : '#fff',
+                            background: simRoundStart === s ? 'var(--brand-1)' : 'var(--bg-card)',
                             color: simRoundStart === s ? '#fff' : 'var(--ink-1)',
                             fontSize: 11, fontWeight: 500,
                             transition: 'all 0.12s',
@@ -1046,9 +1046,9 @@ export default function BlastDashboard() {
                       </div>
                       <span style={{
                         padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600,
-                        background: simMode === 'sim1' ? 'rgba(5,150,105,0.12)'
-                          : 'rgba(219,39,119,0.12)',
-                        color: simMode === 'sim1' ? '#059669' : '#db2777',
+                        background: simMode === 'sim1' ? 'var(--sim1-bg)'
+                          : 'var(--sim2-bg)',
+                        color: simMode === 'sim1' ? 'var(--sim1-clr)' : 'var(--sim2-clr)',
                         fontFamily: 'var(--mono)',
                       }}>
                         {simMode === 'round-robin'

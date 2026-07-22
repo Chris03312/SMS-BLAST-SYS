@@ -558,4 +558,143 @@ router.post('/:id/resume', (req, res) => {
   }
 });
 
+// ── Bulk cancel selected broadcasts ───────────────────────────────────
+// POST /api/broadcasts/cancel-selected
+// Body: { ids: ["id1", "id2", ...] }
+router.post('/cancel-selected', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return fail(res, 'No broadcast IDs provided', 400);
+    }
+
+    let cancelled = 0;
+    for (const id of ids) {
+      const bcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(id);
+      if (!bcast) continue;
+
+      // Check access
+      if (req.user.role === 'agent' && bcast.agent_id !== req.user.id) continue;
+
+      // Only cancel active broadcasts
+      if (bcast.status !== 'sending' && bcast.status !== 'paused') continue;
+
+      cancelBroadcast(id);
+      db.prepare("UPDATE broadcasts SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?").run(id);
+      db.prepare("UPDATE messages SET status = 'cancelled' WHERE broadcast_id = ? AND status NOT IN ('sent', 'delivered')").run(id);
+
+      emitEvent({
+        type: 'broadcast:complete',
+        broadcastId: id,
+        status: 'cancelled',
+        sent: bcast.sent || 0,
+        failed: bcast.failed || 0,
+        total: bcast.total || 0,
+        agent_id: bcast.agent_id,
+      });
+      cancelled++;
+    }
+
+    return ok(res, { success: true, cancelled });
+  } catch (e) {
+    console.error('[broadcasts] CANCEL SELECTED error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Clone a broadcast ────────────────────────────────────────────────
+// POST /api/broadcasts/:id/clone
+// Creates a new broadcast with the same settings as the original.
+router.post('/:id/clone', (req, res) => {
+  try {
+    const original = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id);
+    if (!original) {
+      return fail(res, 'Broadcast not found', 404);
+    }
+
+    if (req.user.role === 'agent' && original.agent_id !== req.user.id) {
+      return fail(res, 'Access denied', 403);
+    }
+
+    const newId = uuidv4();
+    const now = new Date().toISOString();
+
+    // Clone the broadcast with same settings but new status
+    db.prepare(`INSERT INTO broadcasts (id, agent_id, campaign_id, template_id, gateway_id, gateway_ids, distribution, message, recipients, total, delay_ms, status, sim_mode, sim_round_start, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`)
+      .run(
+        newId,
+        original.agent_id,
+        original.campaign_id,
+        original.template_id,
+        original.gateway_id,
+        original.gateway_ids,
+        original.distribution || 'round-robin',
+        original.message,
+        original.recipients,
+        original.total,
+        original.delay_ms,
+        original.sim_mode || 'sim1',
+        original.sim_round_start || 'sim1',
+        now
+      );
+
+    // Clone all messages
+    const messages = db.prepare('SELECT to_number, message, gateway_id FROM messages WHERE broadcast_id = ?').all(req.params.id);
+    const insertMsg = db.prepare('INSERT INTO messages (id, broadcast_id, to_number, message, gateway_id) VALUES (?, ?, ?, ?, ?)');
+    const cloneMessages = db.transaction(() => {
+      for (const m of messages) {
+        insertMsg.run(uuidv4(), newId, m.to_number, m.message, m.gateway_id);
+      }
+    });
+    cloneMessages();
+
+    const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(newId);
+    return ok(res, { broadcast }, 201);
+  } catch (e) {
+    console.error('[broadcasts] CLONE error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
+// ── Export broadcast as CSV ─────────────────────────────────────────
+// GET /api/broadcasts/:id/export
+// Returns a CSV file with all message results.
+router.get('/:id/export', (req, res) => {
+  try {
+    const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id);
+    if (!broadcast) {
+      return fail(res, 'Broadcast not found', 404);
+    }
+
+    if (req.user.role === 'agent' && broadcast.agent_id !== req.user.id) {
+      return fail(res, 'Access denied', 403);
+    }
+
+    const messages = db.prepare(
+      'SELECT to_number, status, error, sent_at, created_at FROM messages WHERE broadcast_id = ? ORDER BY created_at ASC'
+    ).all(req.params.id);
+
+    // Build CSV
+    const header = 'Phone Number,Status,Error,Sent At,Created At\n';
+    const rows = messages.map(m => {
+      const sentAt = m.sent_at ? m.sent_at.replace('T', ' ').slice(0, 19) : '';
+      const createdAt = m.created_at ? m.created_at.replace('T', ' ').slice(0, 19) : '';
+      const error = m.error || '';
+      // Escape commas and quotes in error field
+      const escapedError = error.includes(',') || error.includes('"') ? `"${error.replace(/"/g, '""')}"` : error;
+      return `${m.to_number},${m.status},${escapedError},${sentAt},${createdAt}`;
+    }).join('\n');
+
+    const csv = `\uFEFF${header}${rows}`; // BOM for Excel UTF-8 support
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="broadcast-${req.params.id.slice(0, 8)}.csv"`);
+    return res.send(csv);
+  } catch (e) {
+    console.error('[broadcasts] EXPORT error:', e);
+    return fail(res, 'Internal server error', 500);
+  }
+});
+
 export default router;

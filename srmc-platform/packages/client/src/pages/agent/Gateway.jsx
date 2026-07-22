@@ -342,7 +342,7 @@ function GatewayCard({ gw, onEdit, onDelete, onTest, onTestSim, onRemoveClick })
       {gw.delivery_fails >= 3 && (
         <div style={{
           padding: '7px 10px', borderRadius: 7, fontSize: 12,
-          background: 'linear-gradient(135deg, var(--err-bg), #fff4e5)',
+          background: 'linear-gradient(135deg, var(--err-bg), var(--bg-card))',
           border: '1.5px solid var(--warn)',
           color: 'var(--warn)', display: 'flex', alignItems: 'center', gap: 6,
         }}>

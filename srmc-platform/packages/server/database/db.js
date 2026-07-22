@@ -268,6 +268,7 @@ export function initDb() {
       ['broadcasts_globally_paused', 'false'],
       ['turbo_delay', '50'],
       ['turbo_batch_size', '10'],
+      ['data_retention_days', '90'],
       ['timezone', 'Asia/Manila'],
       ['public_url', ''],
     ]) {
@@ -276,18 +277,30 @@ export function initDb() {
     console.log('[db] Fresh database initialised — no dummy data');
   }
 
-  // ── Migrations ────────────────────────────────────────────────
+  // ── Migration tracking table (must be first) ────────────────
+  db.exec(`CREATE TABLE IF NOT EXISTS _migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+
+  // ── Migrations (tracked with _migrations table) ────────────────────
+  // Each entry has { name, sql }. Only runs migrations that haven't been
+  // applied yet (checked against the _migrations table). On upgrade from
+  // the old untracked system, these will all run but silently fail if the
+  // column already exists — same as before. New servers will record them
+  // properly and skip on subsequent boots.
   const migrations = [
-    "ALTER TABLE gateways ADD COLUMN last_online TEXT",
-    "ALTER TABLE gateways ADD COLUMN device_info TEXT",
-    "ALTER TABLE broadcasts ADD COLUMN gateway_ids TEXT DEFAULT '[]'",
-    "ALTER TABLE broadcasts ADD COLUMN distribution TEXT DEFAULT 'round-robin'",
-    "ALTER TABLE gateways ADD COLUMN mode TEXT DEFAULT 'push'",
-    "ALTER TABLE gateways ADD COLUMN last_poll TEXT",
-    "ALTER TABLE gateways ADD COLUMN number TEXT",
-    "ALTER TABLE inbound ADD COLUMN agent_id TEXT",
-    "ALTER TABLE gateways ADD COLUMN consecutive_fails INTEGER DEFAULT 0",
-    `CREATE TABLE IF NOT EXISTS agent_contacts (
+    { name: 'add_column_last_online', sql: "ALTER TABLE gateways ADD COLUMN last_online TEXT" },
+    { name: 'add_column_device_info', sql: "ALTER TABLE gateways ADD COLUMN device_info TEXT" },
+    { name: 'add_column_gateway_ids', sql: "ALTER TABLE broadcasts ADD COLUMN gateway_ids TEXT DEFAULT '[]'" },
+    { name: 'add_column_distribution', sql: "ALTER TABLE broadcasts ADD COLUMN distribution TEXT DEFAULT 'round-robin'" },
+    { name: 'add_column_gateway_mode', sql: "ALTER TABLE gateways ADD COLUMN mode TEXT DEFAULT 'push'" },
+    { name: 'add_column_last_poll', sql: "ALTER TABLE gateways ADD COLUMN last_poll TEXT" },
+    { name: 'add_column_gateway_number', sql: "ALTER TABLE gateways ADD COLUMN number TEXT" },
+    { name: 'add_column_inbound_agent_id', sql: "ALTER TABLE inbound ADD COLUMN agent_id TEXT" },
+    { name: 'add_column_consecutive_fails', sql: "ALTER TABLE gateways ADD COLUMN consecutive_fails INTEGER DEFAULT 0" },
+    { name: 'create_table_agent_contacts', sql: `CREATE TABLE IF NOT EXISTS agent_contacts (
       id           TEXT PRIMARY KEY,
       agent_id     TEXT NOT NULL,
       batch_id     TEXT NOT NULL,
@@ -295,55 +308,68 @@ export function initDb() {
       used         INTEGER DEFAULT 0,
       broadcast_id TEXT,
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    "ALTER TABLE activity ADD COLUMN campaign_id TEXT",
-    "ALTER TABLE gateways ADD COLUMN number2 TEXT",
-    "ALTER TABLE gateways ADD COLUMN sim2_carrier TEXT",
-    "ALTER TABLE gateways ADD COLUMN turbo_enabled INTEGER DEFAULT 0",
-    "ALTER TABLE gateways ADD COLUMN delivery_fails INTEGER DEFAULT 0",
-    "ALTER TABLE gateways ADD COLUMN last_error TEXT",
-    "ALTER TABLE broadcasts ADD COLUMN sim_mode TEXT DEFAULT 'sim1'",
-    "ALTER TABLE broadcasts ADD COLUMN send_start_at TEXT",
-    "ALTER TABLE broadcasts ADD COLUMN send_end_at TEXT",
-    "ALTER TABLE broadcasts ADD COLUMN sim_round_start TEXT DEFAULT 'sim1'",
-    "ALTER TABLE inbound ADD COLUMN gateway_id TEXT",
-    "ALTER TABLE gateways ADD COLUMN owner_id TEXT",
-    "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0",
-    "ALTER TABLE campaigns ADD COLUMN boss_numbers TEXT DEFAULT ''",
-    "ALTER TABLE templates ADD COLUMN boss_numbers TEXT DEFAULT ''",
-    "ALTER TABLE agent_contacts ADD COLUMN dpd_group TEXT DEFAULT ''",
-    "ALTER TABLE agent_contacts ADD COLUMN category TEXT DEFAULT ''",
-    "ALTER TABLE gateway_numbers ADD COLUMN agent_name TEXT DEFAULT ''",
-    "ALTER TABLE users ADD COLUMN last_login_at TEXT",
-    "ALTER TABLE templates ADD COLUMN campaign_id TEXT",
-    "CREATE INDEX IF NOT EXISTS idx_templates_campaign_id ON templates(campaign_id)",
-    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_id ON agent_contacts(agent_id)",
-    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_batch_id ON agent_contacts(batch_id)",
-    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_phone ON agent_contacts(agent_id, phone_number)",
-    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_list ON agent_contacts(agent_id, category, dpd_group, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_used ON agent_contacts(agent_id, used)",
-    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_created ON agent_contacts(agent_id, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_agent_contacts_batch_agent ON agent_contacts(batch_id, agent_id)",
-    "CREATE INDEX IF NOT EXISTS idx_users_username_active ON users(username, active)",
-    "CREATE INDEX IF NOT EXISTS idx_gateways_owner_active ON gateways(owner_id, active, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_broadcasts_agent_status ON broadcasts(agent_id, status)",
-    "CREATE INDEX IF NOT EXISTS idx_broadcasts_agent_created ON broadcasts(agent_id, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_messages_broadcast_status ON messages(broadcast_id, status)",
-    "CREATE INDEX IF NOT EXISTS idx_messages_broadcast_created ON messages(broadcast_id, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_messages_to_number_status ON messages(to_number, status)",
-    "CREATE INDEX IF NOT EXISTS idx_messages_to_number_created ON messages(to_number, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_messages_status_sent ON messages(status, sent_at)",
-    "CREATE INDEX IF NOT EXISTS idx_messages_status_created ON messages(status, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_inbound_from_number ON inbound(from_number)",
-    "CREATE INDEX IF NOT EXISTS idx_inbound_flag ON inbound(flag)",
-    "CREATE INDEX IF NOT EXISTS idx_gateway_numbers_dedup ON gateway_numbers(gateway_id, number, number2, sim_carrier, sim2_carrier)",
+    )` },
+    { name: 'add_column_activity_campaign_id', sql: "ALTER TABLE activity ADD COLUMN campaign_id TEXT" },
+    { name: 'add_column_gateway_number2', sql: "ALTER TABLE gateways ADD COLUMN number2 TEXT" },
+    { name: 'add_column_sim2_carrier', sql: "ALTER TABLE gateways ADD COLUMN sim2_carrier TEXT" },
+    { name: 'add_column_turbo_enabled', sql: "ALTER TABLE gateways ADD COLUMN turbo_enabled INTEGER DEFAULT 0" },
+    { name: 'add_column_delivery_fails', sql: "ALTER TABLE gateways ADD COLUMN delivery_fails INTEGER DEFAULT 0" },
+    { name: 'add_column_last_error', sql: "ALTER TABLE gateways ADD COLUMN last_error TEXT" },
+    { name: 'add_column_sim_mode', sql: "ALTER TABLE broadcasts ADD COLUMN sim_mode TEXT DEFAULT 'sim1'" },
+    { name: 'add_column_send_start_at', sql: "ALTER TABLE broadcasts ADD COLUMN send_start_at TEXT" },
+    { name: 'add_column_send_end_at', sql: "ALTER TABLE broadcasts ADD COLUMN send_end_at TEXT" },
+    { name: 'add_column_sim_round_start', sql: "ALTER TABLE broadcasts ADD COLUMN sim_round_start TEXT DEFAULT 'sim1'" },
+    { name: 'add_column_inbound_gateway_id', sql: "ALTER TABLE inbound ADD COLUMN gateway_id TEXT" },
+    { name: 'add_column_owner_id', sql: "ALTER TABLE gateways ADD COLUMN owner_id TEXT" },
+    { name: 'add_column_inbound_sim_slot', sql: "ALTER TABLE inbound ADD COLUMN sim_slot INTEGER DEFAULT 0" },
+    { name: 'add_column_boss_numbers', sql: "ALTER TABLE campaigns ADD COLUMN boss_numbers TEXT DEFAULT ''" },
+    { name: 'add_column_template_boss_numbers', sql: "ALTER TABLE templates ADD COLUMN boss_numbers TEXT DEFAULT ''" },
+    { name: 'add_column_dpd_group', sql: "ALTER TABLE agent_contacts ADD COLUMN dpd_group TEXT DEFAULT ''" },
+    { name: 'add_column_category', sql: "ALTER TABLE agent_contacts ADD COLUMN category TEXT DEFAULT ''" },
+    { name: 'add_column_agent_name', sql: "ALTER TABLE gateway_numbers ADD COLUMN agent_name TEXT DEFAULT ''" },
+    { name: 'add_column_last_login_at', sql: "ALTER TABLE users ADD COLUMN last_login_at TEXT" },
+    { name: 'add_column_template_campaign_id', sql: "ALTER TABLE templates ADD COLUMN campaign_id TEXT" },
+    { name: 'create_index_templates_campaign_id', sql: "CREATE INDEX IF NOT EXISTS idx_templates_campaign_id ON templates(campaign_id)" },
+    { name: 'create_index_agent_contacts_agent_id', sql: "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_id ON agent_contacts(agent_id)" },
+    { name: 'create_index_agent_contacts_batch_id', sql: "CREATE INDEX IF NOT EXISTS idx_agent_contacts_batch_id ON agent_contacts(batch_id)" },
+    { name: 'create_index_agent_contacts_agent_phone', sql: "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_phone ON agent_contacts(agent_id, phone_number)" },
+    { name: 'create_index_agent_contacts_list', sql: "CREATE INDEX IF NOT EXISTS idx_agent_contacts_list ON agent_contacts(agent_id, category, dpd_group, created_at)" },
+    { name: 'create_index_agent_contacts_agent_used', sql: "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_used ON agent_contacts(agent_id, used)" },
+    { name: 'create_index_agent_contacts_agent_created', sql: "CREATE INDEX IF NOT EXISTS idx_agent_contacts_agent_created ON agent_contacts(agent_id, created_at)" },
+    { name: 'create_index_agent_contacts_batch_agent', sql: "CREATE INDEX IF NOT EXISTS idx_agent_contacts_batch_agent ON agent_contacts(batch_id, agent_id)" },
+    { name: 'create_index_users_username_active', sql: "CREATE INDEX IF NOT EXISTS idx_users_username_active ON users(username, active)" },
+    { name: 'create_index_gateways_owner_active', sql: "CREATE INDEX IF NOT EXISTS idx_gateways_owner_active ON gateways(owner_id, active, created_at)" },
+    { name: 'create_index_broadcasts_agent_status', sql: "CREATE INDEX IF NOT EXISTS idx_broadcasts_agent_status ON broadcasts(agent_id, status)" },
+    { name: 'create_index_broadcasts_agent_created', sql: "CREATE INDEX IF NOT EXISTS idx_broadcasts_agent_created ON broadcasts(agent_id, created_at)" },
+    { name: 'create_index_messages_broadcast_status', sql: "CREATE INDEX IF NOT EXISTS idx_messages_broadcast_status ON messages(broadcast_id, status)" },
+    { name: 'create_index_messages_broadcast_created', sql: "CREATE INDEX IF NOT EXISTS idx_messages_broadcast_created ON messages(broadcast_id, created_at)" },
+    { name: 'create_index_messages_to_number_status', sql: "CREATE INDEX IF NOT EXISTS idx_messages_to_number_status ON messages(to_number, status)" },
+    { name: 'create_index_messages_to_number_created', sql: "CREATE INDEX IF NOT EXISTS idx_messages_to_number_created ON messages(to_number, created_at)" },
+    { name: 'create_index_messages_status_sent', sql: "CREATE INDEX IF NOT EXISTS idx_messages_status_sent ON messages(status, sent_at)" },
+    { name: 'create_index_messages_status_created', sql: "CREATE INDEX IF NOT EXISTS idx_messages_status_created ON messages(status, created_at)" },
+    { name: 'create_index_inbound_from_number', sql: "CREATE INDEX IF NOT EXISTS idx_inbound_from_number ON inbound(from_number)" },
+    { name: 'create_index_inbound_flag', sql: "CREATE INDEX IF NOT EXISTS idx_inbound_flag ON inbound(flag)" },
+    { name: 'create_index_gateway_numbers_dedup', sql: "CREATE INDEX IF NOT EXISTS idx_gateway_numbers_dedup ON gateway_numbers(gateway_id, number, number2, sim_carrier, sim2_carrier)" },
   ];
-  for (const sql of migrations) {
-    try {
-      db.exec(sql);
-    } catch (_) {
-      // Column already exists — safe to ignore
-    }
+
+  const alreadyRan = db.prepare('SELECT name FROM _migrations').all().map(r => r.name);
+  const pendingMigrations = migrations.filter(m => !alreadyRan.includes(m.name));
+
+  if (pendingMigrations.length > 0) {
+    const applyMigration = db.prepare('INSERT OR IGNORE INTO _migrations (name) VALUES (?)');
+    const runMigrations = db.transaction(() => {
+      for (const m of pendingMigrations) {
+        try {
+          db.exec(m.sql);
+          applyMigration.run(m.name);
+        } catch (_) {
+          // Column/index already exists — safe to ignore on upgrade
+          applyMigration.run(m.name);
+        }
+      }
+    });
+    runMigrations();
+    console.log(`[db] Applied ${pendingMigrations.length} pending migration(s)`);
   }
 
   // Create indexes that depend on migration-added columns
@@ -385,6 +411,9 @@ export function initDb() {
   setTimeout(() => createInitialBackup(), 10);
   startBackupSchedule();
 
+  // Start daily data cleanup (old messages/broadcasts/activity)
+  scheduleDataCleanup();
+
   console.log(`[db] Database ready at ${DB_PATH} (${(Date.now() - t0)}ms)`);
 }
 
@@ -424,6 +453,60 @@ function ensureAdminAccount() {
     try { writeFileSync(credFile, note); } catch (_) { }
     console.warn(`[db] Generated initial admin "${adminUser}". Credentials written to ${credFile}`);
   }
+}
+
+// ── Data Cleanup ──────────────────────────────────────────────────────
+// Deletes old messages, completed broadcasts, and activity logs.
+// Retention is configurable via the 'data_retention_days' setting (default: 90).
+
+export function cleanupOldData() {
+  try {
+    const setting = db.prepare("SELECT value FROM settings WHERE key = 'data_retention_days'").get();
+    const retentionDays = parseInt(setting?.value) || 90;
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+
+    console.log(`[db] Running data cleanup — deleting records older than ${retentionDays} days (before ${cutoff.slice(0, 10)})...`);
+
+    // Delete old messages from completed broadcasts only
+    const oldBroadcastIds = db.prepare(
+      "SELECT id FROM broadcasts WHERE status IN ('done', 'cancelled', 'failed', 'deleted') AND completed_at < ?"
+    ).all(cutoff).map(r => r.id);
+
+    if (oldBroadcastIds.length > 0) {
+      const placeholders = oldBroadcastIds.map(() => '?').join(',');
+      const msgDeleted = db.prepare(
+        `DELETE FROM messages WHERE broadcast_id IN (${placeholders})`
+      ).run(...oldBroadcastIds);
+
+      const bcDeleted = db.prepare(
+        `DELETE FROM broadcasts WHERE id IN (${placeholders})`
+      ).run(...oldBroadcastIds);
+
+      console.log(`[db] Cleanup: deleted ${msgDeleted.changes} messages and ${bcDeleted.changes} broadcasts`);
+    }
+
+    // Delete old activity logs
+    const actDeleted = db.prepare("DELETE FROM activity WHERE created_at < ?").run(cutoff);
+    if (actDeleted.changes > 0) {
+      console.log(`[db] Cleanup: deleted ${actDeleted.changes} activity log entries`);
+    }
+
+    console.log(`[db] Data cleanup complete`);
+  } catch (e) {
+    console.error('[db] Cleanup error:', e.message);
+  }
+}
+
+function scheduleDataCleanup() {
+  // Run cleanup once on startup (after a short delay to let server settle)
+  setTimeout(() => cleanupOldData(), 30_000);
+
+  // Then run every 24 hours
+  setInterval(() => {
+    setImmediate(() => cleanupOldData());
+  }, 24 * 60 * 60 * 1000);
+
+  console.log('[db] Data cleanup scheduled (every 24 hours)');
 }
 
 // ── Backward-compatible exports ──────────────────────────────────────

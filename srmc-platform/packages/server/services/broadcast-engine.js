@@ -3,6 +3,7 @@ import { broadcast } from './ws.js';
 import {
   logActivity,
   saveProgress,
+  flushProgress,
   emitProgress,
   emitComplete,
   pushSend,
@@ -356,11 +357,13 @@ export async function startBroadcast(broadcastId) {
     logActivity(agentId, 'broadcast:cancel',
       `Broadcast ${broadcastId} cancelled — ${sent}/${total} sent${label}`,
       'warn', campaignId);
+    flushProgress(broadcastId);
     running.delete(broadcastId);
     onMessageAcked(broadcastId);
     return;
   }
 
+  flushProgress(broadcastId);
   running.delete(broadcastId);
 
   // Settle completion from actual message state. Messages are 'pending'
@@ -463,6 +466,60 @@ export function getRunningBroadcasts() {
 
 export function getRunningCount() {
   return running.size;
+}
+
+// ── Stuck message recovery ─────────────────────────────────────────────
+// Sometimes a phone claims a message (marks it 'sending') but then crashes
+// or loses network before ACKing it back. Without recovery, that message
+// stays 'sending' forever — the phone never comes back to release it.
+//
+// This function re-releases messages stuck in 'sending' for longer than
+// CLAIM_TIMEOUT_S (120s), setting them back to 'pending' so they can be
+// claimed by another poll or the engine.
+//
+// Runs every 60 seconds during normal operation.
+
+const STUCK_SENDING_TIMEOUT_S = 150; // slightly > CLAIM_TIMEOUT_S (120)
+
+export function recoverStuckMessages() {
+  try {
+    // First, find which broadcasts have stuck messages (before UPDATE resets them)
+    const stuck = db.prepare(
+      `SELECT DISTINCT broadcast_id FROM messages
+       WHERE status = 'sending' AND broadcast_id IS NOT NULL
+         AND sent_at IS NOT NULL
+         AND sent_at < datetime('now', ?)`
+    ).all(`-${STUCK_SENDING_TIMEOUT_S} seconds`);
+
+    const result = db.prepare(
+      `UPDATE messages SET status = 'pending', sent_at = NULL
+       WHERE status = 'sending'
+         AND sent_at IS NOT NULL
+         AND sent_at < datetime('now', ?)`
+    ).run(`-${STUCK_SENDING_TIMEOUT_S} seconds`);
+
+    if (result.changes > 0) {
+      console.log(`[broadcast-engine] Released ${result.changes} stuck message(s) back to pending`);
+
+      // Recompute progress for all affected broadcasts
+      const seen = new Set();
+      for (const row of stuck) {
+        if (row.broadcast_id && !seen.has(row.broadcast_id)) {
+          seen.add(row.broadcast_id);
+          onMessageAcked(row.broadcast_id);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[broadcast-engine] Stuck message recovery error:', e.message);
+  }
+}
+
+// Start periodic recovery (runs every 60 seconds)
+export function startStuckMessageRecovery() {
+  recoverStuckMessages(); // Run once immediately
+  setInterval(() => recoverStuckMessages(), 60_000);
+  console.log('[broadcast-engine] Stuck message recovery started (every 60s)');
 }
 
 /**

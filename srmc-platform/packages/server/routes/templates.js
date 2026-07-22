@@ -18,7 +18,7 @@ router.use(authMiddleware);
 
 router.get('/', (req, res) => {
   try {
-    // Agents see only their own templates + templates created by admins.
+    // Agents see only their own templates.
     // Admins see every template.
     const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
 
@@ -40,7 +40,6 @@ router.get('/', (req, res) => {
         LEFT JOIN users u ON t.created_by = u.id
         LEFT JOIN campaigns c ON t.campaign_id = c.id
         WHERE t.created_by = ?
-           OR t.created_by IN (SELECT id FROM users WHERE role IN ('admin', 'super_admin'))
         ORDER BY t.created_at DESC
       `;
       params = [req.user.id];
@@ -80,6 +79,12 @@ router.put('/:id', (req, res) => {
       return fail(res, 'Template not found', 404);
     }
 
+    // Agents can only update their own templates; admins can update any.
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (!isAdmin && template.created_by !== req.user.id) {
+      return fail(res, 'You do not have permission to edit this template', 403);
+    }
+
     const { name, body, category, variables, boss_numbers, campaign_id } = req.body;
 
     db.prepare(`UPDATE templates SET name = ?, body = ?, category = ?, variables = ?, boss_numbers = ?, campaign_id = ?, updated_at = datetime('now') WHERE id = ?`)
@@ -106,6 +111,13 @@ router.delete('/:id', (req, res) => {
     if (!template) {
       return fail(res, 'Template not found', 404);
     }
+
+    // Agents can only delete their own templates; admins can delete any.
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (!isAdmin && template.created_by !== req.user.id) {
+      return fail(res, 'You do not have permission to delete this template', 403);
+    }
+
     db.prepare('DELETE FROM templates WHERE id = ?').run(req.params.id);
     return ok(res, { success: true });
   } catch (e) {

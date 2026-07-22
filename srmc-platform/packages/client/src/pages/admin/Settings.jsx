@@ -4,6 +4,7 @@ import PasswordInput from '../../components/PasswordInput.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useTheme } from '../../context/ThemeContext.jsx';
 import { setTimezone } from '../../lib/format.js';
 
 // All sections in display order
@@ -29,6 +30,7 @@ export default function Settings() {
   const [ngrok, setNgrok]       = useState({ running: false, url: null, webhookUrl: null });
   const [ngrokBusy, setNgrokBusy] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const { theme } = useTheme();
   const { toast } = useToast();
 
   // One ref per section
@@ -164,7 +166,7 @@ export default function Settings() {
         {/* ── STICKY SUB-NAV ─────────────────────────────────────────── */}
         <div style={{
           position: 'sticky', top: 0,
-          background: '#fff',
+          background: 'var(--bg-card)',
           border: '1px solid var(--line)',
           borderRadius: 12,
           overflow: 'hidden',
@@ -194,7 +196,7 @@ export default function Settings() {
                       padding: '7px 10px', borderRadius: 7, border: 'none',
                       fontSize: 13, fontWeight: 500, cursor: 'pointer',
                       marginBottom: 1,
-                      background: active === s.key ? 'var(--ink-1)' : 'transparent',
+                      background: active === s.key ? (theme === 'dark' ? 'var(--brand-1)' : 'var(--ink-1)') : 'transparent',
                       color:      active === s.key ? '#fff'         : 'var(--ink-2)',
                       transition: 'background 0.15s, color 0.15s',
                     }}
@@ -321,6 +323,18 @@ export default function Settings() {
                     <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                       recipients
                     </span>
+                  </div>
+                </Field>
+                <Field label="Data retention (auto-cleanup)" help="Messages and logs older than this are auto-deleted daily. 90 days = 3 months.">
+                  <div style={{ display: 'flex' }}>
+                    <input className="input mono" type="number" min="30" max="365" value={form.data_retention_days ?? 90} onChange={e => set('data_retention_days', e.target.value)}
+                      style={{ fontSize: 12, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', maxWidth: 160 }} />
+                    <span style={{ padding: '10px 10px', background: 'var(--bg-soft)', border: '1px solid var(--line)', borderRadius: '0 8px 8px 0', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                      days
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>
+                    Old completed broadcasts, their messages, and activity logs older than this are deleted daily. Keeps the database small.
                   </div>
                 </Field>
                 <Field label="Max selected contacts" help="Maximum contacts an agent can select per column in the Recipients page.">
@@ -742,7 +756,7 @@ export default function Settings() {
         left: 240,
         right: 0,
         padding: '13px 28px',
-        background: '#fff',
+        background: 'var(--bg-card)',
         borderTop: '1px solid var(--line)',
         display: 'flex',
         justifyContent: 'space-between',

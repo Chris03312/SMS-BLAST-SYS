@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import AgentShell from '../../components/AgentShell.jsx';
 import Pill from '../../components/Pill.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useTheme } from '../../context/ThemeContext.jsx';
 import { api } from '../../lib/api.js';
 import { useWS } from '../../lib/ws.js';
 import { formatTime, getTimezone } from '../../lib/format.js';
@@ -32,10 +33,10 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString('en-PH', { day: '2-digit', month: 'short', timeZone: getTimezone() });
 }
 
-function FolderPane({ folder, counts, onChange }) {
+function FolderPane({ folder, counts, onChange, darkTheme }) {
   return (
     <div style={{
-      background: '#fff',
+      background: 'var(--bg-card)',
       border: '1px solid var(--line)',
       borderRadius: 12,
       overflow: 'hidden',
@@ -59,7 +60,7 @@ function FolderPane({ folder, counts, onChange }) {
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '8px 10px', borderRadius: 7,
-              background: folder === f.key ? 'var(--ink-1)' : 'transparent',
+              background: folder === f.key ? (darkTheme ? 'var(--brand-1)' : 'var(--ink-1)') : 'transparent',
               color: folder === f.key ? '#fff' : 'var(--ink-2)',
               border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left',
               fontSize: 13, fontWeight: 500,
@@ -96,6 +97,7 @@ export default function Inbound() {
   const [replyGw, setReplyGw]     = useState('');
   const [replySim, setReplySim]   = useState('sim1');
   const [replying, setReplying]   = useState(false);
+  const { theme } = useTheme();
   const [replyError, setReplyError] = useState('');
   const [search, setSearch]       = useState('');
   const chatRef = useRef(null);
@@ -262,11 +264,11 @@ export default function Inbound() {
       }}>
 
         {/* ── FOLDER PANE ── */}
-        <FolderPane folder={folder} counts={counts} onChange={setFolder} />
+        <FolderPane folder={folder} counts={counts} onChange={setFolder} darkTheme={theme === 'dark'} />
 
         {/* ── MESSAGE LIST ── */}
         <div style={{
-          background: '#fff',
+          background: 'var(--bg-card)',
           border: '1px solid var(--line)',
           borderRadius: 12,
           display: 'flex', flexDirection: 'column',
@@ -324,8 +326,8 @@ export default function Inbound() {
               return conversations.map(([number, m], idx) => {
                 const isActive  = selected?.from_number === number;
                 const isUnread  = !m.read_at;
-                const evenBg   = '#fff';
-                const oddBg    = '#f8f9fc';
+                const evenBg   = 'var(--bg-card)';
+                const oddBg    = 'var(--bg-soft)';
                 const baseBg   = isActive ? 'var(--bg-soft)' : (idx % 2 === 0 ? evenBg : oddBg);
                 return (
                   <div
@@ -389,7 +391,7 @@ export default function Inbound() {
 
         {/* ── CONVERSATION PANE ── */}
         <div style={{
-          background: '#fff',
+          background: 'var(--bg-card)',
           border: '1px solid var(--line)',
           borderRadius: 12,
           display: 'flex', flexDirection: 'column',
@@ -430,7 +432,7 @@ export default function Inbound() {
               <div ref={chatRef} style={{
                 flex: 1, overflowY: 'auto',
                 padding: '16px 16px 8px',
-                background: 'linear-gradient(165deg, #eef1f5 0%, #e3e8ef 50%, #dde3ec 100%)',
+                background: 'linear-gradient(165deg, var(--chat-bg-start, #eef1f5) 0%, var(--chat-bg-mid, #e3e8ef) 50%, var(--chat-bg-end, #dde3ec) 100%)',
                 display: 'flex', flexDirection: 'column', gap: 3,
               }}>
                 {conversation.length === 0 && (
@@ -473,8 +475,8 @@ export default function Inbound() {
                         borderRadius: isInbound
                           ? '4px 16px 16px 16px'
                           : '16px 4px 16px 16px',
-                        background: isInbound ? '#fff' : '#2563eb',
-                        color: isInbound ? '#1e293b' : '#fff',
+                        background: isInbound ? 'var(--bg-card)' : '#2563eb',
+                        color: isInbound ? 'var(--ink-1)' : '#fff',
                         boxShadow: isInbound
                           ? '0 1px 2px rgba(0,0,0,0.06)'
                           : '0 2px 6px rgba(37,99,235,0.22)',
@@ -528,9 +530,9 @@ export default function Inbound() {
                     style={{
                       fontSize: 11, padding: '4px 9px', borderRadius: 6, cursor: 'pointer',
                       fontFamily: 'inherit', fontWeight: 500,
-                      background: selected.flag === f.key ? 'var(--ink-1)' : '#fff',
+                      background: selected.flag === f.key ? (theme === 'dark' ? 'var(--brand-1)' : 'var(--ink-1)') : 'var(--bg-card)',
                       color:      selected.flag === f.key ? '#fff' : 'var(--ink-2)',
-                      border:     `1px solid ${selected.flag === f.key ? 'var(--ink-1)' : 'var(--line)'}`,
+                      border:     `1px solid ${selected.flag === f.key ? (theme === 'dark' ? 'var(--brand-1)' : 'var(--ink-1)') : 'var(--line)'}`,
                     }}
                   >
                     {f.label}
@@ -577,9 +579,9 @@ export default function Inbound() {
                         style={{
                           flex: 1, padding: '5px 8px', fontSize: 11, fontWeight: 600,
                           borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-                          background: replySim === s ? 'var(--ink-1)' : '#fff',
+                          background: replySim === s ? (theme === 'dark' ? 'var(--brand-1)' : 'var(--ink-1)') : 'var(--bg-card)',
                           color: replySim === s ? '#fff' : 'var(--ink-2)',
-                          border: `1.5px solid ${replySim === s ? 'var(--ink-1)' : 'var(--line)'}`,
+                          border: `1.5px solid ${replySim === s ? (theme === 'dark' ? 'var(--brand-1)' : 'var(--ink-1)') : 'var(--line)'}`,
                           transition: 'all 0.12s',
                         }}
                       >

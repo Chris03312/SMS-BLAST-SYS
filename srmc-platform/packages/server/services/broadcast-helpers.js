@@ -51,11 +51,58 @@ export function readConfig() {
 
 // ── Progress / Completion helpers ──────────────────────────────────────────
 
-/** Persist sent/failed counts to the DB (used so page refreshes preserve counts). */
+// ── Batched saveProgress ──────────────────────────────────────────
+// Instead of writing to DB after EVERY message, we buffer updates and
+// write every BATCH_INTERVAL messages. This reduces DB writes by ~90%
+// with no perceptible impact on the UI (WebSocket emits still happen).
+// With better-sqlite3 the writes are fast, but batching still helps
+// during turbo mode where 10+ messages finish at the same time.
+
+const PROGRESS_BATCH_SIZE = 10;
+const PROGRESS_FLUSH_INTERVAL = 500; // ms — max delay before forced write
+const _progressBuffer = new Map(); // broadcastId -> { sent, failed, lastWrite, pendingCount }
+
+/**
+ * Persist sent/failed counts to the DB. Batches writes to reduce DB load.
+ * Falls through to immediate write every 500ms even if batch isn't full,
+ * so progress never goes stale for more than 500ms.
+ */
 export function saveProgress(broadcastId, sent, failed) {
-  try {
-    db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(sent, failed, broadcastId);
-  } catch (_) {}
+  const now = Date.now();
+  let entry = _progressBuffer.get(broadcastId);
+
+  if (entry) {
+    entry.sent = Math.max(entry.sent, sent);
+    entry.failed = Math.max(entry.failed, failed);
+    entry.pendingCount++;
+  } else {
+    entry = { sent, failed, lastWrite: now, pendingCount: 1 };
+    _progressBuffer.set(broadcastId, entry);
+  }
+
+  const timeSinceLastWrite = now - entry.lastWrite;
+
+  // Write to DB if: batch is full OR flush interval has passed
+  if (entry.pendingCount >= PROGRESS_BATCH_SIZE || timeSinceLastWrite >= PROGRESS_FLUSH_INTERVAL) {
+    try {
+      db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(entry.sent, entry.failed, broadcastId);
+    } catch (_) {}
+    entry.lastWrite = now;
+    entry.pendingCount = 0;
+  }
+}
+
+/**
+ * Force-flush any pending progress for a broadcast (used when broadcast completes).
+ */
+export function flushProgress(broadcastId) {
+  const entry = _progressBuffer.get(broadcastId);
+  if (entry && entry.pendingCount > 0) {
+    try {
+      db.prepare('UPDATE broadcasts SET sent = ?, failed = ? WHERE id = ?').run(entry.sent, entry.failed, broadcastId);
+    } catch (_) {}
+  }
+  _progressBuffer.delete(broadcastId);
 }
 
 /** Broadcast real-time progress via WebSocket. */

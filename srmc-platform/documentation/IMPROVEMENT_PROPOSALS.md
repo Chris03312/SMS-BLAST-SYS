@@ -10,21 +10,14 @@
 
 **Problem:** The database grows indefinitely. Old messages, broadcasts, and activity logs are never deleted, causing the DB to bloat (currently 57MB). At 1GB+ the server becomes unusable.
 
-**Solution:** Add a scheduled cleanup task that runs daily and deletes:
-- `messages` older than the retention period
-- `broadcasts` older than the retention period (that are already completed)
-- `activity_log` older than the retention period
-
-**Retention:** Keep **90 days (3 months)** of data by default — enough to backtrack message logs and investigate history. The retention period will be configurable via admin settings (30/60/90/180 days).
-
-**What's NOT deleted:** Contacts, templates, campaigns, gateways, users, and settings — these are small tables that don't bloat the database.
-
-**Safety:** Cleanup only deletes completed broadcasts. Active/running broadcasts are never touched.
+**Solution:** Add a scheduled cleanup task that auto-deletes records older than a configurable threshold (e.g., 30/60/90 days).
 
 **Files affected:**
-- `packages/server/database/db.js` — add `cleanupOldData()` function
-- `packages/server/app.js` — schedule daily cleanup on startup
-- `packages/server/routes/settings.js` — add `data_retention_days` setting (default: 90)
+- `packages/server/database/db.js` — add cleanup function
+- `packages/server/app.js` — schedule cleanup on startup
+- `packages/server/routes/settings.js` — add configurable retention setting
+    
+**Impact:** The database stays small forever. No more scaling problems.
 
 ---
 
@@ -37,7 +30,7 @@
 **Files affected:**
 - `packages/server/services/broadcast-engine.js` — batch progress saves
 
-**Impact:** ~90% reduction in DB writes during broadcasts. Faster sending, less server load.
+**Impact:** ~90% reduction in DB writes during broadcasts. Faster sending, less server load.i 
 
 ---
 

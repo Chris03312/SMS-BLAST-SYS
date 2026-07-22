@@ -1175,7 +1175,7 @@ export default function AdminContacts() {
                                     style={{
                                       width: 24, height: 24, borderRadius: 4,
                                       border: `1px solid ${batchPage === pNum ? 'var(--ink-1)' : 'var(--line)'}`,
-                                      background: batchPage === pNum ? 'var(--ink-1)' : '#fff',
+                                      background: batchPage === pNum ? 'var(--ink-1)' : 'var(--bg-card)',
                                       color: batchPage === pNum ? '#fff' : 'var(--ink-2)',
                                       fontSize: 10, fontWeight: 600,
                                       cursor: 'pointer', fontFamily: 'var(--mono)',

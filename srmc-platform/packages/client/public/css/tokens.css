@@ -29,3 +29,79 @@
   /* Typography */
   --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
 }
+
+/* ── Chat area gradient variables (light mode defaults) ── */
+:root {
+  --chat-bg-start: #eef1f5;
+  --chat-bg-mid: #e3e8ef;
+  --chat-bg-end: #dde3ec;
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --ink-1: #F5F5F4;
+  --ink-2: #D6D3D1;
+  --ink-3: #A8A29E;
+  --ink-4: #78716C;
+  --ink-5: #57534E;
+
+  --bg-page:  #1C1917;
+  --bg-card:  #292524;
+  --bg-soft:  #1C1917;
+  --bg-input: #292524;
+
+  --line:      #44403C;
+  --line-soft: #3D3A36;
+
+  --brand-1: #818CF8;
+  --brand-2: #A78BFA;
+
+  --ok:      #34D399; --ok-bg:   rgba(5,150,105,0.12); --ok-line:   rgba(5,150,105,0.3);
+  --err:     #F87171; --err-bg:  rgba(220,38,38,0.12);  --err-line:  rgba(220,38,38,0.3);
+  --warn:    #FBBF24; --warn-bg: rgba(180,83,9,0.12);   --warn-line: rgba(180,83,9,0.3);
+  --info:    #60A5FA; --info-bg: rgba(29,78,216,0.12);  --info-line: rgba(29,78,216,0.3);
+
+  /* Chat area gradient (dark mode — deep blue tones for messaging feel) */
+  --chat-bg-start: #1a1a2e;
+  --chat-bg-mid: #16213e;
+  --chat-bg-end: #0f3460;
+}
+
+/* Apply dark theme to body for login page compatibility */
+[data-theme="dark"] body {
+  background: var(--bg-page);
+  color: var(--ink-1);
+}
+
+/* Override hardcoded white backgrounds in dark mode */
+[data-theme="dark"] .card { background: var(--bg-card); }
+[data-theme="dark"] .sidebar { background: var(--bg-card); }
+[data-theme="dark"] .toolbar { background: var(--bg-card); }
+[data-theme="dark"] .btn-ghost { background: var(--bg-card); }
+[data-theme="dark"] .btn-danger { background: var(--bg-card); }
+[data-theme="dark"] .seg button.on { background: var(--bg-card); }
+[data-theme="dark"] .pager button { background: var(--bg-card); }
+[data-theme="dark"] .input { background: var(--bg-input); }
+[data-theme="dark"] .user-chip { background: var(--bg-card); }
+[data-theme="dark"] thead th { background: var(--bg-page); }
+[data-theme="dark"] tbody tr:hover { background: var(--bg-soft); }
+[data-theme="dark"] .nav { background: var(--bg-card); }
+
+/* Agent nav tab — active tab background (stays white in dark mode without this) */
+[data-theme="dark"] .nav-tab.active { background: var(--bg-card); }
+
+/* Admin sidebar nav item — active state uses --ink-1 which becomes light in dark mode */
+/* In dark mode --ink-1 becomes light gray, making .nav-item.active invisible */
+[data-theme="dark"] .nav-item.active { background: var(--brand-1) !important; }
+[data-theme="dark"] .nav-item.active svg { color: #fff; }
+
+/* Sidebar toggle (mobile hamburger button) */
+[data-theme="dark"] .sidebar-toggle { background: var(--bg-card); }
+/* Icon button */
+[data-theme="dark"] .icon-btn { background: var(--bg-card); }
+/* Filter pill */
+[data-theme="dark"] .filter-pill { background: var(--bg-card); }
+
+[data-theme="dark"] .btn-primary { background: var(--brand-1); border-color: var(--brand-1); }
+[data-theme="dark"] .btn-primary:hover { background: #6366F1; }
+

@@ -9,7 +9,7 @@ async function checkGateway(gateway) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 2000); // Reduced from 5s to 2s
 
     const res = await fetch(`${gateway.url}/health`, {
       headers: {
